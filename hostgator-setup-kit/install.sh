@@ -15,7 +15,7 @@ set -euo pipefail
 # de qualquer 'cd' (step 2 pode entrar num repo clonado à parte).
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/jvsantos0811-ship-it/DeskcommCRM.git}"
 # Uma constante, dois usos (o fim feliz e o fim travado) — e o comecar.sh tem a
 # gêmea. Link repetido à mão vira link divergente na primeira troca.
 COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
@@ -1634,27 +1634,11 @@ garantir_rede_do_proxy
 # final, DEPOIS de instalado. Num produto que roda na infraestrutura do usuário,
 # com dados de clientes dele, o consentimento vem antes.
 # Quem já tem valor no .env manda: a pergunta não sobrescreve escolha anterior.
+# NESTE FORK (revenda) não há pergunta: os relatórios de erro dos escritórios
+# clientes não vão a terceiro. Sem valor explícito, fica desligado. Quem tiver o
+# PRÓPRIO Sentry põe SENTRY_DSN=<dsn> no .env antes de instalar.
 if [ -z "${SENTRY_DSN+x}" ]; then
-  if [ "$NONINTERACTIVE" = 1 ]; then
-    # Automação não consente por ninguém. Sem valor explícito, fica desligado.
-    SENTRY_DSN="off"
-  else
-    step "$(t "Telemetria de erros (opcional)")"
-    printf '%s\n' "$(t "Podemos receber os relatórios de ERRO desta instalação (stack trace) para")"
-    printf '%s\n' "$(t "corrigir bugs que afetam todo mundo. CPF, telefone e e-mail são substituídos,")"
-    printf '%s\n' "$(t "cabeçalhos sensíveis removidos e tokens de webhook/convite redigidos da URL.")"
-    printf '%s\n' "$(t "NÃO enviamos rastreamento de performance nem replay de sessão.")"
-    printf '%s\n' "$(t "Seus dados de clientes, conversas e banco NUNCA saem daqui.")"
-    printf '\n%s\n' "$(t "Você pode mudar depois no .env, a qualquer momento.")"
-    read -r -p "$(t "  Enviar relatórios de erro anonimizados? (s/N) ")" _tel
-    if resposta_sim "${_tel:-}"; then
-      SENTRY_DSN=""
-      c_grn "$(t "✓ Telemetria de erros ligada — obrigado, isso ajuda o projeto.")"
-    else
-      SENTRY_DSN="off"
-      c_grn "$(t "✓ Telemetria desligada — nada será enviado.")"
-    fi
-  fi
+  SENTRY_DSN="off"
 fi
 
 step "$(t "Escrevendo .env")"
