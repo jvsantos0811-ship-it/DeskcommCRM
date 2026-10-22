@@ -146,6 +146,10 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Painéis de dados (migration 9004): montar, editar e apagar um painel.
+  "dados.painel_created",
+  "dados.painel_updated",
+  "dados.painel_deleted",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",

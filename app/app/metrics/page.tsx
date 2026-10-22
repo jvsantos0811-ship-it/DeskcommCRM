@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -29,6 +30,16 @@ export default async function MetricsPage() {
             : t("Atrito, seu funil e sua performance nos últimos 30 dias.")}
         </p>
       </header>
+
+      {/* A porta para Dados (migration 9004): quem procura um número que esta
+          tela não mostra encontra aqui onde montá-lo. */}
+      <Link
+        href="/app/dados"
+        className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm text-text hover:bg-muted"
+      >
+        <span>{t("Quer outro número, outro agrupamento ou uma meta? Monte o seu painel em Dados.")}</span>
+        <span className="shrink-0 font-medium text-primary">{t("Abrir Dados")} →</span>
+      </Link>
 
       <MetricsClient canCompare={canCompare} currentUserId={user.id} />
     </div>
