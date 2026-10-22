@@ -14,7 +14,7 @@ cada um — vive em `.agents/skills/deskcomm-instalar/SKILL.md` na raiz do repos
 Se você está vendo só esta pasta, clone o repositório (o instalador precisa dele de qualquer forma):
 
 ```bash
-git clone --depth 1 https://github.com/melgarafael/DeskcommCRM.git deskcommcrm
+git clone --depth 1 https://github.com/jvsantos0811-ship-it/DeskcommCRM.git deskcommcrm
 cd deskcommcrm
 cat .agents/skills/deskcomm-instalar/SKILL.md
 ```
@@ -64,9 +64,9 @@ discordarem, vale o guia; quando o guia e `install.sh` discordarem, vale o insta
    ```
 
    Ele valida cada resposta na hora, aceita `voltar`, retoma se interromper e mostra uma tela de
-   conferência numerada. No modo interativo, a telemetria só liga depois de a pessoa aceitar. No
-   modo `--yes`, automação não consente por ninguém: sem escolha anterior o instalador grava
-   `SENTRY_DSN=off`, e uma escolha já registrada é preservada nas reexecuções. E se for usar
+   conferência numerada. Neste fork a telemetria não é perguntada: sem `SENTRY_DSN` no `.env`
+   o instalador grava `SENTRY_DSN=off` (nada é enviado a terceiros), e uma escolha já registrada
+   é preservada nas reexecuções. E se for usar
    `--yes` com o `.env` copiado do exemplo, apague antes as linhas `*_IMAGE`/`*_PULL_POLICY`: elas
    apontam para o canal móvel `stable`, e uma instalação de cliente tem de ficar num número de
    versão.

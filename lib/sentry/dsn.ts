@@ -1,13 +1,15 @@
 /**
  * DSN do Sentry com opt-out em runtime — modelo "telemetria de comunidade".
  *
- * Por padrão, erros vão pro Sentry do projeto (DEFAULT_SENTRY_DSN): num open source
- * self-host, é o que dá visibilidade pra corrigir bugs que afetam todo mundo. Quem
- * hospeda controla isso pelo `.env`, SEM rebuild da imagem:
+ * NESTE FORK (revenda), a telemetria é DESLIGADA quando não configurada: as
+ * instalações atendem escritórios cujos dados de clientes entram na LGPD, e o
+ * revendedor não manda relatório de erro de cliente para terceiro. Quem hospeda
+ * controla isso pelo `.env`, SEM rebuild da imagem:
  *
- *   SENTRY_DSN=off           → desliga toda a telemetria (nada é enviado)
- *   SENTRY_DSN=<seu-dsn>     → manda os erros pro SEU Sentry
- *   SENTRY_DSN=  (vazio)     → usa o Sentry da comunidade (padrão)
+ *   SENTRY_DSN=  (vazio/ausente) → desligada (nada é enviado) — padrão deste fork
+ *   SENTRY_DSN=off               → desligada (forma explícita)
+ *   SENTRY_DSN=<seu-dsn>         → manda os erros pro SEU Sentry
+ *   SENTRY_DSN=comunidade        → opt-in explícito no Sentry do projeto original
  *
  * Vale para servidor (process.env) e navegador (window.__PUBLIC_ENV__.SENTRY_DSN,
  * injetado em runtime pelo <PublicEnvScript/>). O DSN não é segredo — DSNs do Sentry
@@ -17,9 +19,11 @@ export const DEFAULT_SENTRY_DSN =
   "https://58fabf8ad54504863d404a3647ef3714@o4509908078559232.ingest.us.sentry.io/4509908083212288";
 
 export function resolveSentryDsn(value: string | undefined | null): string | undefined {
-  const v = (value ?? "").trim().toLowerCase() === "off" ? "off" : (value ?? "").trim();
-  if (v === "off" || v === "false" || v === "0") return undefined;
-  return v.length > 0 ? v : DEFAULT_SENTRY_DSN;
+  const bruto = (value ?? "").trim();
+  const v = bruto.toLowerCase();
+  if (v === "" || v === "off" || v === "false" || v === "0") return undefined;
+  if (v === "comunidade") return DEFAULT_SENTRY_DSN;
+  return bruto;
 }
 
 /**

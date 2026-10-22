@@ -233,7 +233,11 @@ describe("o ambiente da suíte desliga a telemetria", () => {
 
   it("e `off` de fato desliga — a guarda acima não vale nada se o valor não desligasse", () => {
     expect(resolveSentryDsn("off")).toBeUndefined();
-    // Controle: o vazio NÃO desliga, e é por isso que a linha acima é obrigatória.
-    expect(isCommunityDsn(resolveSentryDsn(""))).toBe(true);
+    // Neste fork o vazio também desliga (ver lib/sentry/dsn.ts); a comunidade só
+    // entra por opt-in explícito. A guarda acima continua obrigatória como defesa.
+    expect(resolveSentryDsn("")).toBeUndefined();
+    expect(resolveSentryDsn(undefined)).toBeUndefined();
+    expect(isCommunityDsn(resolveSentryDsn("comunidade"))).toBe(true);
+    expect(resolveSentryDsn("https://abc@meu.sentry.io/1")).toBe("https://abc@meu.sentry.io/1");
   });
 });

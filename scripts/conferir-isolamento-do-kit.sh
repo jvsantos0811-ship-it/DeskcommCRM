@@ -69,6 +69,14 @@ fi
 if [ -z "$release" ]; then
   release="$(cd "$ROOT" && bash -c 'source "$1/_common.sh" >/dev/null 2>&1; ultima_release_estavel' _ "$KIT" || true)"
 fi
+# FORK SEM RELEASE PRÓPRIA (jvsantos0811-ship-it/DeskcommCRM): enquanto este
+# repositório não publica a sua, a conferência mede contra a última release do
+# projeto original — é dela que vem o update.sh que as instalações já têm no
+# disco. As tags dessa release (e a v1.63.0) são buscadas lá, não no origin.
+UPSTREAM_DO_FORK="melgarafael/DeskcommCRM"
+if [ -z "$release" ] && [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+  release="$(gh release view -R "$UPSTREAM_DO_FORK" --json tagName -q .tagName 2>/dev/null || true)"
+fi
 case "$release" in
   v[0-9]*) ;;
   *) echo "FATAL: não consegui saber qual é a última release publicada (sem rede? API fora?)." >&2
@@ -86,7 +94,8 @@ update_sh_da() {  # update_sh_da <tag> — caminho de uma cópia do update.sh da
   if ! git -C "$ROOT" rev-parse -q --verify "refs/tags/$1^{commit}" >/dev/null; then
     local profundidade=""
     [ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = true ] && profundidade="--depth=1"
-    git -C "$ROOT" fetch -q --no-tags $profundidade origin "+refs/tags/$1:refs/tags/$1"
+    git -C "$ROOT" fetch -q --no-tags $profundidade origin "+refs/tags/$1:refs/tags/$1" 2>/dev/null \
+      || git -C "$ROOT" fetch -q --no-tags $profundidade "https://github.com/$UPSTREAM_DO_FORK.git" "+refs/tags/$1:refs/tags/$1"
   fi
   git -C "$ROOT" show "$1:hostgator-setup-kit/update.sh" > "$TMP/$1"
   printf '%s' "$TMP/$1"
