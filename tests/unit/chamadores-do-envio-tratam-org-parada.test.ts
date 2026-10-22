@@ -18,6 +18,8 @@ const TRATA = "trata";
 
 const CHAMADORES: Record<string, string> = {
   "app/api/v1/cron/agenda-reminder/route.ts": TRATA, // tests/unit/lembrete-pula-org-parada.test.ts
+  "app/api/v1/cron/scheduled-messages/route.ts":
+    "org parada não é varrida (idsDeOrgsParadas); na corrida, o catch devolve a linha a 'scheduled' sem nota e ela sai na reativação",
   "app/api/v1/cron/task-reminder/route.ts": TRATA, // app/api/v1/cron/task-reminder/route.test.ts (OrgNaoOperanteError no catch do WhatsApp)
   "lib/campanhas/rodada.ts": TRATA, // registrarExcecaoDoEnvio, tests/unit/suspensao-nao-dispara-campanha.test.ts
   "lib/prospecting/worker.ts": TRATA, // tests/unit/prospecting-worker.test.ts
