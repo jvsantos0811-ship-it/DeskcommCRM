@@ -108,6 +108,9 @@ export function EditorDeWidget({
   const [dono, setDono] = useState<string>(inicial?.owner_user_id ?? TODOS);
   const tipo = SOBRE_A_METRICA[metrica].tipo;
   const [titulo, setTitulo] = useState(inicial?.titulo ?? "");
+  // O id nasce UMA vez, no inicializador do estado — `Date.now()` no corpo do
+  // render seria um valor novo a cada render (regra react-hooks/purity).
+  const [id] = useState(() => inicial?.id ?? `w${Date.now().toString(36)}`);
   const [meta, setMeta] = useState<string>(
     inicial?.meta != null ? String(tipo === "dinheiro" ? inicial.meta / 100 : inicial.meta) : "",
   );
@@ -130,7 +133,7 @@ export function EditorDeWidget({
 
   const metaNumero = meta.trim() === "" ? null : Number(meta.replace(",", "."));
   const candidato: Widget = {
-    id: inicial?.id ?? `w${Date.now().toString(36)}`,
+    id,
     titulo: titulo.trim() || rotuloDaMetrica(metrica, t),
     metrica,
     agrupar_por: agrupar,
