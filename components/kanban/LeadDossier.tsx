@@ -1,7 +1,6 @@
 "use client";
 
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
-import { useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
@@ -47,14 +46,12 @@ function formatValor(cents: number | null, currency: string | null): string {
   return formatValorDoNegocio(cents, currency ?? MOEDA_PADRAO, { semCentavos: true });
 }
 
-type Aba = "tarefas" | "historico" | "propostas";
-
 /**
  * O pop-up do negócio: tudo o que se faz com um lead, sem sair do funil.
  *
  * Três colunas — os DADOS à esquerda (contato e campos), a CONVERSA no meio
  * (o mesmo chat do Inbox, com envio, notas e templates) e o que ACONTECE à
- * direita (tarefas, histórico e propostas, em abas). Por cima, a régua de
+ * direita (tarefas, linha do tempo e propostas, à vista). Por cima, a régua de
  * etapas: clicar numa etapa move o negócio pela mesma mutação do arrasto, com
  * os mesmos diálogos de campos obrigatórios e de retomada.
  *
@@ -79,7 +76,6 @@ export function LeadDossier({
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
-  const [aba, setAba] = useState<Aba>("tarefas");
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
   const owner = resolveLeadOwner(lead, ownerNames);
   const score = lead.score ?? null;
@@ -94,12 +90,6 @@ export function LeadDossier({
     (activeOrg ? ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent : false);
   // Mover etapa é a mesma régua do arrasto: quem arrasta no quadro move aqui.
   const podeMover = !!onMoverParaEtapa && podeEditarTarefas;
-
-  const abas: { id: Aba; rotulo: string }[] = [
-    { id: "tarefas", rotulo: t("Tarefas") },
-    { id: "historico", rotulo: t("Histórico") },
-    { id: "propostas", rotulo: t("Propostas") },
-  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,58 +181,40 @@ export function LeadDossier({
             </section>
           </aside>
 
-          {/* o que acontece — tarefas, histórico, propostas */}
-          <aside className="flex min-h-0 flex-col lg:order-3 lg:w-96 lg:shrink-0">
-            <div
-              role="tablist"
-              aria-label={t("Detalhes do negócio")}
-              className="flex gap-1 border-b border-border px-3 py-2"
-            >
-              {abas.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={aba === a.id}
-                  onClick={() => setAba(a.id)}
-                  className={
-                    "h-9 rounded-md px-3 text-xs font-medium transition-colors " +
-                    (aba === a.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-text-muted hover:bg-muted hover:text-text")
-                  }
-                >
-                  {a.rotulo}
-                </button>
-              ))}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4" role="tabpanel">
-              {aba === "tarefas" && (
-                <TarefasDoNegocio
-                  leadId={lead.id}
-                  contactId={lead.contact_id}
-                  podeEditar={podeEditarTarefas}
-                  aberto={open}
-                />
-              )}
-              {aba === "historico" && (
-                <div className="py-3">
-                  <LeadTimeline
-                    itens={timeline.itens}
-                    chegouAoVivo={timeline.chegouAoVivo}
-                    isLoading={timeline.isLoading}
-                    isError={timeline.isError}
-                  />
-                </div>
-              )}
-              {aba === "propostas" && (
-                <PropostasDoNegocio
-                  leadId={lead.id}
-                  pipelineId={pipelineId}
-                  podeCriar={podeCriarProposta}
-                />
-              )}
-            </div>
+          {/* o que acontece — tarefas, linha do tempo, propostas, tudo à vista */}
+          <aside
+            className="flex min-h-0 flex-col px-4 lg:order-3 lg:w-96 lg:shrink-0 lg:overflow-y-auto"
+            aria-label={t("Detalhes do negócio")}
+          >
+            {/* As tarefas ANTES da linha do tempo: a timeline conta o que já
+                aconteceu, a tarefa é o que ainda falta fazer — e quem abre o card
+                para agir procura o próximo passo primeiro. */}
+            <TarefasDoNegocio
+              leadId={lead.id}
+              contactId={lead.contact_id}
+              podeEditar={podeEditarTarefas}
+              aberto={open}
+            />
+            {/* A linha do tempo fica À VISTA, sem aba: é ela que responde "de onde
+                veio este card?" (entrou no funil, primeira mensagem, troca de
+                funil). Escondida numa aba, o pop-up abriria mudo justamente para
+                quem desconfia de um card que apareceu sozinho. */}
+            <section className="flex-1 py-3">
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+                {t("Linha do tempo")}
+              </h3>
+              <LeadTimeline
+                itens={timeline.itens}
+                chegouAoVivo={timeline.chegouAoVivo}
+                isLoading={timeline.isLoading}
+                isError={timeline.isError}
+              />
+            </section>
+            <PropostasDoNegocio
+              leadId={lead.id}
+              pipelineId={pipelineId}
+              podeCriar={podeCriarProposta}
+            />
           </aside>
         </div>
       </DialogContent>
