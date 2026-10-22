@@ -594,6 +594,14 @@ beforeAll(() => {
             (v_org, v_sess, timestamptz '2030-01-01 03:00:00+00', timestamptz '2030-01-01 05:00:00+00');
         end if;
 
+        -- migration 9003 (fork): cargo da equipe. Leitura org-scoped sem gate
+        -- de papel (o agent semeado e controle positivo legitimo); a escrita so
+        -- o servidor faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.team_cargos where organization_id = v_org) then
+          insert into public.team_cargos (organization_id, nome, papel)
+          values (v_org, 'RLS invariant cargo', 'agent');
+        end if;
+
         -- migration 0692 (#2041): o historico do rodizio da acao assign_owner.
         -- Semeado pelo ESCRITOR de producao (a funcao), com uma regra cuja fila
         -- e o usuario semeado (agent, elegivel). A leitura e org-scoped sem gate
@@ -798,6 +806,9 @@ export const TABLES = [
   // só a função `fn_automation_rodizio_atribuir`, com service_role, grava. Esse
   // segundo eixo é medido em rodizio-da-acao-atribuir.test.ts.
   "automation_rodizio_atribuicoes",
+  // migration 9003 (fork) — cargos da equipe: nome de função + papel + telas.
+  // Vazar entrega ao vizinho a estrutura da equipe; escrita só pelo servidor.
+  "team_cargos",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

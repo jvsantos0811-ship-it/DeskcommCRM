@@ -5,6 +5,8 @@ import { apiClient } from "@/lib/api/client";
 
 export interface TeamMember {
   interface_settings?: InterfaceSettings;
+  /** O cargo aplicado (migration 9003), ou null. */
+  cargo_id?: string | null;
   user_id: string;
   role: string;
   invited_at: string | null;

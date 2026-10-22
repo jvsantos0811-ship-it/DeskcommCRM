@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamMembersClient } from "./_components/TeamMembersClient";
 import { TeamInvitesClient } from "./_components/TeamInvitesClient";
 import { AttendantsClient } from "./_components/AttendantsClient";
+import { CargosClient } from "./_components/CargosClient";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export const metadata: Metadata = { title: "Equipe" };
  * `aba` em português porque é o que aparece na barra de endereço de quem usa o
  * produto; os valores internos das abas seguem os do componente.
  */
-const ABAS: Record<string, string> = { membros: "members", atendimento: "attendants" };
+const ABAS: Record<string, string> = { membros: "members", atendimento: "attendants", cargos: "cargos" };
 
 export default async function TeamPage({
   searchParams,
@@ -66,6 +67,7 @@ export default async function TeamPage({
         <TabsList>
           <TabsTrigger value="members">{t("Membros")}</TabsTrigger>
           <TabsTrigger value="attendants">{t("Atendimento")}</TabsTrigger>
+          {isManager ? <TabsTrigger value="cargos">{t("Cargos")}</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="members" className="mt-4 flex flex-col gap-8">
           <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
@@ -100,6 +102,11 @@ export default async function TeamPage({
             </p>
           )}
         </TabsContent>
+        {isManager ? (
+          <TabsContent value="cargos" className="mt-4">
+            <CargosClient canManage={isAdmin} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
