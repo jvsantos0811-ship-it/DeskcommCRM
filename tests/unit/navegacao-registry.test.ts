@@ -186,6 +186,9 @@ describe("hubSections", () => {
       // rotina do dia, não preparação nem fechamento. `sidebar: false` deixa o
       // menu do dia a dia com os 20 itens de sempre; a porta é o hub e o ⌘K.
       "/app/tasks/planos",
+      // Recuperação de perdidos: revisão periódica do que ficou na mesa — dia a
+      // dia da venda, não preparação. Sem `sidebar`, como os planos.
+      "/app/recuperacao",
       "/app/calls",
       "/app/comandas",
       "/app/products",
