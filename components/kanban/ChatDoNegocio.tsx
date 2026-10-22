@@ -7,6 +7,7 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ArrowSquareOut } from "@/lib/ui/icons";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import {
   motivoDaJanelaFechada,
   motivoDoContato,
@@ -101,7 +102,7 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
     <div className="flex h-full min-h-0 flex-col" data-chat-do-negocio>
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="truncate text-sm font-medium text-text">
-          {c.contacts?.name || c.contacts?.display_name || c.contacts?.phone_number || t("Conversa")}
+          {rotuloParaAEquipe(c.contacts, t)}
         </span>
         {linkDoInbox}
       </div>
