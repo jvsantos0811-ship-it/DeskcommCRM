@@ -15,6 +15,7 @@ import {
 import { ChatThread } from "@/components/inbox/ChatThread";
 import { Composer } from "@/components/inbox/Composer";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
+import { MensagensAgendadas } from "@/components/inbox/MensagensAgendadas";
 import type { Message } from "@/lib/types/messaging";
 
 /**
@@ -121,6 +122,11 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
       {motivoDaJanela && (
         <JanelaFechadaAviso conversationId={c.id} provider={provider} motivo={motivoDaJanela} />
       )}
+      <MensagensAgendadas
+        key={`agendadas:${c.id}`}
+        conversationId={c.id}
+        podeAgendar={!bloqueio && c.status !== "closed"}
+      />
       <Composer
         conversationId={c.id}
         blockedReason={bloqueio}

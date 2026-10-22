@@ -149,6 +149,12 @@ export const AUDIT_ACTIONS = [
   // Chat interno da equipe (migration 9002): cada mensagem enviada. O texto
   // NÃO vai para a trilha — só que houve mensagem e em que tipo de sala.
   "team_chat.message_sent",
+  // Mensagem agendada (migration 9001): criar e cancelar são mutações da tela;
+  // a rodada do cron que enviou ou falhou ao menos uma audita como
+  // `message.scheduled_run` — rodada vazia não audita.
+  "message.schedule_created",
+  "message.schedule_cancelled",
+  "message.scheduled_run",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",
