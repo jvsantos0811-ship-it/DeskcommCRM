@@ -308,6 +308,7 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
     sidebar: true,
   },
+
   {
     // A porta dos planos de tarefa (#1752): montar a sequência UMA vez e o
     // `apply_task_plan` aplicá-la a cada negócio. Fica no MESMO hub de Tarefas,
@@ -323,6 +324,16 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
   },
   {
+    // Recuperação de negócios perdidos. No hub do CRM, sem `sidebar`: é tela de
+    // revisão periódica (a semana, o mês), não de uso a cada minuto — e o menu
+    // está no teto de 900px (`tests/e2e/navegacao.spec.ts`).
+    href: "/app/recuperacao",
+    label: "Recuperação",
+    description: "Os negócios perdidos do período, por motivo e valor — retome ou agende o recontato.",
+    icon: "ClockCounterClockwise",
+    group: "crm",
+    section: "O dia a dia da venda",
+  },  {
     // Módulo VoIP (migration 0347). No grupo do CRM pelo mesmo critério de
     // Tarefas: quem atende confere ligações perdidas e transcrições no dia a
     // dia, não como revisão deliberada.
