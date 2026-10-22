@@ -201,6 +201,34 @@ export function KanbanBoard({
     [onSelectionChange, selectedLeadIds],
   );
 
+  // O pop-up do negócio move pela MESMA mutação do arrasto — mesmos diálogos de
+  // campos obrigatórios e de retomada, mesma escrita. O negócio entra no FIM da
+  // etapa de destino, calculado sobre a etapa INTEIRA do cache (a mesma régua do
+  // arrasto, issue #2545): a lista filtrada da tela esconderia o último card.
+  const moverPeloPopup = useCallback(
+    (lead: Lead, stageId: string) => {
+      if (lead.stage_id === stageId) return;
+      const etapaInteira =
+        qc
+          .getQueryData<BoardData>(chaveDoQuadro(pipelineId))
+          ?.leads.filter((l) => l.stage_id === stageId && l.id !== lead.id) ??
+        (data?.leads ?? []).filter((l) => l.stage_id === stageId && l.id !== lead.id);
+      const ultimo = etapaInteira.reduce<Lead | null>(
+        (max, l) => (max === null || l.position_in_stage > max.position_in_stage ? l : max),
+        null,
+      );
+      const novaPosicao = midpoint(ultimo?.position_in_stage ?? null, null);
+      if (Number.isNaN(novaPosicao)) return;
+      moveCard.mutate({
+        leadId: lead.id,
+        stageId,
+        positionInStage: novaPosicao,
+        expectedUpdatedAt: lead.updated_at,
+      });
+    },
+    [qc, pipelineId, data, moveCard],
+  );
+
   const handleDragEnd = useCallback(
     (result: DropResult) => {
       if (!data || !grouped) return;
@@ -337,6 +365,13 @@ export function KanbanBoard({
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
+          etapas={data.stages
+            .filter((s) => !s.is_archived)
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((s) => ({ id: s.id, name: s.name, is_won: s.is_won, is_lost: s.is_lost }))}
+          movendo={moveCard.isPending}
+          onMoverParaEtapa={(stageId) => moverPeloPopup(leadDoDossie, stageId)}
         />
       )}
 
