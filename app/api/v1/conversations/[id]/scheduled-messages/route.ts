@@ -54,7 +54,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "scheduled_messages" });
+  // LER é `viewer`: quem enxerga a conversa enxerga o que vai sair nela — e o
+  // suporte somente leitura (que resolve como `viewer`) abre o Inbox sem levar
+  // um 403 por conversa. Agendar e cancelar seguem `agent`.
+  const authz = await requireRole("viewer", { requestId, resource: "scheduled_messages" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id } = await params;
