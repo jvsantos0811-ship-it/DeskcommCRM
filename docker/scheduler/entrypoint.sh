@@ -58,6 +58,10 @@ CRONS="
 * * * * *|45|api/v1/cron/webhook-replay
 */5 * * * *|25|api/v1/cron/storage-redaction?limit=50
 */5 * * * *|25|api/v1/cron/snooze-watcher
+# MENSAGEM AGENDADA (migration 9001). Minuto a minuto pelo mesmo motivo da
+# janela de manutenção: o horário foi escolhido por uma pessoa, e marcar 9h
+# para sair 9h04 é o defeito. Sem aspas nem crase aqui: isto está DENTRO da string.
+* * * * *|60|api/v1/cron/scheduled-messages
 */5 * * * *|60|api/v1/cron/handoff-devolucao
 # A CAMPANHA. Minuto a minuto, e a rodada manda no máximo uma mensagem por
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal

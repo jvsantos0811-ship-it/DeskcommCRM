@@ -594,6 +594,14 @@ beforeAll(() => {
             (v_org, v_sess, timestamptz '2030-01-01 03:00:00+00', timestamptz '2030-01-01 05:00:00+00');
         end if;
 
+        -- migration 9001 (fork): mensagem agendada na conversa semeada. A
+        -- leitura e org-scoped sem gate de papel (o agent e controle positivo
+        -- legitimo); a escrita so o servidor faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.scheduled_messages where organization_id = v_org) then
+          insert into public.scheduled_messages (organization_id, conversation_id, body, send_at)
+          values (v_org, v_conv, 'rls invariant agendada', timestamptz '2030-01-01 12:00:00+00');
+        end if;
+
         -- migration 9003 (fork): cargo da equipe. Leitura org-scoped sem gate
         -- de papel (o agent semeado e controle positivo legitimo); a escrita so
         -- o servidor faz (authenticated so tem SELECT).
@@ -809,6 +817,11 @@ export const TABLES = [
   // migration 9003 (fork) — cargos da equipe: nome de função + papel + telas.
   // Vazar entrega ao vizinho a estrutura da equipe; escrita só pelo servidor.
   "team_cargos",
+  // migration 9001 (fork) — mensagem agendada: o texto que sai no futuro em nome
+  // de um atendente. Vazar a linha entrega ao vizinho o que a equipe vai dizer a
+  // um cliente e quando. Leitura org-scoped sem gate de papel; escrita só pelo
+  // servidor (authenticated não tem INSERT/UPDATE/DELETE).
+  "scheduled_messages",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

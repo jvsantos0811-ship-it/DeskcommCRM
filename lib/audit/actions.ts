@@ -152,6 +152,12 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Mensagem agendada (migration 9001): criar e cancelar são mutações da tela;
+  // a rodada do cron que enviou ou falhou ao menos uma audita como
+  // `message.scheduled_run` — rodada vazia não audita.
+  "message.schedule_created",
+  "message.schedule_cancelled",
+  "message.scheduled_run",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",
