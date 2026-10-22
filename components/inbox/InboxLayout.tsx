@@ -8,6 +8,7 @@ import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConv
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { motivoDaJanelaFechada, motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
+import { MensagensAgendadas } from "@/components/inbox/MensagensAgendadas";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { NumeroForaDoAr } from "@/components/inbox/NumeroForaDoAr";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -916,6 +917,13 @@ export function InboxLayout({
                 motivo={motivoDaJanela}
               />
             )}
+            <MensagensAgendadas
+              key={`agendadas:${selectedConversation.id}`}
+              conversationId={selectedConversation.id}
+              podeAgendar={
+                !supportReadonly && !blockedReason && selectedConversation.status !== "closed"
+              }
+            />
             <Composer
               // Trocar a chave quando o rascunho sai REMONTA o composer: o texto
               // nasce de `useState(initialDraft)`, e só a prop mudar não o limparia.
