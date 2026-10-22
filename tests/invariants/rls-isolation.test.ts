@@ -594,6 +594,19 @@ beforeAll(() => {
             (v_org, v_sess, timestamptz '2030-01-01 03:00:00+00', timestamptz '2030-01-01 05:00:00+00');
         end if;
 
+        -- migration 9002 (fork): chat da equipe. A mensagem vai para a sala
+        -- 'geral' (visivel a toda a org); a leitura e do membro semeado, e a
+        -- policy de team_chat_reads so mostra a linha da propria pessoa.
+        if not exists (select 1 from public.team_chat_messages where organization_id = v_org) then
+          insert into public.team_chat_messages (organization_id, room, body)
+          values (v_org, 'geral', 'rls invariant chat');
+        end if;
+        if not exists (select 1 from public.team_chat_reads where organization_id = v_org) then
+          insert into public.team_chat_reads (organization_id, user_id, room)
+          select v_org, uo.user_id, 'geral' from public.user_organizations uo
+           where uo.organization_id = v_org and uo.revoked_at is null;
+        end if;
+
         -- migration 0692 (#2041): o historico do rodizio da acao assign_owner.
         -- Semeado pelo ESCRITOR de producao (a funcao), com uma regra cuja fila
         -- e o usuario semeado (agent, elegivel). A leitura e org-scoped sem gate
@@ -798,6 +811,13 @@ export const TABLES = [
   // só a função `fn_automation_rodizio_atribuir`, com service_role, grava. Esse
   // segundo eixo é medido em rodizio-da-acao-atribuir.test.ts.
   "automation_rodizio_atribuicoes",
+  // migration 9002 (fork) — chat da equipe. A sala geral é da organização; a
+  // conversa a dois, só dos dois (o recorte por participante é a 2ª metade da
+  // policy, além do isolamento de org que esta lista mede).
+  "team_chat_messages",
+  // migration 9002 (fork) — até onde cada pessoa leu cada sala; a policy só
+  // mostra a linha da própria pessoa, e o seed grava uma para cada membro.
+  "team_chat_reads",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
