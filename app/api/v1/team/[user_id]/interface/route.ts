@@ -39,7 +39,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ user_id: 
     });
   const { data, error } = await db
     .from("user_organizations")
-    .update({ interface_settings: parsed.data.interface_settings })
+    // Telas escolhidas à mão SOLTAM o cargo (migration 9003): editar o cargo
+    // depois não pode apagar esta personalização sem ninguém ver.
+    .update({ interface_settings: parsed.data.interface_settings, cargo_id: null })
     .eq("organization_id", authz.org.orgId)
     .eq("user_id", user_id)
     .eq("role", member.role)
