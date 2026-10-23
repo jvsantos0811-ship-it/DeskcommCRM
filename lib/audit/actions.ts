@@ -152,6 +152,9 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Chat interno da equipe (migration 9002): cada mensagem enviada. O texto
+  // NÃO vai para a trilha — só que houve mensagem e em que tipo de sala.
+  "team_chat.message_sent",
   // Painéis de dados (migration 9004): montar, editar e apagar um painel.
   "dados.painel_created",
   "dados.painel_updated",

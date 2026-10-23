@@ -403,6 +403,16 @@ describe("apiClient — quando a empresa é suspensa com a tela aberta", () => {
     vi.unstubAllGlobals();
   });
 
+  it("leitura ambiente (`semDesvioDeSuspensao`) termina com o erro SEM trocar de página", async () => {
+    fetchMock.mockResolvedValue(suspensa());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(
+      cliente.get("/api/v1/team-chat/rooms", { semDesvioDeSuspensao: true }),
+    ).rejects.toThrow("A conta desta empresa está suspensa.");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("leva a janela ao hub /account-suspended, e quem chamou termina com o erro", async () => {
     fetchMock.mockResolvedValue(suspensa());
     const { apiClient: cliente } = await import("@/lib/api/client");

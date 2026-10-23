@@ -177,6 +177,17 @@ export const NAV_CATALOG = [
     contador: "fila",
   },
   {
+    // Chat interno da equipe (migration 9002). SEM `sidebar`: o menu está no
+    // teto de 900px (`tests/e2e/navegacao.spec.ts`), e a porta de uso diário é
+    // o ícone com contador no topo (`components/shell/ChatBell.tsx`), à vista
+    // em toda tela. Aqui fica para o ⌘K e para a completude da navegação.
+    href: "/app/chat",
+    label: "Chat da equipe",
+    description: "Converse com a equipe dentro do CRM — com todos ou a dois, sem levar o assunto para o WhatsApp pessoal.",
+    icon: "ChatsCircle",
+    group: "atendimento",
+  },
+  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
