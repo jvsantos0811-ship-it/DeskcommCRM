@@ -826,6 +826,18 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Dados (migration 9004): os painéis que a organização monta. Logo depois de
+    // Desempenho, na mesma seção — Desempenho é o painel que o produto escolheu;
+    // Dados é o que a empresa escolhe. Sem `sidebar` pelo teto de 900px; a
+    // porta de uso é o hub de Análise, o ⌘K e o atalho no topo de Desempenho.
+    href: "/app/dados",
+    label: "Dados",
+    description: "Monte painéis com gráficos, filtros e metas — o que medir e como agrupar, do seu jeito.",
+    icon: "ChartLineUp",
+    group: "analise",
+    section: "Os números do período",
+  },
+  {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
     // está o que aconteceu depois que a pessoa chegou; aqui, quanto custou
     // trazê-la. Ler as duas juntas é o que fecha a conta do custo por cliente.

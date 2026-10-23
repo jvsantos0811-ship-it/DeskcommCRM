@@ -48,6 +48,13 @@
 #      pela cabeça publicada com o número antigo).
 #  29. cópia de PR em refs/remotes/*/pr/N (fetch de triagem) não traz fantasma de volta.
 #  30. mais de 30 PRs abertos: o gate pede --limit, senão o gh corta calado em 30.
+
+# O CI de pull_request exporta GITHUB_REF=refs/pull/<N>/merge, e o script trata esse N
+# como "o PR de quem roda" — que ele não acusa. Os casos daqui usam PRs FICTÍCIOS
+# (#7, #8…), então no CI do PR real de mesmo número o fictício sumia da conta e 9 casos
+# ficavam vermelhos só ali (medido no PR #7 do fork, 22/10/2026). Os cenários desta
+# suíte montam o próprio mundo: o GITHUB_REF de quem roda não pertence a nenhum deles.
+unset GITHUB_REF
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
