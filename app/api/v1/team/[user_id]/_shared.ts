@@ -79,7 +79,9 @@ export async function changeMemberRole(
 
   const { error: updErr } = await supabase
     .from("user_organizations")
-    .update({ role: input.role, updated_at: new Date().toISOString() })
+    // Troca de papel à mão SOLTA o cargo (migration 9003): a pessoa deixa de
+    // seguir o cargo, senão a próxima edição dele desfaria esta escolha.
+    .update({ role: input.role, cargo_id: null, updated_at: new Date().toISOString() })
     .eq("id", target.id);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
 

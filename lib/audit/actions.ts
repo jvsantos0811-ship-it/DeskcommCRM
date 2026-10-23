@@ -80,6 +80,12 @@ export const AUDIT_ACTIONS = [
   "lgpd.anonymize_catchup",
   "member.invited",
   "team.interface_changed",
+  // Cargos da equipe (migration 9003). `cargo_assigned` também registra o
+  // soltar (cargo_id null) e, ao aplicar, o papel antigo e o novo.
+  "team.cargo_created",
+  "team.cargo_updated",
+  "team.cargo_deleted",
+  "team.cargo_assigned",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o
    * degrau acima do `team.interface_changed`: ali a pergunta é "quem tirou o

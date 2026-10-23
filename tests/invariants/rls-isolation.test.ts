@@ -602,6 +602,14 @@ beforeAll(() => {
           values (v_org, v_conv, 'rls invariant agendada', timestamptz '2030-01-01 12:00:00+00');
         end if;
 
+        -- migration 9003 (fork): cargo da equipe. Leitura org-scoped sem gate
+        -- de papel (o agent semeado e controle positivo legitimo); a escrita so
+        -- o servidor faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.team_cargos where organization_id = v_org) then
+          insert into public.team_cargos (organization_id, nome, papel)
+          values (v_org, 'RLS invariant cargo', 'agent');
+        end if;
+
         -- migration 9004 (fork): painel de dados. Leitura org-scoped sem gate
         -- de papel; a escrita so o servidor faz (authenticated so tem SELECT).
         if not exists (select 1 from public.data_dashboards where organization_id = v_org) then
@@ -816,6 +824,9 @@ export const TABLES = [
   // migration 9004 (fork) — painéis de dados: só a MONTAGEM (o que medir); os
   // números são calculados pela RLS de quem olha. Escrita só pelo servidor.
   "data_dashboards",
+  // migration 9003 (fork) — cargos da equipe: nome de função + papel + telas.
+  // Vazar entrega ao vizinho a estrutura da equipe; escrita só pelo servidor.
+  "team_cargos",
   // migration 9001 (fork) — mensagem agendada: o texto que sai no futuro em nome
   // de um atendente. Vazar a linha entrega ao vizinho o que a equipe vai dizer a
   // um cliente e quando. Leitura org-scoped sem gate de papel; escrita só pelo
