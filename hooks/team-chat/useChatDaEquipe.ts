@@ -31,7 +31,11 @@ export function useSalasDoChat(enabled = true) {
     enabled: enabled && !!orgId,
     queryFn: () =>
       apiClient
-        .get<{ data: { salas: SalaResumo[]; total_nao_lidas: number } }>("/api/v1/team-chat/rooms")
+        // Leitura ambiente (o sino do topo em toda tela): org suspensa não
+        // desvia a página daqui — ver `semDesvioDeSuspensao` em lib/api/client.
+        .get<{ data: { salas: SalaResumo[]; total_nao_lidas: number } }>("/api/v1/team-chat/rooms", {
+          semDesvioDeSuspensao: true,
+        })
         .then((r) => r.data),
     refetchInterval: 60_000,
     staleTime: 15_000,

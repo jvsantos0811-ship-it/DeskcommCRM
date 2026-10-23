@@ -13,6 +13,16 @@ export type RequestOpts = {
   timeoutMs?: number;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * Leitura AMBIENTE (um contador no topo, uma sondagem de fundo) que não deve
+   * levar a janela ao hub da suspensão. O 403 `org_suspended` continua virando
+   * erro para quem chamou; só o desvio de página é pulado. Sem isto, a sondagem
+   * do sino disparava a navegação no meio de outra — medido no e2e
+   * `cobranca-revendedor`: `page.goto` abortado (net::ERR_ABORTED) pela troca de
+   * página que o contador do chat pediu ao mesmo tempo. Quem leva ao hub é a
+   * própria navegação (o servidor redireciona) e as ações da pessoa.
+   */
+  semDesvioDeSuspensao?: boolean;
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -333,7 +343,7 @@ async function request<T>(
         if (res.status === 403 && e.code === "no_active_org") {
           pedirDecisaoAoServidor();
         }
-        if (res.status === 403 && e.code === "org_suspended") {
+        if (res.status === 403 && e.code === "org_suspended" && !opts.semDesvioDeSuspensao) {
           irParaOHubDaSuspensao();
         }
         // #2335, metade 2: o servidor recusou a escrita porque a organização
