@@ -610,6 +610,13 @@ beforeAll(() => {
           values (v_org, 'RLS invariant cargo', 'agent');
         end if;
 
+        -- migration 9004 (fork): painel de dados. Leitura org-scoped sem gate
+        -- de papel; a escrita so o servidor faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.data_dashboards where organization_id = v_org) then
+          insert into public.data_dashboards (organization_id, nome)
+          values (v_org, 'RLS invariant painel');
+        end if;
+
         -- migration 9002 (fork): chat da equipe. A mensagem vai para a sala
         -- 'geral' (visivel a toda a org); a leitura e do membro semeado, e a
         -- policy de team_chat_reads so mostra a linha da propria pessoa.
@@ -834,6 +841,9 @@ export const TABLES = [
   // migration 9002 (fork) — até onde cada pessoa leu cada sala; a policy só
   // mostra a linha da própria pessoa, e o seed grava uma para cada membro.
   "team_chat_reads",
+  // migration 9004 (fork) — painéis de dados: só a MONTAGEM (o que medir); os
+  // números são calculados pela RLS de quem olha. Escrita só pelo servidor.
+  "data_dashboards",
   // migration 9003 (fork) — cargos da equipe: nome de função + papel + telas.
   // Vazar entrega ao vizinho a estrutura da equipe; escrita só pelo servidor.
   "team_cargos",
