@@ -54,6 +54,7 @@ import {
 import { isLeadInHandoff } from './human-handoff';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { loadConversationAgentConfig, type PublishedAgentConfig } from './agent-config';
 import {
   followupPublicadoDoEnrollment,
   proximaAberturaDoFollowup,
@@ -654,6 +655,62 @@ interface ReentrySendTarget {
 }
 
 /**
+ * ═══ A JANELA DE HISTÓRICO DAS LEITURAS INTERNAS DO FLUXO ═══
+ *
+ * O fluxo lê a conversa em três pontos, e só um deles escreve para o cliente:
+ *
+ *  - `send_message` com IA — passa por `runAgentTurn`, que já usa a janela da
+ *    versão publicada do agente (`turnContextKnobs`, inbound-turn.ts). Nada a
+ *    fazer aqui.
+ *  - `classify` — acha a resposta do cliente ao envio do fluxo
+ *    (`respostaAoEnvioDoFluxo`). Com a janela da INSTALAÇÃO (20 mensagens, 1.000
+ *    tokens), uma resposta longa ou um áudio transcrito empurrava o envio do
+ *    fluxo para fora do recorte, e o nó lia "sem resposta" com a resposta ali.
+ *  - `plan_timing` — o modelo que planeja as esperas adaptativas lia 1.000
+ *    tokens de conversa, mesmo com o agente configurado para 60 mensagens.
+ *
+ * A fonte é a mesma do turno de resposta: o agente que atende ESTA conversa
+ * (`loadConversationAgentConfig` — o dono gravado na conversa, senão o
+ * publicado no número). Sem agente publicado, os knobs da instalação seguem
+ * sendo a fonte legítima, como no turno de resposta.
+ *
+ * Por que `Math.max` com o piso da instalação, e não o valor do agente puro:
+ * estas duas leituras são do MOTOR, não da persona. Um agente configurado com
+ * janela 0 (para responder sem memória) não pode deixar o classificador cego —
+ * ele passaria a concluir `awaiting_reply` para sempre. Para o caso comum
+ * (agente com 20/8.000 de fábrica, ou mais), o resultado é o valor do agente.
+ *
+ * O envio fixo (`sendFixedOutbound`) NÃO entra: ali o contexto só serve para
+ * `is_blocked` e LGPD, e o tamanho do histórico não muda nada.
+ */
+export function janelaDasLeiturasDoFluxo(
+  agente: Pick<PublishedAgentConfig, 'historyMessageWindow' | 'historyTokenWindow'> | null,
+  instalacao: { historyLimit: number; maxContextTokens: number },
+): { historyLimit: number; maxTokens: number } {
+  if (agente === null) {
+    return { historyLimit: instalacao.historyLimit, maxTokens: instalacao.maxContextTokens };
+  }
+  return {
+    historyLimit: Math.max(agente.historyMessageWindow, instalacao.historyLimit),
+    maxTokens: Math.max(agente.historyTokenWindow, instalacao.maxContextTokens),
+  };
+}
+
+async function janelaDoFluxoNaConversa(
+  pool: pg.Pool,
+  deps: FollowupTurnDeps,
+  target: ReentrySendTarget,
+): Promise<{ historyLimit: number; maxTokens: number }> {
+  const agente = await loadConversationAgentConfig(
+    pool,
+    target.tenantId,
+    target.conversationId,
+    target.channelSessionId,
+  );
+  return janelaDasLeiturasDoFluxo(agente, deps.knobs);
+}
+
+/**
  * Onda 5 (Task 5.1) — turno dirigido por fluxo (`payload.followup_enrollment_id`
  * presente). Roteia pelos 3 `purpose` que `lib/followup/node-handlers.ts` pode
  * pedir; ao terminar, chama `deps.completeFollowupTurn` (injetado — a ponte de
@@ -777,10 +834,12 @@ async function runFlowDrivenTurn(
   if (input.purpose === 'classify') {
     const classes = input.classes ?? [];
     const fuso = await fusoDaOrganizacao(pool, target.tenantId, runLog);
-    const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId, fuso }, {
-      historyLimit: deps.knobs.historyLimit,
-      maxTokens: deps.knobs.maxContextTokens,
-    });
+    const context = await getLeadContext(
+      pool,
+      deps.crmCfg,
+      { tenantId: target.tenantId, leadId: target.leadId, fuso },
+      await janelaDoFluxoNaConversa(pool, deps, target),
+    );
     if (!context.ok) {
       throw new Error(`turno de classificação do fluxo falhou em get_lead_context (${context.error.code})`);
     }
@@ -865,7 +924,7 @@ async function runFlowDrivenTurn(
     pool,
     deps.crmCfg,
     { tenantId: target.tenantId, leadId: target.leadId, fuso: await fusoDaOrganizacao(pool, target.tenantId, runLog) },
-    { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens },
+    await janelaDoFluxoNaConversa(pool, deps, target),
   );
   if (!context.ok) {
     throw new Error(`turno de planejamento de tempo do fluxo falhou em get_lead_context (${context.error.code})`);
