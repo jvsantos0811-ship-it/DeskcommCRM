@@ -28,10 +28,15 @@
  * `performHumanHandoff` — o mesmo dos outros caminhos: `force_human`, conversa
  * silenciada e na fila humana, follow-ups agendados cancelados, linha em
  * `passagens_de_atendimento` (origem `etapa_do_funil`, motivo `critical_stage`)
- * e aviso na Central. NÃO manda mensagem ao cliente: a etapa é escolha do
- * escritório para um momento em que uma pessoa já conduz (análise do caso,
- * assinatura), e um "vou te passar para a equipe" ali seria anúncio de algo que
- * já aconteceu.
+ * e aviso na Central.
+ *
+ * O cliente é AVISADO quando escreveu — "nenhuma passagem para humano sai
+ * calada" (`tests/unit/handoff-avisa-o-lead.test.ts`): sem o aviso, quem mandou
+ * "já enviei os documentos" falaria para o vazio. A frase é a do motivo `outro`
+ * ("passei seu pedido para alguém da equipe"), e sai ANTES da trava, que armaria
+ * o `stopGate` e mataria o envio. No follow-up ninguém escreveu nada: ali não há
+ * a quem responder, e uma mensagem "passei seu pedido" sem pedido seria ruído —
+ * o chamador passa `aviso: null` e a passagem acontece calada de propósito.
  *
  * Devolver para a IA com o negócio ainda na etapa faz a próxima mensagem passar
  * de novo: é a regra pedida. O aviso da Central diz isso com todas as letras —
@@ -47,6 +52,11 @@ import { traduzir } from '@/lib/i18n/dicionario';
 import type { Idioma } from '@/lib/i18n/idiomas';
 
 import type { Logger } from '../obs/logger';
+import {
+  avisarLeadLendoOContato,
+  type AvisoDeEscalacaoIds,
+  type AvisoDeEscalacaoOpts,
+} from './aviso-de-escalacao';
 import { idiomaDaOrganizacao, performHumanHandoff } from './human-handoff';
 
 export interface EtapaQueExigeHumano {
@@ -98,27 +108,43 @@ export function tituloDoAvisoDaEtapa(etapaNome: string, idioma: Idioma): string 
 
 /**
  * Passa a conversa para uma pessoa porque o negócio está numa etapa marcada.
- * `checkpoint` vem do chamador (o turno já o lê): importar o leitor daqui
- * criaria um ciclo com inbound-turn.ts.
+ *
+ * `checkpoint` e as peças do aviso (canal, origem, relógio) vêm do chamador:
+ * importar o leitor de checkpoint ou o tipo do turno daqui criaria um ciclo com
+ * inbound-turn.ts. `aviso: null` = ninguém escreveu (follow-up) — ver o cabeçalho.
  */
 export async function passarParaHumanoPelaEtapa(
   db: pg.Pool,
-  ids: { tenantId: string; leadId: string; conversationId: string },
+  ids: AvisoDeEscalacaoIds,
   etapa: EtapaQueExigeHumano,
-  opts: { checkpoint: CheckpointParaBriefing | null; log: Logger },
+  opts: {
+    checkpoint: CheckpointParaBriefing | null;
+    log: Logger;
+    aviso: Omit<AvisoDeEscalacaoOpts, 'optedOutThisTurn' | 'lgpd' | 'motivo' | 'log'> | null;
+  },
 ): Promise<void> {
   const briefing = montarBriefingDaPassagem({
     checkpoint: opts.checkpoint,
     motivo: { codigo: 'critical_stage' },
   });
+  // O aviso ANTES da trava: `force_human` arma o `stopGate` e mataria o envio.
+  const desfecho =
+    opts.aviso === null
+      ? null
+      : await avisarLeadLendoOContato(db, ids, { ...opts.aviso, motivo: 'outro', log: opts.log });
   const idioma = await idiomaDaOrganizacao(db, ids.tenantId, opts.log);
-  await performHumanHandoff(db, ids, {
-    reason: 'critical_stage',
-    conversationSummary: briefing.body,
-    inboxTitle: tituloDoAvisoDaEtapa(etapa.etapaNome, idioma),
-    passagem: { origem: 'etapa_do_funil', motivoCodigo: 'critical_stage', briefing, idioma },
-    log: opts.log,
-  });
+  await performHumanHandoff(
+    db,
+    { tenantId: ids.tenantId, leadId: ids.leadId, conversationId: ids.conversationId },
+    {
+      reason: 'critical_stage',
+      conversationSummary: briefing.body,
+      inboxTitle: tituloDoAvisoDaEtapa(etapa.etapaNome, idioma),
+      passagem: { origem: 'etapa_do_funil', motivoCodigo: 'critical_stage', briefing, idioma },
+      ...(desfecho !== null ? { avisoAoLead: desfecho } : {}),
+      log: opts.log,
+    },
+  );
   // Só ids e o motivo: nome da etapa e do cliente ficam fora do log (regra 8).
   opts.log.info('handoff humano — negócio numa etapa "só atendimento humano"', {
     negocio_id: etapa.negocioId,

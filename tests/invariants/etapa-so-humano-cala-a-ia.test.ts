@@ -16,7 +16,8 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  *
  * O caso de aceite, pelo handler REAL de `inbound_turn` contra o `baseline.sql`:
  * o cliente escreve com o negócio na etapa marcada → o modelo não é chamado,
- * nada sai, e a conversa vai para uma pessoa — `force_human`, conversa
+ * sai só o aviso de que uma pessoa vai continuar, e a conversa vai para uma
+ * pessoa — `force_human`, conversa
  * silenciada, aviso na Central com o nome da etapa e a linha da passagem com
  * origem `etapa_do_funil`. Os controles: a mesma etapa sem a marca, e o negócio
  * já GANHO na etapa marcada, deixam a IA responder.
@@ -259,7 +260,9 @@ describe("etapa só atendimento humano, no turno real do agent-engine", () => {
     await clienteEscreve("Oi, já mandei os documentos");
 
     expect(modeloChamado, "o modelo foi chamado com o negócio numa etapa só humana").toBe(0);
-    expect(enviados, "saiu mensagem para o cliente").toBe(0);
+    // Uma mensagem só: o AVISO de que uma pessoa vai continuar ("nenhuma passagem
+    // sai calada"). Resposta da IA, nenhuma.
+    expect(enviados, "o cliente que escreveu tem de ser avisado, e só avisado").toBe(1);
     const estado = await estadoDoHandoff();
     expect(estado.forceHuman).toBe(true);
     expect(estado.silenciada).toBe(true);
@@ -275,6 +278,7 @@ describe("etapa só atendimento humano, no turno real do agent-engine", () => {
     await clienteEscreve("Alguém aí?");
 
     expect(modeloChamado).toBe(0);
+    expect(enviados, "o aviso sai uma vez, na passagem — não a cada mensagem").toBe(1);
     const estado = await estadoDoHandoff();
     expect(estado.avisos).toHaveLength(1);
     expect(estado.passagens).toHaveLength(1);

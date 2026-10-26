@@ -75,6 +75,9 @@ const FONTES = [
   "lib/agent-engine/agent/human-handoff.ts",
   "lib/ai/handoff/orchestrator.ts",
   "app/api/v1/ai/cases/[id]/reply/route.ts",
+  // Fork, migration 9005: a etapa "só atendimento humano". Avisa quem escreveu;
+  // no follow-up (ninguém escreveu) o chamador passa `aviso: null`.
+  "lib/agent-engine/agent/etapa-exige-humano.ts",
 ] as const;
 
 /**

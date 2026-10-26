@@ -2004,11 +2004,32 @@ async function executarTurnoDoAgente(
   if (!preview) {
     const etapa = await etapaQueExigeHumano(pool, tenantId, leadId);
     if (etapa !== null) {
+      // Avisa só quem escreveu (resposta/caso). O follow-up escrito pela IA também
+      // passa por aqui, e nele ninguém perguntou nada — ver `etapa-exige-humano.ts`.
+      const respondeAlguem = eTurnoDeResposta(liveJob());
       await passarParaHumanoPelaEtapa(
         pool,
-        { tenantId, leadId, conversationId: input.conversationId },
+        {
+          tenantId,
+          leadId,
+          conversationId: input.conversationId,
+          channelSessionId: input.channelSessionId,
+          jobId: liveJob().id,
+        },
         etapa,
-        { checkpoint: await latestCheckpoint(pool, tenantId, leadId), log: runLog },
+        {
+          checkpoint: await latestCheckpoint(pool, tenantId, leadId),
+          log: runLog,
+          aviso: respondeAlguem
+            ? {
+                channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+                origem: tipoDeEnvio(true),
+                now: clock(),
+                ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+                ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              }
+            : null,
+        },
       );
       runLog.info('turno pulado — negócio numa etapa "só atendimento humano"', { kind: liveJob().kind });
       return;

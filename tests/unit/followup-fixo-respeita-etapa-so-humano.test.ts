@@ -117,9 +117,10 @@ describe("follow-up de texto fixo × etapa só atendimento humano", () => {
     expect(passarParaHumanoPelaEtapa).toHaveBeenCalledTimes(1);
     expect(passarParaHumanoPelaEtapa).toHaveBeenCalledWith(
       expect.anything(),
-      { tenantId: ORG, leadId: CONTATO, conversationId: CONVERSA },
+      { tenantId: ORG, leadId: CONTATO, conversationId: CONVERSA, channelSessionId: CANAL, jobId: "job-1" },
       { negocioId: "n1", etapaId: "e1", etapaNome: "Análise humana" },
-      expect.objectContaining({ checkpoint: null }),
+      // Ninguém escreveu no follow-up: a passagem acontece sem mensagem ao cliente.
+      expect.objectContaining({ checkpoint: null, aviso: null }),
     );
     expect(completeFollowupTurn).toHaveBeenCalledWith(
       expect.anything(),

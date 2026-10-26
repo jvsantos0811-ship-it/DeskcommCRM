@@ -1165,10 +1165,13 @@ async function sendFixedOutbound(
   // passa para uma pessoa — mesma regra do turno da IA (`etapa-exige-humano.ts`).
   const etapa = await etapaQueExigeHumano(pool, tenantId, leadId);
   if (etapa !== null) {
-    await passarParaHumanoPelaEtapa(pool, { tenantId, leadId, conversationId }, etapa, {
-      checkpoint: await latestCheckpoint(pool, tenantId, leadId),
-      log: runLog,
-    });
+    // `aviso: null`: no follow-up ninguém escreveu — não há a quem responder.
+    await passarParaHumanoPelaEtapa(
+      pool,
+      { tenantId, leadId, conversationId, channelSessionId, jobId: job.id },
+      etapa,
+      { checkpoint: await latestCheckpoint(pool, tenantId, leadId), log: runLog, aviso: null },
+    );
     runLog.info('envio fixo pulado — negócio numa etapa "só atendimento humano"', { kind: job.kind });
     return { kind: "skipped" };
   }
