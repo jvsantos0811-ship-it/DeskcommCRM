@@ -696,6 +696,21 @@ export function StagesSection({
                 {t("Avisar a equipe na Central quando um negócio entrar aqui")}
               </label>
 
+              {/* Etapa "só atendimento humano" (`crm_stages.requires_human`). A
+                  regra mora no motor (`etapa-exige-humano.ts`): com um negócio
+                  aberto aqui, a IA não fala com o cliente e a conversa vai para
+                  uma pessoa, com aviso na Central. */}
+              <label className="flex items-center gap-2 text-xs text-text-muted">
+                <Switch
+                  checked={etapa.requires_human === true}
+                  onCheckedChange={(v) => aplicar(etapa.id, { requires_human: v })}
+                  disabled={ocupado}
+                  aria-label={`${t("Só atendimento humano em")} «${etapa.name}»`}
+                  data-testid={`so-humano-${etapa.id}`}
+                />
+                {t("Só atendimento humano: com um negócio aqui, a IA não responde o cliente e chama a equipe")}
+              </label>
+
               {passo && (
                 <p className="text-xs text-text-muted" data-testid={`passo-de-${etapa.id}`}>
                   {t("O assistente usa esta etapa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}

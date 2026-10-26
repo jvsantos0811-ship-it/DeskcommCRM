@@ -123,6 +123,7 @@ import {
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
+import { etapaQueExigeHumano, passarParaHumanoPelaEtapa } from './etapa-exige-humano';
 import {
   maybeCompact,
   renderCompactedSummary,
@@ -1993,6 +1994,25 @@ async function executarTurnoDoAgente(
   if (!preview && (await isLeadInHandoff(pool, tenantId, leadId))) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: liveJob().kind });
     return;
+  }
+
+  // ETAPA "SÓ ATENDIMENTO HUMANO" (`crm_stages.requires_human`): o negócio aberto
+  // do contato está numa etapa que o escritório reservou para uma pessoa. Mesmo
+  // lugar e mesmo custo do veto acima — antes de qualquer modelo —, mas aqui a
+  // passagem ACONTECE (aviso na Central), porque ninguém a abriu ainda. A regra
+  // e o porquê estão em `etapa-exige-humano.ts`.
+  if (!preview) {
+    const etapa = await etapaQueExigeHumano(pool, tenantId, leadId);
+    if (etapa !== null) {
+      await passarParaHumanoPelaEtapa(
+        pool,
+        { tenantId, leadId, conversationId: input.conversationId },
+        etapa,
+        { checkpoint: await latestCheckpoint(pool, tenantId, leadId), log: runLog },
+      );
+      runLog.info('turno pulado — negócio numa etapa "só atendimento humano"', { kind: liveJob().kind });
+      return;
+    }
   }
 
   // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).

@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/ai/decisao/roteador', () => ({ consultarJevNoRoteador: mocks.jev }));
 vi.mock('@/lib/agent-engine/agent/router-config', () => ({ loadActiveRouter: mocks.router }));
+// A etapa "só atendimento humano" faz uma leitura própria no começo do turno
+// (`etapa-exige-humano.ts`); este arquivo mede outra coisa e o seu pool genérico
+// responderia a ela com uma linha que não é de etapa. Fora do caminho, explícito.
+vi.mock('@/lib/agent-engine/agent/etapa-exige-humano', () => ({
+  etapaQueExigeHumano: vi.fn(async () => null),
+  passarParaHumanoPelaEtapa: vi.fn(),
+}));
 vi.mock('@/lib/agent-engine/agent/intent-classifier', () => ({ classifyIntent: mocks.classify }));
 vi.mock('@/lib/agent-engine/agent/agent-config', () => ({
   loadPublishedAgentConfigById: mocks.byId, loadPublishedAgentConfig: mocks.bySession,

@@ -47,6 +47,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/agent-engine/agent/router-config', () => ({ loadActiveRouter: mocks.router }));
+// A etapa "só atendimento humano" faz uma leitura própria no começo do turno
+// (`etapa-exige-humano.ts`); este arquivo mede outra coisa e o seu pool genérico
+// responderia a ela com uma linha que não é de etapa. Fora do caminho, explícito.
+vi.mock('@/lib/agent-engine/agent/etapa-exige-humano', () => ({
+  etapaQueExigeHumano: vi.fn(async () => null),
+  passarParaHumanoPelaEtapa: vi.fn(),
+}));
 vi.mock('@/lib/agent-engine/agent/intent-classifier', () => ({ classifyIntent: mocks.classify }));
 // O spread do original É obrigatório aqui: o ramo assistido agora usa
 // `matchesHandoffKeyword` DESTE módulo. Mock de módulo inteiro sem ele deixava

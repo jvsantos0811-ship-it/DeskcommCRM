@@ -58859,3 +58859,15 @@ begin
     execute 'alter publication supabase_realtime add table public.team_chat_messages';
   end if;
 end $$;
+
+
+-- ---- etapa exige humano no motor de agentes (migration 9005) ----
+alter table public.passagens_de_atendimento
+  drop constraint if exists passagens_de_atendimento_origem_check;
+alter table public.passagens_de_atendimento
+  add constraint passagens_de_atendimento_origem_check
+  check (origem in (
+    'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
+    'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
+    'legado_juridico','legado_etapa','legado_confianca','legado_teto',
+    'mcp_externo','runtime_nativo','etapa_do_funil'));

@@ -44,6 +44,8 @@ export interface PatchDeEtapa {
   win_probability?: number | null;
   /** Negócio que entra nesta etapa abre um aviso na Central (migration 0440). */
   avisar_na_central?: boolean;
+  /** Etapa "só atendimento humano": a IA não fala com o cliente com o negócio aqui. */
+  requires_human?: boolean;
   /**
    * Janela de "esfriando" da etapa, em HORAS (issue #1532). `null` limpa a
    * configuração e a etapa volta ao padrão de 24 h/72 h. Fora de 1 a 8760
