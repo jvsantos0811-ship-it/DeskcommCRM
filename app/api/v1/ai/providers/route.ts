@@ -39,12 +39,19 @@ import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-a
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 import { decidirTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
+import { anunciarEmbedding, type AnuncioDoEmbedding } from "@/lib/ai/embeddings/anuncio";
+import type { PontoDeEmbedding } from "@/lib/ai/embeddings/chave";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { temPrecoNoMotor } from "@/lib/agent-engine/edge/llm/pricing";
 
 export const dynamic = "force-dynamic";
+
+/** Chave do dicionário: a leitura da chave do material falhou, e a tela não chuta. */
+const NAO_CONFIRMEI_O_EMBEDDING =
+  "Não consegui confirmar agora qual chave prepara o seu material. Recarregue em instantes.";
 
 interface ModeloDoCatalogo {
   provider: string;
@@ -195,6 +202,31 @@ export async function GET(): Promise<Response> {
     chaveOpenai: async () => chaveExiste("openai"),
   });
 
+  // ─── QUEM PREPARA E BUSCA O MATERIAL: a MESMA escada do indexador ────────
+  //
+  // Fork, item 8. Os dois pontos de embedding eram `fixo` sem resposta própria,
+  // e o resolvedor caía no padrão da organização: o painel anunciava o modelo
+  // de conversa onde nenhum vetor sai dele. Aqui a tela pergunta a
+  // `resolverChaveDeEmbedding` — a função que o indexador e a busca chamam —
+  // com o mesmo ponto. É informação: se a pergunta falhar, o cartão diz que não
+  // conseguiu confirmar, e o resto do painel abre normalmente.
+  const PONTOS_DE_EMBEDDING: PontoDeEmbedding[] = ["embedding_indexar", "embedding_consultar"];
+  const anunciosDoEmbedding = new Map<string, AnuncioDoEmbedding>(
+    await Promise.all(
+      PONTOS_DE_EMBEDDING.map(async (id): Promise<[string, AnuncioDoEmbedding]> => {
+        try {
+          return [id, await anunciarEmbedding(org.orgId, id)];
+        } catch (err) {
+          logger.warn("ai_providers.anuncio_do_embedding_falhou", {
+            ponto: id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return [id, { provider: "", modelId: null, motivo: NAO_CONFIRMEI_O_EMBEDDING, avisos: [] }];
+        }
+      }),
+    ),
+  );
+
   const pontos = PONTOS_DE_IA.map((ponto) => {
     const decisao = decidirBinding({
       pontoId: ponto.id,
@@ -238,6 +270,7 @@ export async function GET(): Promise<Response> {
       // A escada só muda a resposta do ponto que ela governa; o resolvedor a
       // lê apenas em `fixo.escada`.
       transcricao,
+      embedding: anunciosDoEmbedding.get(ponto.id) ?? null,
     });
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);

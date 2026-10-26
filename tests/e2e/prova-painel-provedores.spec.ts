@@ -98,6 +98,12 @@ test("F1 — ponto fixo mostra a RAZÃO, não um cadeado mudo", async ({ page })
   );
   // E o ponto fixo NÃO oferece seletor — oferecer e ignorar seria a tela que mente.
   await expect(page.locator('[data-testid="provider-embedding_indexar"]')).toHaveCount(0);
+  // O que ele USA sai da escada de embedding (fork, item 8): um modelo de
+  // embedding, ou "—" quando a instalação não tem chave — nunca o modelo de
+  // conversa da organização, que era o que o painel anunciava aqui.
+  for (const id of ["embedding_indexar", "embedding_consultar"]) {
+    await expect(page.locator(`[data-testid="modelo-${id}"]`)).toHaveText(/(text-embedding|gemini-embedding)|^—$/);
+  }
   await page.screenshot({ path: "evidence/provedores/03-ponto-fixo-com-razao.png", fullPage: true });
 });
 

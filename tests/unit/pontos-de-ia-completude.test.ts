@@ -100,9 +100,12 @@ const FORA_DO_SEAM: Record<string, { arquivo: string; marcador: string }> = {
     marcador: "resolverModeloDoPonto",
   },
   embedding_indexar: { arquivo: "lib/ai/embed.ts", marcador: "embed(" },
+  // Apontava para `lib/agent-engine/edge/llm/embed.ts`, que nenhum código
+  // importava: o ponto estava "vivo" neste teste por um arquivo morto (fork,
+  // item 8). Quem embeda a pergunta do cliente é a busca do agente.
   embedding_consultar: {
-    arquivo: "lib/agent-engine/edge/llm/embed.ts",
-    marcador: "/v1/embeddings",
+    arquivo: "lib/agent-engine/agent/search-knowledge.ts",
+    marcador: "ponto: 'embedding_consultar'",
   },
   visao_de_imagem: {
     arquivo: "workers/media-derive-worker.ts",

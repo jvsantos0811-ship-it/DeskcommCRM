@@ -256,9 +256,11 @@ const envSchema = z.object({
   RAG_TOP_K: z.coerce.number().int().positive().default(5),
   RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.40),
   RAG_MAX_TOKENS: z.coerce.number().int().positive().default(2_000),
-  RAG_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
-  RAG_EMBEDDING_API_KEY: z.string().min(1).optional(),
-  RAG_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  // RAG_EMBEDDING_MODEL / _API_KEY / _TIMEOUT_MS saíram (fork, item 8): só
+  // `lib/agent-engine/edge/llm/embed.ts` os lia, e nenhum código importava esse
+  // arquivo. A busca do agente embeda por `lib/ai/embed.ts`, com a chave da
+  // organização (`lib/ai/embeddings/chave.ts`). Um `.env` antigo que ainda as
+  // traga não quebra: chave desconhecida é ignorada pelo schema.
   // Flywheel agendado (4B): rodada judge→distiller sobre turnos reais a cada
   // intervalo. 0 = OFF (só o gatilho manual pnpm flywheel:judge). Gate humano
   // sempre: proposta nunca vira comportamento sem o dono publicar na tela.

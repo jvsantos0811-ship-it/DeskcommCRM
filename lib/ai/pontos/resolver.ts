@@ -41,6 +41,7 @@
  * unitário. O I/O fica em quem chama.
  */
 import { PROVEDORES } from "./provedores";
+import type { AnuncioDoEmbedding } from "@/lib/ai/embeddings/anuncio";
 import type { DecisaoDeTranscricao } from "@/lib/messaging/media/escada-de-transcricao";
 import { PONTO_POR_ID, type PontoDeIa } from "./registro";
 
@@ -151,6 +152,12 @@ export interface EntradaDaDecisao {
    * entregue ele NÃO inventa `whisper-1`: devolve "—" e diz que faltou.
    */
   transcricao?: DecisaoDeTranscricao | null;
+  /**
+   * O que a escada de embedding (`resolverChaveDeEmbedding`) escolheu para ESTE
+   * ponto, já perguntado por quem tem os dados — a rota do painel (fork, item
+   * 8). Mesma regra da transcrição: sem nada entregue, "—" com o motivo.
+   */
+  embedding?: AnuncioDoEmbedding | null;
 }
 
 export interface DecisaoDeBinding {
@@ -390,7 +397,31 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   // O ponto marcado com `fixo.escada` não tem resposta própria: ele devolve o
   // que a escada decidiu (quem chama é quem tem os dados), e SEM escada
   // entregue não anuncia nada — "—" com o motivo é a única resposta honesta.
-  if (ponto?.fixo?.escada) {
+  if (ponto?.fixo?.escada === "embedding") {
+    const anuncio = entrada.embedding;
+    if (!anuncio) {
+      return {
+        provider: "",
+        modelId: null,
+        credentialId: null,
+        baseUrl: null,
+        origem: "fixo_do_produto",
+        motivo: "a chave do material não foi resolvida nesta chamada — não há o que anunciar",
+        avisos,
+      };
+    }
+    return {
+      provider: anuncio.provider,
+      modelId: anuncio.modelId,
+      credentialId: null,
+      baseUrl: null,
+      origem: "fixo_do_produto",
+      motivo: anuncio.motivo,
+      avisos: [...avisos, ...anuncio.avisos],
+    };
+  }
+
+  if (ponto?.fixo?.escada === "transcricao") {
     const escada = entrada.transcricao;
     if (!escada) {
       return {

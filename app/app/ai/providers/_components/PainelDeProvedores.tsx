@@ -528,7 +528,9 @@ function CartaoDoPonto({
           )}
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <div className="font-mono">{ponto.efetivo.modelId ?? "—"}</div>
+          <div className="font-mono" data-testid={`modelo-${ponto.id}`}>
+            {ponto.efetivo.modelId ?? "—"}
+          </div>
           <div data-testid={`origem-${ponto.id}`}>{t(ponto.efetivo.porQue)}</div>
         </div>
       </div>
