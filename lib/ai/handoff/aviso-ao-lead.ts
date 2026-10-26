@@ -35,10 +35,10 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  *
  * Chamado ANTES do UPDATE que silencia. Do lado do motor a ordem é obrigatória
  * (o `force_human` que ele grava arma o `stopGate` e mata o envio seguinte);
- * deste lado ela é apenas honesta — `triggerHandoff` não grava `force_human`, e
- * o silêncio que ele grava não é lido pelo caminho de envio. Mantê-la igual nos
- * dois evita que alguém "otimize" um deles sem perceber que no outro isso apaga
- * a mensagem.
+ * deste lado ela passou a ser obrigatória também: desde o item 2.3 do briefing
+ * do Operador (26/10/2026), `triggerHandoff` grava `force_human` logo depois do
+ * silêncio (Step 1b). Mantê-la igual nos dois evita que alguém "otimize" um
+ * deles sem perceber que isso apaga a mensagem.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
