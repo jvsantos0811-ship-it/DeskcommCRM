@@ -210,7 +210,11 @@ type ConfigOf<T extends NodeType> = Extract<FlowNode, { type: T }>["config"];
 
 /** "15 min", com espaço — o mesmo formato do card de espera, que dizia "5 min" enquanto este dizia "15min". */
 function minutos(ms: number): string {
-  return `${Math.round(ms / 60_000)} min`;
+  // A unidade que cabe sem resto (fork, item 5): 43200 min é "30 d", não "43200 min".
+  const min = Math.round(ms / 60_000);
+  if (min > 0 && min % 1440 === 0) return `${min / 1440} d`;
+  if (min > 0 && min % 60 === 0) return `${min / 60} h`;
+  return `${min} min`;
 }
 
 /**
@@ -232,9 +236,12 @@ export function describeNodeConfig(
       return t("Início do fluxo");
     case "wait": {
       const c = config as ConfigOf<"wait">;
-      return c.mode === "fixed"
-        ? minutos(c.duration_ms)
-        : `${Math.round(c.min_ms / 60_000)}–${minutos(c.max_ms)} ${t("(adaptativo)")}`;
+      if (c.mode === "fixed") {
+        return c.immune_to_reply === true
+          ? `${minutos(c.duration_ms)} · ${t("não encurta com resposta")}`
+          : minutos(c.duration_ms);
+      }
+      return `${minutos(c.min_ms)}–${minutos(c.max_ms)} ${t("(adaptativo)")}`;
     }
     case "condition": {
       const c = config as ConfigOf<"condition">;

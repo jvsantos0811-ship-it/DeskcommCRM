@@ -150,7 +150,11 @@ describe("avisos do gatilho na publicacao", () => {
 
   it("fluxo de silencio cru rende os TRES avisos", () => {
     const avisos = avisosDoGatilho(silencio({}));
-    expect(avisos.map((a) => a.code).sort()).toEqual([...PUBLISH_WARNING_CODES].sort());
+    // Os avisos DO GATILHO são os de silêncio; `resposta_adianta_o_fluxo` (fork,
+    // item 5) olha o grafo e vive em `avisosDaResposta`.
+    const doGatilho = PUBLISH_WARNING_CODES.filter((c) => c.startsWith("silencio_"));
+    expect(doGatilho).toHaveLength(3);
+    expect(avisos.map((a) => a.code).sort()).toEqual([...doGatilho].sort());
   });
 
   it("cada knob preenchido cala o seu aviso, e so o seu", () => {

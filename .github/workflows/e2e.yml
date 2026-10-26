@@ -1172,6 +1172,7 @@ jobs:
         inbox-selecionada-no-escuro.spec.ts
         inbox-anuncio-de-origem.spec.ts
         followup-builder.spec.ts
+        espera-em-dias-e-imune.spec.ts
         followup-journey.spec.ts
         followup-dossie.spec.ts
         followup-queue.spec.ts

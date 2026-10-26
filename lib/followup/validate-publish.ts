@@ -82,6 +82,11 @@ export const PUBLISH_WARNING_CODES = [
   'silencio_sem_limite_de_repeticoes',
   /** Fluxo de silêncio que alcança quem a EQUIPE não respondeu. */
   'silencio_alcanca_nao_atendido',
+  /**
+   * Fork, item 5: sem `cancel_on_reply`, a resposta do cliente ADIANTA a espera
+   * em curso em vez de parar o fluxo — o próximo passo sai logo depois.
+   */
+  'resposta_adianta_o_fluxo',
 ] as const;
 export type PublishWarningCode = (typeof PUBLISH_WARNING_CODES)[number];
 
@@ -135,6 +140,44 @@ export interface ContextoDoPublish {
    * existem na organização (`carregaModelosCitados`). Ausente = não confere.
    */
   modelos?: ModelosDaConta;
+}
+
+/**
+ * Fork, briefing do Operador item 5 — o fluxo em que a resposta do cliente
+ * ADIANTA a régua em vez de pará-la.
+ *
+ * `cancel_on_reply` nasce desligado (`lib/followup/reactivity.ts`). Sem ele, a
+ * resposta grava `inbound_woke` e corta o timer da espera em curso: numa régua
+ * de vendas ("espera 2 dias → manda lembrete"), quem respondeu "vou ver" recebe
+ * o lembrete na hora. Aviso, e não erro, pela razão do bloco acima: é escolha
+ * legítima em alguns fluxos (o lembrete de consulta que deve sair de qualquer
+ * jeito), e reprovar fluxo publicado e funcionando quebraria dado alheio.
+ *
+ * Só avisa quando há o que adiantar: uma espera que a resposta encurta (a imune
+ * não encurta) ligada DIRETO a um passo que manda. Espera seguida de
+ * classificação ou de "casar resposta" é o desenho pedido — a resposta é lida
+ * por esse nó, e o próximo envio depende do que ela disse. O gatilho de falta
+ * em agendamento não oferece a opção, então não tem do que ser avisado.
+ */
+export function avisosDaResposta(
+  nodes: readonly FlowNode[],
+  edges: readonly FlowEdge[],
+  trigger: TriggerConfig | undefined,
+): PublishValidationWarning[] {
+  if (!trigger || trigger.kind === 'appointment_no_show') return [];
+  if ((trigger as { cancel_on_reply?: boolean }).cancel_on_reply === true) return [];
+  const porId = new Map(nodes.map((n) => [n.id, n]));
+  const encurta = (n: FlowNode | undefined) =>
+    n?.type === 'wait' && !(n.config.mode === 'fixed' && n.config.immune_to_reply === true);
+  const adianta = edges.some((e) => encurta(porId.get(e.source)) && porId.get(e.target)?.type === 'action');
+  if (!adianta) return [];
+  return [
+    {
+      code: 'resposta_adianta_o_fluxo',
+      message:
+        'Com “Cancelar se o lead responder” desligado, a resposta do cliente não para este fluxo: ela ENCURTA a espera em curso, e o próximo passo sai logo em seguida. Numa régua de vendas, ligue essa opção no gatilho.',
+    },
+  ];
 }
 
 /** Chave do dicionário (a rota traduz): a frase não cita id, que a pessoa não lê. */
@@ -1225,7 +1268,7 @@ export function validateFlowForPublish(
     });
   }
 
-  const warnings = avisosDoGatilho(contexto.trigger);
+  const warnings = [...avisosDoGatilho(contexto.trigger), ...avisosDaResposta(nodes, edges, contexto.trigger)];
 
   if (errors.length === 0) {
     return warnings.length > 0 ? { ok: true, warnings } : { ok: true };

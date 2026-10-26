@@ -335,9 +335,14 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
  * contexto do contato e do negócio (#2528), com `{{nome}}`, `{{primeiro_nome}}`,
  * `{{contact.*}}` e `{{lead.*}}` pelo MESMO renderizador das automações.
  *
- * `contexto` fica opcional de propósito: `prompt_hint` (modo `ai_message`) é
- * orientação pro MODELO, não texto pro cliente, e segue só com a volta.
- * Sem contexto o comportamento é o de antes — marcação literais.
+ * `contexto` fica opcional de propósito: sem contexto o comportamento é o de
+ * antes — marcação literais.
+ *
+ * `prompt_hint` (modo `ai_message`) passou a receber o contexto também (fork,
+ * briefing do Operador item 5). É orientação pro MODELO, mas quem escreve
+ * "pergunte se {{primeiro_nome}} já tem a data do parto" espera que o modelo
+ * leia o nome, não a marcação — e o modelo já recebe o contato no contexto do
+ * turno, então nada novo sai do banco por aqui.
  *
  * A ordem não é livre: a volta entra PRIMEIRO, senão o render de CRM apagaria
  * `{{volta}}` (não é campo de contato nem de negócio).
@@ -368,7 +373,7 @@ function turnPayloadExtras(
 ): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
     return {
-      prompt_hint: interpolarVolta(node.config.prompt_hint, events),
+      prompt_hint: interpolarVolta(node.config.prompt_hint, events, contexto),
       ...(node.config.fallback_template_id ? { fallback_template_id: node.config.fallback_template_id } : {}),
     };
   }
@@ -1066,10 +1071,18 @@ async function processEnrollment(
   // `fixed_body`: o worker (`followup-turn.ts`) e o atalho inline
   // (`enviar-texto-fixo.ts`), que não tem segunda passada. Só o nó que manda
   // texto paga a leitura — os demais não renderizam nada.
-  const contexto =
-    result.kind === "enqueue_turn" && node.type === "action" && node.config.mode === "text"
-      ? await db.loadRenderContext?.(enrollment.organization_id, enrollment.contact_id)
-      : null;
+  //
+  // O passo de IA também paga, mas SÓ quando a orientação tem marcação (fork,
+  // briefing do Operador item 5): "pergunte se {{primeiro_nome}} já tem a data"
+  // ia ao modelo com a marcação crua. Sem `{{`, nada muda — nem a leitura.
+  const precisaDoContexto =
+    result.kind === "enqueue_turn" &&
+    node.type === "action" &&
+    (node.config.mode === "text" ||
+      (node.config.mode === "ai_message" && node.config.prompt_hint.includes("{{")));
+  const contexto = precisaDoContexto
+    ? await db.loadRenderContext?.(enrollment.organization_id, enrollment.contact_id)
+    : null;
 
   await applyResult(
     deps,
