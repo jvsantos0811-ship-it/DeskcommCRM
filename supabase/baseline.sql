@@ -55743,6 +55743,135 @@ create trigger trg_contato_anonimizado_esquece_a_agenda
   when (new.is_anonymized is true and new.address_book_name is not null)
   execute function public.fn_contato_anonimizado_esquece_a_agenda();
 
+-- ---- o remove_tag subtrai no UPDATE, sob a trava da linha (migration 9006, fork) ----
+-- Espelho de remoção da 0682. ANTES da VARREDURA anon: função nova em `public`
+-- nasce exposta, e a varredura é quem cura quem ATUALIZA.
+create or replace function public.fn_lead_remover_etiquetas(
+  p_org uuid,
+  p_lead uuid,
+  p_etiquetas text[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_antes     text[];
+  v_removidas text[];
+  v_depois    text[];
+begin
+  if p_etiquetas is null or cardinality(p_etiquetas) = 0 then
+    raise exception 'etiquetas_vazio' using errcode = '22023';
+  end if;
+
+  -- Sem linha (inexistente OU de outra organização): devolve nulo, sem dizer se
+  -- ela existe em outro lugar.
+  select coalesce(tags, '{}'::text[])
+    into v_antes
+    from public.crm_leads
+   where organization_id = p_org and id = p_lead
+     for update;
+  if not found then
+    return null;
+  end if;
+
+  v_removidas := array(
+    select t from unnest(v_antes) as t
+     where lower(btrim(t)) in (select lower(btrim(e)) from unnest(p_etiquetas) as e where e is not null)
+  );
+
+  -- Nada a remover: sem escrita.
+  if cardinality(v_removidas) = 0 then
+    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
+  end if;
+
+  update public.crm_leads
+     set tags = array(
+                  select t from unnest(coalesce(tags, '{}'::text[])) with ordinality as x(t, i)
+                   where lower(btrim(t)) not in (select lower(btrim(e)) from unnest(p_etiquetas) as e where e is not null)
+                   order by i
+                ),
+         updated_at = now()
+   where organization_id = p_org and id = p_lead
+   returning tags into v_depois;
+
+  return jsonb_build_object(
+    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
+    'removidas', to_jsonb(v_removidas)
+  );
+end
+$fn$;
+
+create or replace function public.fn_contato_remover_etiquetas(
+  p_org uuid,
+  p_contato uuid,
+  p_etiquetas text[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_antes     text[];
+  v_removidas text[];
+  v_depois    text[];
+begin
+  if p_etiquetas is null or cardinality(p_etiquetas) = 0 then
+    raise exception 'etiquetas_vazio' using errcode = '22023';
+  end if;
+
+  select coalesce(tags, '{}'::text[])
+    into v_antes
+    from public.contacts
+   where organization_id = p_org and id = p_contato
+     for update;
+  if not found then
+    return null;
+  end if;
+
+  v_removidas := array(
+    select t from unnest(v_antes) as t
+     where lower(btrim(t)) in (select lower(btrim(e)) from unnest(p_etiquetas) as e where e is not null)
+  );
+
+  if cardinality(v_removidas) = 0 then
+    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
+  end if;
+
+  update public.contacts
+     set tags = array(
+                  select t from unnest(coalesce(tags, '{}'::text[])) with ordinality as x(t, i)
+                   where lower(btrim(t)) not in (select lower(btrim(e)) from unnest(p_etiquetas) as e where e is not null)
+                   order by i
+                ),
+         updated_at = now()
+   where organization_id = p_org and id = p_contato
+   returning tags into v_depois;
+
+  return jsonb_build_object(
+    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
+    'removidas', to_jsonb(v_removidas)
+  );
+end
+$fn$;
+
+-- As DUAS origens de EXECUTE (default privileges do baseline e o grant a PUBLIC
+-- do Postgres): estas funções ESCREVEM e não decidem organização nem papel.
+revoke all on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
+revoke all on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
+grant execute on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) to service_role;
+grant execute on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) to service_role;
+
+comment on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) is
+  'Remove etiquetas do negócio DENTRO do UPDATE, numa única instrução atômica, e devolve as etiquetas gravadas e as removidas. '
+  'Espelho de fn_lead_adicionar_etiquetas para a ação remove_tag. Não decide papel nem organização — isso é de quem chama.';
+comment on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) is
+  'Remove etiquetas do contato DENTRO do UPDATE, numa única instrução atômica. Espelho de fn_contato_adicionar_etiquetas.';
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

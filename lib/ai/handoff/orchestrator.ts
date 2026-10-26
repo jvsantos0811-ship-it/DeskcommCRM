@@ -297,6 +297,36 @@ export async function triggerHandoff(
       return { triggered: false, reason: "orchestrator_error" };
     }
 
+    // Step 1b — A TRAVA DO CONTATO, a mesma do caminho nativo.
+    //
+    // `performHumanHandoff` (agent-engine) grava `contacts.force_human = true`;
+    // este caminho — o do MCP `crm_request_human_handoff`, do sentimento, do
+    // worker legado e do teto de gasto — gravava só o silêncio DESTA conversa.
+    // Duas passagens para humano com duas travas diferentes: a do MCP não
+    // alcançava o `stopGate` da cadeia de envio, que lê `force_human`, e a
+    // elegibilidade das outras conversas do mesmo cliente. Igualadas aqui
+    // (briefing do Operador, 26/10/2026, item 2.3).
+    //
+    // Depois do aviso ao lead (Step 0) e do silêncio (Step 1), nesta ordem, pela
+    // mesma razão do motor: a trava arma o `stopGate` e mataria o aviso.
+    // Best-effort: a conversa já está silenciada e na fila humana, que é o que
+    // cala a IA; falhar aqui vira aviso no log, não desfaz a passagem. Quem
+    // devolve para a IA (`lib/escalacao/retomada.ts`) é o único que limpa.
+    if (contactId !== null) {
+      await guard();
+      const { error: travaErr } = await admin
+        .from("contacts")
+        .update({ force_human: true })
+        .eq("id", contactId)
+        .eq("organization_id", input.organizationId);
+      if (travaErr) {
+        logger.warn("[handoff-orchestrator] trava do contato (force_human) não gravada", {
+          conversation_id: input.conversationId,
+          error: travaErr.message,
+        });
+      }
+    }
+
     // Step 2 — timeline activity (best-effort; missing leadId is OK).
     if (input.leadId) {
       await guard();

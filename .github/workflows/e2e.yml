@@ -999,6 +999,7 @@ jobs:
         retorno-anti-morte.spec.ts
         webhooks.spec.ts
         designer-de-automacoes.spec.ts
+        automacao-troca-tag.spec.ts
         logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts

@@ -364,6 +364,30 @@ describe("o motor do CRM grava a passagem", () => {
     );
   });
 
+  it("o motor do CRM arma a trava do CONTATO, igual ao nativo — depois do silêncio da conversa", async () => {
+    // Item 2.3 do briefing do Operador (fork): `crm_request_human_handoff` (MCP)
+    // passava a conversa sem `contacts.force_human`, ao contrário de
+    // `performHumanHandoff`. A trava é o que o `stopGate` da cadeia de envio lê.
+    const antes = atualizados.length;
+    const r = await triggerHandoff({
+      conversationId: CONVERSA,
+      organizationId: ORG,
+      reason: "requested_human",
+      origem: "mcp_externo",
+    });
+
+    expect(r.triggered).toBe(true);
+    const deste = atualizados.slice(antes);
+    const trava = deste.findIndex((u) => u.tabela === "contacts" && u.valores.force_human === true);
+    const silencio = deste.findIndex((u) => u.tabela === "conversations" && "bot_silenced_until" in u.valores);
+    expect(trava, "a passagem pelo MCP não armou a trava do contato").toBeGreaterThanOrEqual(0);
+    expect(silencio).toBeGreaterThanOrEqual(0);
+    // Aviso (Step 0) → silêncio (Step 1) → trava (Step 1b): a trava arma o
+    // `stopGate`, e antes do aviso ela mataria a mensagem ao cliente.
+    expect(trava, "a trava veio antes do silêncio").toBeGreaterThan(silencio);
+    expect(vi.mocked(avisarLeadDoCrm)).toHaveBeenCalled();
+  });
+
   it("o aviso deste motor também aponta para a CONVERSA", async () => {
     await triggerHandoff({
       conversationId: CONVERSA,

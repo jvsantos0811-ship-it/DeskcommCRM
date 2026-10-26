@@ -325,6 +325,17 @@ export const editLeadTagConfigSchema = z.strictObject({
   tags: z
     .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
     .max(10, "No máximo 10 tags por caixa."),
+  /**
+   * Fork, migration 9006 — as tags que a caixa TIRA do lead antes de gravar as
+   * de `tags`. Com as duas listas a caixa TROCA (tira `1o-trimestre`, põe
+   * `2o-trimestre`); só com esta, ela só remove. Opcional: os fluxos que já
+   * existem não têm a chave e continuam só acrescentando. A remoção é a ação
+   * `remove_tag` (`lib/automation/actions/remove-tag.ts`), com os mesmos limites.
+   */
+  remover: z
+    .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
+    .max(10, "No máximo 10 tags por caixa.")
+    .optional(),
 });
 
 /**
