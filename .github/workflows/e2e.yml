@@ -759,6 +759,7 @@ jobs:
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
         etapa-avisa-na-central.spec.ts
+        etapa-so-humano.spec.ts
         gatilho-de-caso.spec.ts
         conversa-do-caso.spec.ts
         aviso-de-caso-no-whatsapp.spec.ts
@@ -998,6 +999,7 @@ jobs:
         retorno-anti-morte.spec.ts
         webhooks.spec.ts
         designer-de-automacoes.spec.ts
+        automacao-troca-tag.spec.ts
         logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts

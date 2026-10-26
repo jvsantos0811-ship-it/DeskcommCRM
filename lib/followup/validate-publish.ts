@@ -912,12 +912,19 @@ function conferirTags(
   node: Extract<FlowNode, { type: 'edit_lead_tag' }>,
   errors: PublishValidationError[]
 ): void {
+  // Fork, 9006: a caixa pode só REMOVER (`remover`), só gravar (`tags`) ou
+  // trocar (as duas). Vazio nas duas é a mesma mentira de antes.
   const tags = node.config.tags.map((t) => t.trim());
-  if (tags.length === 0 || tags.some((t) => t === '')) {
+  const remover = (node.config.remover ?? []).map((t) => t.trim());
+  if (
+    (tags.length === 0 && remover.length === 0) ||
+    tags.some((t) => t === '') ||
+    remover.some((t) => t === '')
+  ) {
     errors.push({
       node_id: node.id,
       code: 'tag_ausente',
-      message: `A caixa "${node.label}" não tem tag para gravar — escreva ao menos uma tag.`,
+      message: `A caixa "${node.label}" não tem tag para gravar nem para remover — escreva ao menos uma tag.`,
     });
   }
 }

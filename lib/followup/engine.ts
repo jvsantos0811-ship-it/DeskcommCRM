@@ -58,9 +58,11 @@ import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { getAction } from "@/lib/automation/actions";
-// Efeito de import: registra a ação `add_tag` no MESMO mapa que o motor de
-// automação usa. A tag do follow-up é a tag da automação — não uma segunda.
+// Efeito de import: registra as ações `add_tag` e `remove_tag` (fork, 9006) no
+// MESMO mapa que o motor de automação usa. A tag do follow-up é a tag da
+// automação — não uma segunda.
 import "@/lib/automation/actions/add-tag";
+import "@/lib/automation/actions/remove-tag";
 import { renderizarTextoDeFollowup } from "@/lib/automation/texto-do-followup";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
@@ -227,7 +229,8 @@ export interface AdminClient {
   }): Promise<void>;
   /**
    * Nó `edit_lead_tag` (#2065): merge idempotente de tags no lead — a MESMA
-   * `add_tag` do motor de automação. Opcional pelas mesmas razões acima.
+   * `add_tag` do motor de automação — e, desde a 9006 do fork, a remoção de
+   * `config.remover` pela `remove_tag`, antes. Opcional pelas mesmas razões acima.
    */
   editarTagDoLead?(item: {
     organization_id: string;
@@ -1479,20 +1482,32 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         if (contato) context.contact = contato;
       }
 
+      const ctxDaAcao = {
+        admin,
+        organizationId: item.organization_id,
+        ruleId: `followup:${item.enrollment_id}`,
+        ruleName: "Fluxo de follow-up",
+        event: {} as EventRow,
+        context,
+        requestId: `followup:${item.enrollment_id}`,
+      };
+
+      // Fork, 9006 — TROCAR é tirar e depois pôr, nesta ordem: com a mesma tag
+      // nas duas listas, ela termina gravada (o que a pessoa escreveu em "gravar"
+      // vence). Cada passo é atômico na linha; a troca inteira não — entre os
+      // dois, o lead fica um instante sem nenhuma das duas, nunca com as duas.
+      const remover = item.config.remover ?? [];
+      if (remover.length) {
+        const tirar = getAction("remove_tag");
+        if (!tirar) throw new Error("remove_tag_nao_registrada");
+        const saiu = await tirar.execute(ctxDaAcao, { tags: remover });
+        if (saiu.status === "failed") throw new Error(saiu.error ?? "remove_tag_failed");
+      }
+
+      if (!item.config.tags.length) return;
       const acao = getAction("add_tag");
       if (!acao) throw new Error("add_tag_nao_registrada");
-      const resultado = await acao.execute(
-        {
-          admin,
-          organizationId: item.organization_id,
-          ruleId: `followup:${item.enrollment_id}`,
-          ruleName: "Fluxo de follow-up",
-          event: {} as EventRow,
-          context,
-          requestId: `followup:${item.enrollment_id}`,
-        },
-        { tags: item.config.tags },
-      );
+      const resultado = await acao.execute(ctxDaAcao, { tags: item.config.tags });
       if (resultado.status === "failed") {
         throw new Error(resultado.error ?? "add_tag_failed");
       }

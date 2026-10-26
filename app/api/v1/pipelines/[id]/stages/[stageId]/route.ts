@@ -54,6 +54,12 @@ const bodySchema = z
     /** Negócio que entra nesta etapa abre um aviso na Central (migration 0440). */
     avisar_na_central: z.boolean().optional(),
     /**
+     * Etapa "só atendimento humano" (`crm_stages.requires_human`): com um
+     * negócio aberto nela, o agente de IA não fala com o cliente e passa a
+     * conversa para uma pessoa (`lib/agent-engine/agent/etapa-exige-humano.ts`).
+     */
+    requires_human: z.boolean().optional(),
+    /**
      * Janela de "esfriando" da etapa, em HORAS — a coluna
      * `crm_stages.expected_duration_hours`, que o radar já lê
      * (`resolveStageWindow`). `null` limpa e a etapa volta ao padrão de

@@ -50,6 +50,7 @@ export const VISUAL_DA_ACAO: Record<ActionType, VisualDaCaixa> = {
   send_email: { icon: EnvelopeSimple, paleta: "Enviar e-mail", ...SUCESSO },
   send_ai_message: { icon: Sparkle, paleta: "Mensagem pela IA", ...ACCENT_SOLIDO },
   add_tag: { icon: Tag, paleta: "Adicionar tag", ...ACCENT },
+  remove_tag: { icon: Tag, paleta: "Remover tag", ...ACCENT },
   assign_owner: { icon: UserCircle, paleta: "Atribuir atendente", ...INFO },
   call_webhook: { icon: WebhooksLogo, paleta: "Avisar outro sistema", ...ACCENT },
   start_message_flow: { icon: FlowArrow, paleta: "Iniciar follow-up", ...SUCESSO },

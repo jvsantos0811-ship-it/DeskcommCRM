@@ -111,10 +111,11 @@ describe("0173 — o comando da conversa muda o silêncio do automático", () =>
     // O DEFEITO QUE ESTE CASO EXISTE PARA IMPEDIR, e ele já esteve aqui:
     // a primeira versão limpava `bot_silenced_until` em TODO release, com a
     // justificativa de que "quem escalou também gravou contacts.force_human".
-    // Medido, é FALSO para `triggerHandoff` — o escalador do MCP
+    // Medido, ERA FALSO para `triggerHandoff` — o escalador do MCP
     // `crm_request_human_handoff`, do handler de sentimento, do worker legado e do
-    // teto de gasto (`grep -n force_human lib/ai/handoff/orchestrator.ts` → rc=1).
-    // Nesses caminhos o silêncio é a ÚNICA trava, e apagá-la fazia o robô voltar a
+    // teto de gasto. Desde o item 2.3 do fork ele grava `force_human` também
+    // (Step 1b), mas a regra deste caso não muda: o release não sabe quem pôs o
+    // silêncio, e onde o silêncio é a ÚNICA trava, apagá-la fazia o robô voltar a
     // responder um cliente que pediu uma pessoa: dois atores no mesmo cliente, na
     // direção OPOSTA à do defeito original.
     //

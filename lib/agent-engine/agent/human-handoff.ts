@@ -435,7 +435,7 @@ function desfechoDaPassagem(aviso: DesfechoDoAviso): DesfechoDoAvisoDaPassagem {
  * Nunca lança: idioma é enfeite comparado à passagem, e um `select` que falhe
  * não pode impedir o aviso de nascer. O default é o idioma do produto.
  */
-async function idiomaDaOrganizacao(db: pg.Pool, tenantId: string, log: Logger): Promise<Idioma> {
+export async function idiomaDaOrganizacao(db: pg.Pool, tenantId: string, log: Logger): Promise<Idioma> {
   try {
     const { rows } = await db.query<{ locale: string | null }>(
       'select locale from organizations where id = $1',

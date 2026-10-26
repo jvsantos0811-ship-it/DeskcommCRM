@@ -52,7 +52,7 @@ export interface DepsDeEtapa {
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =
-  "id, name, slug, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
+  "id, name, slug, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, requires_human, expected_duration_hours, last_change_actor_kind, last_change_at";
 
 /** A etapa como sai para quem lê — inclui a autoria da última mudança de configuração. */
 export interface EtapaVisivel {
@@ -73,6 +73,12 @@ export interface EtapaVisivel {
   /** Negócio que entra nesta etapa abre um aviso na Central (migration 0440). */
   avisar_na_central: boolean;
   /**
+   * Etapa "só atendimento humano" (`crm_stages.requires_human`): com um negócio
+   * aberto aqui, o agente de IA não fala com o cliente e passa a conversa para
+   * uma pessoa (`lib/agent-engine/agent/etapa-exige-humano.ts`).
+   */
+  requires_human: boolean;
+  /**
    * Janela de "esfriando" DESTA etapa, em horas (`crm_stages.expected_duration_hours`).
    * `null` = a etapa nunca configurou, e o radar cai no padrão de 24 h/72 h
    * (`resolveStageWindow`). Vazio NÃO é zero: zero não esfria nunca, e a
@@ -87,6 +93,7 @@ export interface EtapaVisivel {
 
 type EtapaLida = EtapaEditavel & {
   avisar_na_central?: boolean | null;
+  requires_human?: boolean | null;
   last_change_actor_kind: string | null;
   last_change_at: string | null;
 };
@@ -141,6 +148,7 @@ export function corpo(etapas: EtapaLida[]): { etapas: EtapaVisivel[] } {
         is_lost: e.is_lost,
         win_probability: e.win_probability ?? null,
         avisar_na_central: e.avisar_na_central === true,
+        requires_human: e.requires_human === true,
         expected_duration_hours: e.expected_duration_hours ?? null,
         last_change_actor_kind: e.last_change_actor_kind ?? null,
         last_change_at: e.last_change_at ?? null,
@@ -329,6 +337,8 @@ export interface PedidoDeEdicao {
   depois_de?: string | null;
   /** Liga ou desliga o aviso na Central para quem entra nesta etapa (0440). */
   avisar_na_central?: boolean;
+  /** Liga ou desliga "só atendimento humano" (a IA não fala com o cliente aqui). */
+  requires_human?: boolean;
   /**
    * Janela de "esfriando" da etapa, em HORAS (`crm_stages.expected_duration_hours`).
    * `null` limpa a configuração de propósito — a etapa volta ao padrão de
@@ -416,12 +426,14 @@ export async function atualizarEtapa(
     position?: number;
     win_probability?: number | null;
     avisar_na_central?: boolean;
+    requires_human?: boolean;
     expected_duration_hours?: number | null;
   } = {};
   if (pedido.name !== undefined) patchDoAlvo.name = pedido.name.trim();
   // `undefined` não viaja; `null` limpa a calibração de propósito.
   if (pedido.win_probability !== undefined) patchDoAlvo.win_probability = pedido.win_probability;
   if (pedido.avisar_na_central !== undefined) patchDoAlvo.avisar_na_central = pedido.avisar_na_central;
+  if (pedido.requires_human !== undefined) patchDoAlvo.requires_human = pedido.requires_human;
   // Mesmo contrato: `undefined` = "não mexe", `null` = "volta ao padrão de 24 h".
   if (pedido.expected_duration_hours !== undefined) {
     patchDoAlvo.expected_duration_hours = pedido.expected_duration_hours;

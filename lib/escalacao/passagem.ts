@@ -71,6 +71,10 @@ export const ORIGENS_DA_PASSAGEM = [
   "legado_teto",
   "mcp_externo",
   "runtime_nativo",
+  // O agent-engine achou o negócio numa etapa marcada "só atendimento humano"
+  // (`crm_stages.requires_human`) — `lib/agent-engine/agent/etapa-exige-humano.ts`.
+  // Par da migration 9005 (fork).
+  "etapa_do_funil",
 ] as const;
 export type OrigemDaPassagem = (typeof ORIGENS_DA_PASSAGEM)[number];
 

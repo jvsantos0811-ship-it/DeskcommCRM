@@ -140,6 +140,12 @@ const updateStageShape = {
    * `crm_stages.expected_duration_hours` para classificar lead parado.
    */
   expected_duration_hours: z.number().int().min(1).max(8760).nullable().optional(),
+  /**
+   * Etapa "só atendimento humano" (`crm_stages.requires_human`): com um negócio
+   * aberto nela, o agente de IA não fala com o cliente e passa a conversa para
+   * uma pessoa. Mesmo efeito da chave na tela de Etapas.
+   */
+  requires_human: z.boolean().optional(),
 };
 
 export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
@@ -147,7 +153,9 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
   description:
     "Renomeia, reordena, calibra a probabilidade de ganho (win_probability, 0-100; null limpa a " +
     "calibração e a previsão passa a reportar a etapa sem probabilidade), ajusta a janela de " +
-    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h) ou " +
+    "esfriando (expected_duration_hours, em HORAS de 1 a 8760; null volta ao padrão de 24 h), marca a " +
+    "etapa como só atendimento humano (requires_human: com um negócio aberto nela, a IA não fala com o " +
+    "cliente e passa a conversa para uma pessoa) ou " +
     "muda o papel de desfecho " +
     "(is_won/is_lost) de uma etapa. " +
     "after_stage_id é o id da etapa VIZINHA DA ESQUERDA (null = primeira coluna), não um número de posição. " +
@@ -167,13 +175,14 @@ export const crmUpdateStage: McpToolDefinition<typeof updateStageShape> = {
     if (input.expected_duration_hours !== undefined) {
       pedido.expected_duration_hours = input.expected_duration_hours;
     }
+    if (input.requires_human !== undefined) pedido.requires_human = input.requires_human;
     if (Object.keys(pedido).length === 0) {
       throw new ApiError(
         422,
         "unprocessable_entity",
         undefined,
         ctx.requestId,
-        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando ou o papel dela no desfecho do negócio.",
+        "Diga o que mudar na etapa: o nome, a ordem, a janela de esfriando, se ela é só de atendimento humano ou o papel dela no desfecho do negócio.",
       );
     }
     const { funil } = await atualizarEtapa(deps(ctx), {

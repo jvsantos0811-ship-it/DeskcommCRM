@@ -56,6 +56,13 @@ export interface OpcoesDoDubleDoHandler {
    * agente entre uma bolha e outra.
    */
   agente?: LinhaDoDuble | null | (() => LinhaDoDuble | null);
+  /**
+   * As travas de atendimento humano do CONTATO, lidas por quem chega por token
+   * (`lib/escalacao/contato-com-humano.ts`): `force_human`, `ai_opt_out` e
+   * quantas conversas dele estão silenciadas. Padrão: nenhuma trava — o envio
+   * por token segue como antes.
+   */
+  atendimentoHumano?: { force_human?: boolean; ai_opt_out?: boolean; conversasSilenciadas?: number };
 }
 
 export interface RetornoDoDubleDoHandler {
@@ -174,8 +181,25 @@ export function criarDubleDoHandler(
     from(tabela: string) {
       if (tabela === "conversations") {
         return {
-          select: (colunas = "") => {
+          select: (colunas = "", modo?: { count?: string; head?: boolean }) => {
             capturas.selects.conversations!.push(colunas);
+            if (modo?.head === true) {
+              // A contagem de conversas silenciadas do contato (o predicado de
+              // `isLeadInHandoff`, lido por quem chega por token).
+              const resultado = { data: null, error: null, count: opcoes.atendimentoHumano?.conversasSilenciadas ?? 0 };
+              const contagem = {
+                eq: (coluna: string, valor: unknown) => {
+                  capturas.filtros.conversations!.push({ coluna, valor });
+                  return contagem;
+                },
+                gt: (coluna: string, valor: unknown) => {
+                  capturas.filtros.conversations!.push({ coluna: `${coluna}>`, valor });
+                  return contagem;
+                },
+                then: <T>(ok: (r: typeof resultado) => T) => Promise.resolve(resultado).then(ok),
+              };
+              return contagem;
+            }
             const cadeia = {
               eq: (coluna: string, valor: unknown) => {
                 capturas.filtros.conversations!.push({ coluna, valor });
@@ -337,6 +361,23 @@ export function criarDubleDoHandler(
         // um dublê que fixa a quantidade de `eq` quebra quando a consulta ganha
         // um filtro novo — com um erro que não fala do comportamento sob teste.
         return {
+          // As travas de atendimento humano (lib/escalacao/contato-com-humano.ts).
+          select: () => {
+            const cadeia = {
+              eq: (coluna: string, valor: unknown) => {
+                capturas.filtros.contacts!.push({ coluna, valor });
+                return cadeia;
+              },
+              maybeSingle: async () => ({
+                data: {
+                  force_human: opcoes.atendimentoHumano?.force_human ?? false,
+                  ai_opt_out: opcoes.atendimentoHumano?.ai_opt_out ?? false,
+                },
+                error: null,
+              }),
+            };
+            return cadeia;
+          },
           update: (patch: LinhaDoDuble) => {
             capturas.patches.contacts!.push(patch);
             return cadeiaAguardavel("contacts", capturas);

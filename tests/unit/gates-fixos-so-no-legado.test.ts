@@ -38,7 +38,8 @@ const SO_NO_LEGADO: Record<string, string> = {
     "limiar de similaridade do RAG do worker legado; sem chamada no engine (equivalente lá não medido)",
   checkG4Legal:
     "o engine não tem passagem fixa por assunto jurídico; quem decide é o modelo (request_human_handoff)",
-  checkG4Stage: "etapa `requires_human`: lida só pelo worker legado (o engine não lê a coluna)",
+  checkG4Stage:
+    "etapa `requires_human`: o engine lê a coluna pela própria regra (lib/agent-engine/agent/etapa-exige-humano.ts, migration 9005 do fork); esta função segue só no legado",
 };
 /** Constantes de regex.ts que são o próprio gate (não podem vazar por fora de triggers.ts). */
 const REGEX_DOS_GATES = ["G1_REGEX", "G4_LEGAL_REGEX"];

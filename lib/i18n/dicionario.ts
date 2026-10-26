@@ -6552,9 +6552,11 @@ export const DICIONARIO: Traducoes = {
   "sem tag escolhida": { es: "sin etiqueta elegida" },
   "Tags para gravar no lead": { es: "Etiquetas para grabar en el lead" },
   "ex.: vip, orcamento-aberto": { es: "ej.: vip, presupuesto-abierto" },
-  "Separe por vírgula. Tags que o lead já tem são mantidas e nada é apagado.": {
-    es: "Separa por comas. Las etiquetas que el lead ya tiene se conservan y no se borra nada.",
+  "Separe por vírgula. As tags de baixo saem primeiro e as de cima entram depois: preencher as duas troca uma tag pela outra. Tags que o lead já tem são mantidas.": {
+    es: "Separa por comas. Las etiquetas de abajo salen primero y las de arriba entran después: completar las dos cambia una etiqueta por otra. Las etiquetas que el lead ya tiene se conservan.",
   },
+  "Tags para tirar do lead (opcional)": { es: "Etiquetas para quitar del lead (opcional)" },
+  "ex.: 1o-trimestre": { es: "ej.: 1er-trimestre" },
   "O card vai para esta etapa do mesmo funil — trocar de funil é recusado, como no quadro.": {
     es: "La tarjeta va a esta etapa del mismo embudo: cambiar de embudo se rechaza, igual que en el tablero.",
   },
@@ -6584,6 +6586,9 @@ export const DICIONARIO: Traducoes = {
   "Código do erro": { es: "Código del error" },
   "Janela de 24 horas fechada: texto livre é recusado pela plataforma (131047). Envie um modelo aprovado ou aguarde o cliente escrever.": {
     es: "Ventana de 24 horas cerrada: la plataforma rechaza el texto libre (131047). Envía una plantilla aprobada o espera a que el cliente escriba.",
+  },
+  "conversa_com_humano: esta conversa está com uma pessoa da equipe. Nada foi enviado; a mensagem por integração volta a sair quando a conversa for devolvida para a IA.": {
+    es: "conversa_com_humano: esta conversación está con una persona del equipo. No se envió nada; los mensajes por integración vuelven a salir cuando la conversación se devuelva a la IA.",
   },
   "Quando um lead ganhar uma tag": { es: "Cuando un lead reciba una etiqueta" },
   "Quando um contato ganhar uma tag": { es: "Cuando un contacto reciba una etiqueta" },
@@ -11334,6 +11339,14 @@ export const DICIONARIO: Traducoes = {
   },
   "Avisar a equipe na Central quando um negócio entrar em": {
     es: "Avisar al equipo en la Central cuando un negocio entre en",
+  },
+  // ─── etapa só de atendimento humano (fork, migration 9005; lib/agent-engine/agent/etapa-exige-humano.ts) ───
+  "Só atendimento humano em": { es: "Solo atención humana en" },
+  "Só atendimento humano: com um negócio aqui, a IA não responde o cliente e chama a equipe": {
+    es: "Solo atención humana: con un negocio aquí, la IA no responde al cliente y llama al equipo",
+  },
+  "Negócio na etapa «{etapa}», só atendimento humano. Para a IA voltar a atender, mova o negócio para outra etapa.": {
+    es: "Negocio en la etapa «{etapa}», solo atención humana. Para que la IA vuelva a atender, mueva el negocio a otra etapa.",
   },
   // ─── sons dos avisos (migration 0441; app/app/settings/notifications/_sons.tsx) ───
   "Sons dos avisos": { es: "Sonidos de los avisos" },
@@ -16349,6 +16362,13 @@ export const DICIONARIO: Traducoes = {
   "Contato do lead": { es: "Contacto del lead" },
   "Sem contato vinculado, a etiqueta não é aplicada.": {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
+  },
+  // ─── remove_tag e o modo trocar do nó de etiqueta (fork, migration 9006) ───
+  // ("Remover tag" já existia mais acima: chave repetida quebra o tsc.)
+  "Tags a remover (separadas por vírgula)": { es: "Etiquetas a quitar (separadas por coma)" },
+  "Sem contato vinculado, nada é removido.": { es: "Sin contacto vinculado, no se quita nada." },
+  "Maiúsculas e espaços nas pontas não importam. Tag que não estiver lá é ignorada.": {
+    es: "Mayúsculas y espacios en los extremos no importan. Una etiqueta que no esté se ignora.",
   },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
