@@ -11316,6 +11316,14 @@ export const DICIONARIO: Traducoes = {
   "Avisar a equipe na Central quando um negócio entrar em": {
     es: "Avisar al equipo en la Central cuando un negocio entre en",
   },
+  // ─── etapa só de atendimento humano (fork, migration 9005; lib/agent-engine/agent/etapa-exige-humano.ts) ───
+  "Só atendimento humano em": { es: "Solo atención humana en" },
+  "Só atendimento humano: com um negócio aqui, a IA não responde o cliente e chama a equipe": {
+    es: "Solo atención humana: con un negocio aquí, la IA no responde al cliente y llama al equipo",
+  },
+  "Negócio na etapa «{etapa}», só atendimento humano. Para a IA voltar a atender, mova o negócio para outra etapa.": {
+    es: "Negocio en la etapa «{etapa}», solo atención humana. Para que la IA vuelva a atender, mueva el negocio a otra etapa.",
+  },
   // ─── sons dos avisos (migration 0441; app/app/settings/notifications/_sons.tsx) ───
   "Sons dos avisos": { es: "Sonidos de los avisos" },
   "Tocam com o site aberto quando o aviso chega na Central. MP3, OGG ou WAV de até 1 MB.": {

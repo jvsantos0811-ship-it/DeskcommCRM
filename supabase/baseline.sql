@@ -30148,7 +30148,9 @@ alter table public.passagens_de_atendimento
     'pedido_explicito','opt_out_provavel','ferramenta_do_modelo',
     'teto_de_gasto','caso_escalado','sentimento','legado_pedido',
     'legado_juridico','legado_etapa','legado_confianca','legado_teto',
-    'mcp_externo','runtime_nativo'));
+    'mcp_externo','runtime_nativo',
+    -- fork, migration 9005: etapa "só atendimento humano" no agent-engine
+    'etapa_do_funil'));
 
 alter table public.passagens_de_atendimento
   drop constraint if exists passagens_de_atendimento_motivo_codigo_check;
@@ -58859,3 +58861,10 @@ begin
     execute 'alter publication supabase_realtime add table public.team_chat_messages';
   end if;
 end $$;
+
+
+-- ---- etapa exige humano no motor de agentes (migration 9005) ----
+-- A 9005 só amplia o vocabulário de `passagens_de_atendimento.origem` com
+-- 'etapa_do_funil'. O valor novo está no bloco ÚNICO daquele CHECK, mais acima
+-- (o do apêndice das passagens de atendimento), e não é reconstruído aqui:
+-- `tests/unit/baseline-constraint-reconstruida.test.ts` — uma constraint, um bloco.

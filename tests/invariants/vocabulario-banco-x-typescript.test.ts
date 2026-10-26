@@ -357,8 +357,8 @@ const PARES: Array<{
   {
     tabela: "passagens_de_atendimento",
     coluna: "origem",
-    // lib/escalacao/passagem.ts → ORIGENS_DA_PASSAGEM. Treze valores, um por
-    // caminho de código que passa conversa — o que mais cresce dos quatro, e o
+    // lib/escalacao/passagem.ts → ORIGENS_DA_PASSAGEM. Um valor por caminho de
+    // código que passa conversa (o fork somou `etapa_do_funil`, migration 9005) — o que mais cresce dos quatro, e o
     // que mais tem chance de nascer só de um lado.
     arquivo: "lib/escalacao/passagem.ts",
     simbolo: "ORIGENS_DA_PASSAGEM",

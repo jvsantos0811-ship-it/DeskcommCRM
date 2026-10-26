@@ -46,12 +46,14 @@ import { classifyPromise } from '../guardrails/promise/semantic';
 import { scheduleCronJob } from '../cron/scheduler';
 import {
   JobSettledError,
+  latestCheckpoint,
   ritualBlocks,
   runAgentTurn,
   type InboundTurnDeps,
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { etapaQueExigeHumano, passarParaHumanoPelaEtapa } from './etapa-exige-humano';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { loadConversationAgentConfig, type PublishedAgentConfig } from './agent-config';
@@ -1215,6 +1217,21 @@ async function sendFixedOutbound(
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
     runLog.info('envio fixo pulado — lead silenciado (handoff/opt-out)', { kind: job.kind });
+    return { kind: "skipped" };
+  }
+
+  // Etapa "só atendimento humano": o texto do fluxo também não sai, e a conversa
+  // passa para uma pessoa — mesma regra do turno da IA (`etapa-exige-humano.ts`).
+  const etapa = await etapaQueExigeHumano(pool, tenantId, leadId);
+  if (etapa !== null) {
+    // `aviso: null`: no follow-up ninguém escreveu — não há a quem responder.
+    await passarParaHumanoPelaEtapa(
+      pool,
+      { tenantId, leadId, conversationId, channelSessionId, jobId: job.id },
+      etapa,
+      { checkpoint: await latestCheckpoint(pool, tenantId, leadId), log: runLog, aviso: null },
+    );
+    runLog.info('envio fixo pulado — negócio numa etapa "só atendimento humano"', { kind: job.kind });
     return { kind: "skipped" };
   }
 

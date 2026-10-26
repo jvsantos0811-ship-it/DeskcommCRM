@@ -93,6 +93,8 @@ type EtapaComAutoria = EtapaDoMapa & {
   /** Chance de fechamento calibrada pelo gestor, 0–100; `null` = sem calibração. */
   win_probability?: number | null;
   avisar_na_central?: boolean | null;
+  /** Etapa "só atendimento humano" (`crm_stages.requires_human`). */
+  requires_human?: boolean | null;
   /**
    * Janela de "esfriando" da etapa, em horas (`crm_stages.expected_duration_hours`).
    * `null` = a etapa não configurou e o radar usa o padrão de 24 h/72 h.
@@ -122,7 +124,7 @@ async function lerFunil(
     // consulta só para ela seria um round-trip por render numa tela de
     // configuração — e um caminho a mais para a lista e a autoria divergirem.
     .select(
-      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at",
+      "id, name, is_won, is_lost, win_probability, agent_stage_hint, avisar_na_central, requires_human, expected_duration_hours, last_change_actor_kind, last_change_at",
     )
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
@@ -159,6 +161,9 @@ function corpo(etapas: EtapaComAutoria[]) {
       // cair — a tela de etapas lê DAQUI e mostrava a chance vazia ao recarregar.
       win_probability: e.win_probability ?? null,
       avisar_na_central: e.avisar_na_central === true,
+      // Lida pela mesma razão da janela abaixo: a tela de etapas edita a chave
+      // "só atendimento humano", e sem ela aqui a chave nasceria sempre desligada.
+      requires_human: e.requires_human === true,
       // A janela de esfriando viaja na MESMA leitura: a tela de etapas é quem
       // a edita, e sem ela aqui o campo nasceria sempre vazio — uma edição
       // apagaria a configuração gravada sem ninguém perceber.

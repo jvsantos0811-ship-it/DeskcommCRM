@@ -49,6 +49,13 @@ const runBeforeSend = vi.fn(async (args: Record<string, unknown>) => {
 });
 vi.mock("@/lib/agent-engine/guardrails/before-send", () => ({ runBeforeSend }));
 vi.mock("@/lib/agent-engine/agent/human-handoff", () => ({ isLeadInHandoff: vi.fn(async () => false) }));
+// A etapa "só atendimento humano" faz uma leitura própria no começo do turno
+// (`etapa-exige-humano.ts`); este arquivo mede outra coisa e o seu pool genérico
+// responderia a ela com uma linha que não é de etapa. Fora do caminho, explícito.
+vi.mock("@/lib/agent-engine/agent/etapa-exige-humano", () => ({
+  etapaQueExigeHumano: vi.fn(async () => null),
+  passarParaHumanoPelaEtapa: vi.fn(),
+}));
 vi.mock("@/lib/agent-engine/edge/crm/get-lead-context", () => ({
   getLeadContext: vi.fn(async () => ({
     ok: true,
