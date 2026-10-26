@@ -67,6 +67,10 @@ export type ActionItem =
       type: "add_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
+  | {
+      type: "remove_tag";
+      config: { tags: string[]; destino?: "card" | "contato" };
+    }
   | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
@@ -104,6 +108,8 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
+      return { type, config: { tags: [] } };
+    case "remove_tag":
       return { type, config: { tags: [] } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
@@ -527,13 +533,20 @@ function SendAiMessageForm({
 function AddTagForm({
   config,
   onChange,
-}: FormProps<{ tags: string[]; destino?: "card" | "contato" }>) {
+  remover = false,
+}: FormProps<{ tags: string[]; destino?: "card" | "contato" }> & {
+  /**
+   * `remove_tag` (fork, migration 9006): o MESMO formulário, porque o alvo e os
+   * limites são os mesmos — muda só o que a tela diz que vai acontecer.
+   */
+  remover?: boolean;
+}) {
   const t = useT();
   const [text, setText] = React.useState(config.tags.join(", "));
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <Label>{t("Tags (separadas por vírgula)")}</Label>
+        <Label>{remover ? t("Tags a remover (separadas por vírgula)") : t("Tags (separadas por vírgula)")}</Label>
         <Input
           value={text}
           onChange={(e) => {
@@ -565,7 +578,14 @@ function AddTagForm({
         </Select>
         {config.destino === "contato" && (
           <p className="text-xs text-muted-foreground">
-            {t("Sem contato vinculado, a etiqueta não é aplicada.")}
+            {remover
+              ? t("Sem contato vinculado, nada é removido.")
+              : t("Sem contato vinculado, a etiqueta não é aplicada.")}
+          </p>
+        )}
+        {remover && (
+          <p className="text-xs text-muted-foreground">
+            {t("Maiúsculas e espaços nas pontas não importam. Tag que não estiver lá é ignorada.")}
           </p>
         )}
       </div>
@@ -1103,6 +1123,14 @@ export function ActionConfigForm({
     case "add_tag":
       return (
         <AddTagForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "remove_tag":
+      return (
+        <AddTagForm
+          remover
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />

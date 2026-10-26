@@ -209,13 +209,18 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
     }
     case "move_lead":
       return { ...base, resumo: "move o card para outra etapa do funil — sem mensagem ao cliente" };
-    case "edit_lead_tag":
+    case "edit_lead_tag": {
+      const remover = node.config.remover ?? [];
+      const partes: string[] = [];
+      if (remover.length) partes.push(`tira a(s) tag(s) ${remover.join(", ")}`);
+      if (node.config.tags.length) partes.push(`grava a(s) tag(s) ${node.config.tags.join(", ")}`);
       return {
         ...base,
-        resumo: node.config.tags.length
-          ? `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
+        resumo: partes.length
+          ? `${partes.join(" e ")} no lead — sem mensagem ao cliente`
           : "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente",
       };
+    }
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
   }
