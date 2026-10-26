@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { InterfaceEditor } from "@/components/team/InterfaceEditor";
 import {
-  INTERFACE_COMPLETA,
+  INTERFACE_PADRAO_NA_CRIACAO,
   interfaceSettingsSchema,
   interfaceTemDestino,
 } from "@/lib/navigation/interface";
@@ -95,7 +95,7 @@ export function NewTenantForm({
   const idioma = useIdioma();
   const router = useRouter();
   const createTenant = useCreateTenant();
-  const [ownerInterface, setOwnerInterface] = useState(INTERFACE_COMPLETA);
+  const [ownerInterface, setOwnerInterface] = useState(INTERFACE_PADRAO_NA_CRIACAO);
   const [slugLocked, setSlugLocked] = useState(false);
   const [created, setCreated] = useState<CreateTenantResponse["data"] | null>(null);
 

@@ -19,6 +19,32 @@ export const interfaceSettingsSchema = z
   .strict();
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>;
 export const INTERFACE_COMPLETA: InterfaceSettings = { preset: "completa" };
+
+/**
+ * Áreas que o revendedor NÃO libera ao criar a organização de um escritório
+ * cliente (fork LeadSales IA). Quem monta campanha, agente, follow-up,
+ * automação e o servidor MCP externo do cliente é a agência — o escritório
+ * recebe o resultado pronto. Por isso a tela "Novo Tenant" já abre com estas
+ * cinco desmarcadas; quem cria pode marcar de volta, caso a caso.
+ *
+ * É APRESENTAÇÃO, como todo este arquivo: esconde do menu, do hub e do ⌘K, mas
+ * não recusa a rota. A trava de verdade é outro trabalho.
+ */
+export const AREAS_FECHADAS_NA_CRIACAO = [
+  "/app/campaigns",
+  "/app/ai/agents",
+  "/app/ai/followups",
+  "/app/settings/automacoes",
+  "/app/settings/servidor-mcp-externo",
+] as const satisfies readonly NavDestinationId[];
+
+/** A seleção com que a tela "Novo Tenant" abre: tudo, menos as áreas acima. */
+export const INTERFACE_PADRAO_NA_CRIACAO: InterfaceSettings = {
+  preset: "completa",
+  destinos: (ids as NavDestinationId[]).filter(
+    (id) => !(AREAS_FECHADAS_NA_CRIACAO as readonly string[]).includes(id),
+  ),
+};
 const SIMPLIFICADA: readonly NavDestinationId[] = [
   "/app/inbox",
   "/app/agenda",
