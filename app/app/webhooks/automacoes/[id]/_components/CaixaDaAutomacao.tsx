@@ -113,6 +113,10 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
     }
+    case "remove_tag": {
+      const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
+      return <>{tags.length ? `− ${tags.join(", ")}` : t("Escreva pelo menos uma tag")}</>;
+    }
     case "call_webhook":
       return <>{cfg(config, "url").trim() || t("Informe o endereço")}</>;
     case "create_task": {

@@ -1363,4 +1363,16 @@ describe('validateFlowForPublish — nós de ação (#2065)', () => {
     expect(codigos(publicar(comAcao(marcar(['vip', '  ']))))).toEqual(['tag_ausente']);
     expect(publicar(comAcao(marcar(['vip'])))).toEqual({ ok: true });
   });
+
+  // Fork, migration 9006 — a caixa também TIRA tags (`remover`). Só tirar, ou
+  // trocar (as duas listas), publica; as duas vazias seguem recusando.
+  it('só remover publica; trocar publica; as duas vazias ou com tag em branco recusam', () => {
+    const comRemover = (tags: string[], remover: string[]): FlowNode => ({
+      id: 'g1', type: 'edit_lead_tag', label: 'Tag', position: pos, config: { tags, remover },
+    });
+    expect(publicar(comAcao(comRemover([], ['1o-trimestre'])))).toEqual({ ok: true });
+    expect(publicar(comAcao(comRemover(['2o-trimestre'], ['1o-trimestre'])))).toEqual({ ok: true });
+    expect(codigos(publicar(comAcao(comRemover([], []))))).toEqual(['tag_ausente']);
+    expect(codigos(publicar(comAcao(comRemover(['2o-trimestre'], ['  ']))))).toEqual(['tag_ausente']);
+  });
 });
