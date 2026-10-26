@@ -6566,6 +6566,9 @@ export const DICIONARIO: Traducoes = {
   "Janela de 24 horas fechada: texto livre é recusado pela plataforma (131047). Envie um modelo aprovado ou aguarde o cliente escrever.": {
     es: "Ventana de 24 horas cerrada: la plataforma rechaza el texto libre (131047). Envía una plantilla aprobada o espera a que el cliente escriba.",
   },
+  "conversa_com_humano: esta conversa está com uma pessoa da equipe. Nada foi enviado; a mensagem por integração volta a sair quando a conversa for devolvida para a IA.": {
+    es: "conversa_com_humano: esta conversación está con una persona del equipo. No se envió nada; los mensajes por integración vuelven a salir cuando la conversación se devuelva a la IA.",
+  },
   "Quando um lead ganhar uma tag": { es: "Cuando un lead reciba una etiqueta" },
   "Quando um contato ganhar uma tag": { es: "Cuando un contacto reciba una etiqueta" },
   // #2812 — o gatilho de ficha SEM número que recebe um.

@@ -38,6 +38,7 @@ import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone
 import { sendMessageSchema } from "@/lib/schemas/messaging";
 import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { chegouPorToken, contatoEstaComHumano } from "@/lib/escalacao/contato-com-humano";
 import type { McpToolDefinition } from "../types";
 
 const ENDPOINT_TAG = "mcp:crm_start_conversation_and_send";
@@ -131,6 +132,18 @@ export const crmStartConversationAndSend: McpToolDefinition<typeof inputShape> =
           mensagem:
             "este contato foi marcado como pessoal — ele está fora da operação: não abra " +
             "conversa nem envie nada para ele.",
+        };
+      }
+      // Contato em atendimento humano: o `send` recusaria com `conversa_com_humano`
+      // (lib/escalacao/contato-com-humano.ts), mas só DEPOIS de a conversa nascer.
+      // Recusar aqui é a mesma razão do contato pessoal acima.
+      if (chegouPorToken(ctx.actor) && (await contatoEstaComHumano(ctx.supabase, ctx.organizationId, candidato))) {
+        return {
+          permitido: false,
+          motivo: "conversa_com_humano",
+          mensagem:
+            "conversa_com_humano: este contato está em atendimento com uma pessoa da equipe — " +
+            "não envie nada até a conversa ser devolvida para a IA.",
         };
       }
     }

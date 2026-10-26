@@ -60,6 +60,7 @@ import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/me
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { chegouPorToken, contatoEstaComHumano } from "@/lib/escalacao/contato-com-humano";
 import type { Message } from "@/lib/types/messaging";
 
 type SB = SupabaseClient;
@@ -551,6 +552,28 @@ export async function sendMessageHandler(
       undefined,
       ctx.requestId,
       traduzir("Contato marcado como pessoal.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+
+  // ─── Conversa com uma pessoa da equipe: token não fala por cima ──────────
+  //
+  // Agente externo pelo MCP ou integração por Bearer não envia enquanto o
+  // contato está em atendimento humano — o mesmo predicado que cala o
+  // agent-engine. Quem chega pela tela, os envios internos do motor e as
+  // automações seguem como antes; o recorte e o porquê estão em
+  // `lib/escalacao/contato-com-humano.ts`. 409, e não 403: o motor lê 403 como
+  // bloqueio irrevogável do contato (`send-ledger.ts`) e cancelaria os
+  // follow-ups dele como opt-out; aqui o estado é passageiro (a pessoa devolve).
+  if (chegouPorToken(ctx.actor) && (await contatoEstaComHumano(supabase, ctx.organization_id, c.contact_id))) {
+    throw new ApiError(
+      409,
+      "conversa_com_humano",
+      { codigo: "conversa_com_humano" },
+      ctx.requestId,
+      traduzir(
+        "conversa_com_humano: esta conversa está com uma pessoa da equipe. Nada foi enviado; a mensagem por integração volta a sair quando a conversa for devolvida para a IA.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 
