@@ -602,6 +602,15 @@ beforeAll(() => {
           values (v_org, v_conv, 'rls invariant agendada', timestamptz '2030-01-01 12:00:00+00');
         end if;
 
+        -- migration 9008 (fork): contrato do negócio, preso ao lead e ao
+        -- contato semeados. Leitura org-scoped sem gate de papel; a escrita só o
+        -- servidor faz (authenticated só tem SELECT).
+        if not exists (select 1 from public.crm_contracts where organization_id = v_org) then
+          insert into public.crm_contracts (organization_id, lead_id, contact_id, titulo)
+          select v_org, id, v_contact, 'RLS invariant contrato'
+            from public.crm_leads where organization_id = v_org limit 1;
+        end if;
+
         -- migration 9003 (fork): cargo da equipe. Leitura org-scoped sem gate
         -- de papel (o agent semeado e controle positivo legitimo); a escrita so
         -- o servidor faz (authenticated so tem SELECT).
@@ -852,6 +861,11 @@ export const TABLES = [
   // um cliente e quando. Leitura org-scoped sem gate de papel; escrita só pelo
   // servidor (authenticated não tem INSERT/UPDATE/DELETE).
   "scheduled_messages",
+  // migration 9008 (fork) — contrato do negócio: título, arquivo e desfecho do
+  // contrato que o escritório mandou a um cliente. Vazar a linha entrega ao
+  // vizinho com quem o escritório fechou. Leitura org-scoped sem gate de papel;
+  // escrita só pelo servidor.
+  "crm_contracts",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

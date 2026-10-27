@@ -55959,6 +55959,177 @@ comment on function public.fn_passagem_cancela_agendadas() is
   'Gatilho da passagem IA → humano: cancela as mensagens agendadas ainda em scheduled da conversa e deixa uma nota no fio por mensagem. '
   'Nunca derruba o registro da passagem (falha vira WARNING). Migration 9007 (fork).';
 
+-- ---- contratos do negócio: PDF do escritório, envio por uma pessoa, desfecho marcado (migration 9008, fork) ----
+-- Tabela, bucket `contratos`, trava de organização e redação na virada de is_anonymized.
+-- ANTES da VARREDURA anon: função nova em `public` nasce exposta, e a varredura é
+-- quem cura quem ATUALIZA. Cabeçalho completo na migration.
+create table if not exists public.crm_contracts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  -- A conversa por onde o contrato saiu da última vez.
+  conversation_id uuid references public.conversations(id) on delete set null,
+  titulo text not null,
+  -- `contratos/<org>/<id>.pdf`. Nulo depois do expurgo da LGPD.
+  arquivo_path text,
+  -- O nome com que o arquivo foi anexado, para a equipe reconhecer.
+  arquivo_nome text,
+  arquivo_bytes integer,
+  status text not null default 'rascunho',
+  provedor_assinatura text not null default 'manual',
+  -- O documento no serviço de assinatura, quando houver um.
+  provedor_documento_id text,
+  link_assinatura text,
+  -- `contratos/<org>/<id>-assinado.pdf`, quando a equipe anexa a via assinada.
+  assinado_path text,
+  -- A mensagem do último envio: o elo com o fio da conversa e com o status de
+  -- entrega, que é LIDO dela (nunca copiado para cá).
+  message_id uuid references public.messages(id) on delete set null,
+  -- Por que o último envio não saiu, em português, para a tela mostrar.
+  ultima_falha_envio text,
+  -- O motivo de recusa ou de cancelamento, escrito pela equipe.
+  motivo text,
+  enviado_em timestamptz,
+  enviado_por_user_id uuid references auth.users(id) on delete set null,
+  decidido_em timestamptz,
+  decidido_por_user_id uuid references auth.users(id) on delete set null,
+  criado_por_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint crm_contracts_status_check
+    check (status in ('rascunho', 'enviado', 'assinado', 'recusado', 'cancelado')),
+  -- Escrito como conjunto (`= any (array[...])`) mesmo com um valor só: um
+    -- `in ('manual')` o Postgres guarda como `= 'manual'`, e o par banco ×
+    -- TypeScript (vocabulario-banco-x-typescript) não o reconheceria como
+    -- vocabulário. O serviço de assinatura entra AQUI, no array.
+  constraint crm_contracts_provedor_assinatura_check
+    check (provedor_assinatura = any (array['manual']::text[])),
+  constraint crm_contracts_titulo_check
+    check (char_length(btrim(titulo)) between 1 and 120)
+);
+
+-- O que a tela lê: os contratos de UM negócio, do mais novo ao mais velho.
+create index if not exists crm_contracts_lead_idx
+  on public.crm_contracts (organization_id, lead_id, created_at desc);
+-- O que a anonimização lê: os contratos de UM contato.
+create index if not exists crm_contracts_contato_idx
+  on public.crm_contracts (organization_id, contact_id);
+
+alter table public.crm_contracts enable row level security;
+drop policy if exists tenant_isolation_crm_contracts_select on public.crm_contracts;
+create policy tenant_isolation_crm_contracts_select on public.crm_contracts
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.crm_contracts from public, anon, authenticated;
+grant select on public.crm_contracts to authenticated;
+grant all on public.crm_contracts to service_role;
+
+drop trigger if exists trg_crm_contracts_updated_at on public.crm_contracts;
+create trigger trg_crm_contracts_updated_at
+  before update on public.crm_contracts
+  for each row execute function public.fn_set_updated_at();
+
+-- O contrato não aponta para outra organização. O servidor escreve com
+-- service_role, que ignora RLS: esta trava é o que separa o vizinho de um id
+-- trocado (molde de `fn_verificar_org_da_proposta`, 0465).
+create or replace function public.fn_crm_contracts_org_consistente()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.lead_id is not null and not exists (
+    select 1 from public.crm_leads where id = new.lead_id and organization_id = new.organization_id
+  ) then
+    raise exception 'crm_contract_lead_org_mismatch' using errcode = '23514';
+  end if;
+  if new.contact_id is not null and not exists (
+    select 1 from public.contacts where id = new.contact_id and organization_id = new.organization_id
+  ) then
+    raise exception 'crm_contract_contact_org_mismatch' using errcode = '23514';
+  end if;
+  if new.conversation_id is not null and not exists (
+    select 1 from public.conversations where id = new.conversation_id and organization_id = new.organization_id
+  ) then
+    raise exception 'crm_contract_conversation_org_mismatch' using errcode = '23514';
+  end if;
+  if new.message_id is not null and not exists (
+    select 1 from public.messages where id = new.message_id and organization_id = new.organization_id
+  ) then
+    raise exception 'crm_contract_message_org_mismatch' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_crm_contracts_org_consistente() from public, anon, authenticated;
+
+drop trigger if exists trg_crm_contracts_org_consistente on public.crm_contracts;
+create trigger trg_crm_contracts_org_consistente
+  before insert or update of organization_id, lead_id, contact_id, conversation_id, message_id
+  on public.crm_contracts
+  for each row execute function public.fn_crm_contracts_org_consistente();
+
+-- A virada de is_anonymized do contato: os arquivos vão para a fila de expurgo
+-- do Storage e o texto que nomeia a pessoa sai. Molde de
+-- `fn_redigir_b2b_do_contato_anonimizado` (0449).
+create or replace function public.fn_redigir_contratos_ao_anonimizar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  -- Só caminhos da PRÓPRIA organização: um caminho gravado errado não pode
+  -- mandar para o expurgo o arquivo de outra (o expurgo não confia na linha).
+  insert into public.storage_redaction_queue (organization_id, request_id, bucket, object_path)
+  select new.organization_id, null, 'contratos', p.caminho
+    from public.crm_contracts c
+    cross join lateral (values (c.arquivo_path), (c.assinado_path)) as p(caminho)
+   where c.organization_id = new.organization_id
+     and c.contact_id = new.id
+     and p.caminho is not null
+     and p.caminho like new.organization_id::text || '/%'
+  on conflict (bucket, object_path) do nothing;
+
+  update public.crm_contracts
+     set titulo = 'Contrato (anonimizado)',
+         arquivo_path = null,
+         arquivo_nome = null,
+         assinado_path = null,
+         link_assinatura = null,
+         motivo = null,
+         ultima_falha_envio = null
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_redigir_contratos_ao_anonimizar() from public, anon, authenticated;
+grant  execute on function public.fn_redigir_contratos_ao_anonimizar() to service_role;
+
+drop trigger if exists trg_redigir_contratos_ao_anonimizar on public.contacts;
+create trigger trg_redigir_contratos_ao_anonimizar
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized is true and old.is_anonymized is distinct from true)
+  execute function public.fn_redigir_contratos_ao_anonimizar();
+
+-- Bucket privado, URL sempre assinada, lido só pelo servidor — mesmo padrão de
+-- `propostas` e `lgpd-exports`. Sem policy em storage.objects: `service_role`
+-- ignora RLS, e uma policy aqui seria decorativa.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('contratos', 'contratos', false, 20971520, array['application/pdf'])
+on conflict (id) do nothing;
+
+comment on table public.crm_contracts is
+  'Contrato do negócio: o PDF do escritório, enviado ao cliente pelo WhatsApp por uma pessoa da equipe, com o desfecho marcado à mão (ou, um dia, pelo serviço de assinatura). Escrita só pelo servidor. Migration 9008 (fork).';
+comment on column public.crm_contracts.provedor_assinatura is
+  'Quem colhe a assinatura. Hoje só manual (uma pessoa marca o desfecho). O encaixe de um serviço de assinatura eletrônica é lib/contratos/provedores.ts.';
+comment on column public.crm_contracts.message_id is
+  'A mensagem do último envio. O status de entrega é LIDO dela (DIRC: calcular), nunca copiado para esta linha.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

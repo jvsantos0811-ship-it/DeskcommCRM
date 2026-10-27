@@ -753,6 +753,7 @@ jobs:
         central-de-avisos-capacidades.spec.ts
         escalacao-ciclo.spec.ts
         passagem-cancela-agendada.spec.ts
+        contratos-do-negocio.spec.ts
         distribuicao-atendimento.spec.ts
         capacidades-do-agente.spec.ts
         cobranca-revendedor.spec.ts

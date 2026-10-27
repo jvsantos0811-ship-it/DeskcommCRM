@@ -27,6 +27,8 @@ const CHAMADORES: Record<string, string> = {
   "lib/agent-engine/edge/crm/send-message.ts":
     "propaga o 403 como ApiError; sendWithLedger relança a suspensão e o agent-worker encerra o job terminal",
   "app/api/v1/messages/route.ts": "rota de API: o ApiError 403 org_suspended vira a resposta JSON de quem chamou",
+  "app/api/v1/contracts/[id]/send/route.ts":
+    "o catch grava o motivo em ultima_falha_envio e o contrato fica no estado de antes; nada fica gravado como enviado, e a pessoa reenvia depois",
   "app/api/v1/proposals/[id]/send/route.ts":
     "o catch devolve a proposta a rascunho; nada fica gravado como enviado, e a pessoa reenvia depois",
   "lib/ai/handoff/aviso-ao-lead.ts": "devolve avisado:false; é aviso de um instante, sem fila nem estado que sobreviva",

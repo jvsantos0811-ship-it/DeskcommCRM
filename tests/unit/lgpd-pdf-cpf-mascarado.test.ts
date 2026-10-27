@@ -63,7 +63,7 @@ function payload(): ExportPayload {
     campaign_suppressions: [],
     channel_session_groups: [],
     group_messages_authored: [],
-    appointment_notices: [],
+    appointment_notices: [], contracts: [],
   };
 }
 

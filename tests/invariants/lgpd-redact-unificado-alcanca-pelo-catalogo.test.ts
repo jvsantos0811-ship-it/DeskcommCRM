@@ -191,6 +191,16 @@ const DECISOES: Record<string, Decisao> = {
       "`trg_lgpd_secoes_de_modulo`, nos dois caminhos, com `to_regclass` pulando sem erro " +
       "onde o módulo não existe.",
   },
+  crm_contracts: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9008 (fork): o PDF do contrato leva nome, CPF e endereço do cliente. Na virada de " +
+      "is_anonymized, fn_redigir_contratos_ao_anonimizar põe os arquivos (original e via assinada, " +
+      "só caminhos da própria organização) em storage_redaction_queue, bucket `contratos`, e troca " +
+      "titulo/arquivo_nome/motivo/link por nada — status e datas ficam (houve um contrato, não de quem). " +
+      "A cópia enviada mora em whatsapp-media, na pasta da conversa, e sai pelo passo 7 da cascata.",
+  },
   crm_proposals: {
     decidida: "redigir",
     caminho: "cascata",

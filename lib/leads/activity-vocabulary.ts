@@ -192,6 +192,17 @@ export type ActivityType =
    */
   | "proposal_followup_skipped"
   /**
+   * O CONTRATO DO NEGÓCIO (fork, migration 9008). Anexar, enviar e os três
+   * desfechos — todos de uma PESSOA (as rotas são de sessão; nenhuma IA envia
+   * contrato). Sem o título no `reason`: ele costuma nomear o cliente, e a
+   * linha aparece na tela e no export LGPD.
+   */
+  | "contract_uploaded"
+  | "contract_sent"
+  | "contract_signed"
+  | "contract_declined"
+  | "contract_cancelled"
+  /**
    * O CONTATO VIROU PESSOAL / DEIXOU DE SER PESSOAL (spec 21).
    *
    * Tipos próprios, e não `note`, porque quem decide o que some da vista é um
@@ -309,6 +320,11 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   proposal_expired: "Proposta venceu sem decisão",
   proposal_value_changed: "Valor do negócio atualizado pela proposta",
   proposal_followup_skipped: "Follow-up automático não agendado",
+  contract_uploaded: "Contrato anexado",
+  contract_sent: "Contrato enviado ao cliente",
+  contract_signed: "Contrato assinado",
+  contract_declined: "Contrato recusado",
+  contract_cancelled: "Contrato cancelado",
   // Rótulos com o veredito, nunca o mecanismo: quem lê a timeline quer saber
   // que o contato saiu da operação (ou voltou), não o nome da coluna.
   contact_marked_personal: "Marcado como pessoal",
