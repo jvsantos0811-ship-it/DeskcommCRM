@@ -58,19 +58,31 @@ async function login(page: Page, email: string): Promise<void> {
   await page.waitForURL(/\/app\//);
 }
 
-/** Arrasta da saída de um nó até a entrada de outro (mesmo gesto de followup-builder.spec.ts). */
+/**
+ * Arrasta da saída de um nó até a entrada de outro, e CONFERE que a aresta
+ * nasceu — tentando de novo, como `followup-tempo-adaptativo.spec.ts`. Medido
+ * no CI (PR #13): sob carga, um dos três gestos não chegou ao React Flow e o
+ * caso viu 2 arestas. Isso é o gesto, não o produto; a conferência por aresta
+ * nova é o que separa os dois.
+ */
 async function ligar(page: Page, origem: string, destino: string): Promise<void> {
+  const TENTATIVAS = 4;
   const source = page.locator(`.react-flow__node[data-id="${origem}"] .react-flow__handle.source`).first();
   const target = page.locator(`.react-flow__node[data-id="${destino}"] .react-flow__handle.target`);
-  const sBox = await source.boundingBox();
-  const tBox = await target.boundingBox();
-  if (!sBox || !tBox) throw new Error(`handle não encontrado: ${origem} -> ${destino}`);
-  await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
-  await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await page.waitForTimeout(200);
+  const antes = await page.locator(".react-flow__edge").count();
+  for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa++) {
+    const sBox = await source.boundingBox();
+    const tBox = await target.boundingBox();
+    if (!sBox || !tBox) throw new Error(`handle não encontrado: ${origem} -> ${destino}`);
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    if ((await page.locator(".react-flow__edge").count()) > antes) return;
+  }
+  throw new Error(`a aresta ${origem} -> ${destino} não nasceu em ${TENTATIVAS} tentativas`);
 }
 
 async function idDoNo(page: Page, tipo: string): Promise<string> {
@@ -91,9 +103,14 @@ test("espera de 30 dias, imune à resposta, e o aviso de que a resposta adianta 
   const nome = `E2E Espera em dias ${Date.now()}`;
   await page.getByRole("button", { name: "Novo fluxo" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Nome").fill(nome);
+  // Esperar o FOCO antes de digitar: o Radix anima a abertura, e um `fill()` no
+  // meio dela é engolido (a mesma guarda de followup-tempo-adaptativo.spec.ts).
+  const campoNome = dialog.getByLabel("Nome");
+  await expect(campoNome).toBeFocused({ timeout: 15_000 });
+  await campoNome.fill(nome);
+  await expect(campoNome).toHaveValue(nome);
   await dialog.getByRole("button", { name: "Criar fluxo" }).click();
-  await expect(dialog).not.toBeVisible();
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
   await page.locator("li", { hasText: nome }).getByRole("link").click();
   await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
   const urlDoFluxo = page.url();
@@ -112,7 +129,7 @@ test("espera de 30 dias, imune à resposta, e o aviso de que a resposta adianta 
   await ligar(page, gatilho, espera);
   await ligar(page, espera, acao);
   await ligar(page, acao, fim);
-  await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(3, { timeout: 15_000 });
 
   // 2. A espera em DIAS: 30, e o cartão diz "30 d" — não "43200 min".
   const cartaoDaEspera = page.locator(`[data-testid="node-card-${espera}"]`);
