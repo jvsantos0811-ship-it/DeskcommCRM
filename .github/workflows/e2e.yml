@@ -752,6 +752,7 @@ jobs:
         agente-organiza-operacao.spec.ts
         central-de-avisos-capacidades.spec.ts
         escalacao-ciclo.spec.ts
+        passagem-cancela-agendada.spec.ts
         distribuicao-atendimento.spec.ts
         capacidades-do-agente.spec.ts
         cobranca-revendedor.spec.ts
