@@ -186,7 +186,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
       {anexando ? (
         <div className="mb-3 space-y-2 rounded-md border border-border bg-surface-elevated p-3">
           <div className="space-y-1">
-            <label htmlFor={`${idBase}-arquivo`} className="text-xs font-medium text-text">
+            <label htmlFor={`${idBase}-arquivo`} className="block text-xs font-medium text-text">
               {t("Arquivo do contrato (PDF, até 20 MB)")}
             </label>
             <input
@@ -195,12 +195,12 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
               type="file"
               accept="application/pdf,.pdf"
               onChange={(e) => escolherArquivo(e.target.files?.[0] ?? null)}
-              className="block w-full text-xs text-text file:mr-2 file:rounded file:border file:border-border file:bg-surface file:px-2 file:py-1 file:text-xs"
+              className="block w-full text-xs text-text file:mr-2 file:rounded-md file:border file:border-border file:bg-surface file:px-2 file:py-1 file:text-xs"
             />
             {erroDoArquivo ? <p className="text-xs text-destructive">{erroDoArquivo}</p> : null}
           </div>
           <div className="space-y-1">
-            <label htmlFor={`${idBase}-nome`} className="text-xs font-medium text-text">
+            <label htmlFor={`${idBase}-nome`} className="block text-xs font-medium text-text">
               {t("Nome do contrato")}
             </label>
             <Input
@@ -340,7 +340,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                   <div className="mt-2 space-y-2 rounded-md border border-border bg-surface-elevated p-2.5">
                     {aberta === "enviar" ? (
                       <>
-                        <label htmlFor={`${idBase}-${c.id}-msg`} className="text-xs font-medium text-text">
+                        <label htmlFor={`${idBase}-${c.id}-msg`} className="block text-xs font-medium text-text">
                           {t("Mensagem que vai junto com o arquivo (opcional)")}
                         </label>
                         <Textarea
@@ -358,7 +358,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                     ) : null}
                     {aberta === "assinar" ? (
                       <>
-                        <label htmlFor={`${idBase}-${c.id}-via`} className="text-xs font-medium text-text">
+                        <label htmlFor={`${idBase}-${c.id}-via`} className="block text-xs font-medium text-text">
                           {t("Via assinada em PDF (opcional)")}
                         </label>
                         <input
@@ -366,13 +366,13 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                           type="file"
                           accept="application/pdf,.pdf"
                           onChange={(e) => setViaAssinada(e.target.files?.[0] ?? null)}
-                          className="block w-full text-xs text-text file:mr-2 file:rounded file:border file:border-border file:bg-surface file:px-2 file:py-1 file:text-xs"
+                          className="block w-full text-xs text-text file:mr-2 file:rounded-md file:border file:border-border file:bg-surface file:px-2 file:py-1 file:text-xs"
                         />
                       </>
                     ) : null}
                     {aberta === "recusar" || aberta === "cancelar" ? (
                       <>
-                        <label htmlFor={`${idBase}-${c.id}-motivo`} className="text-xs font-medium text-text">
+                        <label htmlFor={`${idBase}-${c.id}-motivo`} className="block text-xs font-medium text-text">
                           {aberta === "recusar" ? t("Por que o cliente recusou? (opcional)") : t("Por que cancelar? (opcional)")}
                         </label>
                         <Textarea
