@@ -96,6 +96,19 @@ describe("nenhum card fala a língua do banco", () => {
     expect(describeNodeConfig("wait", { mode: "fixed", duration_ms: 600_000 }, pt)).toBe("10 min");
   });
 
+  it("espera longa aparece na unidade que cabe, e a imune se identifica no card (fork, item 5)", () => {
+    // 30 dias eram "43200 min" no card — ninguém lê isso como um mês.
+    expect(describeNodeConfig("wait", { mode: "fixed", duration_ms: 30 * 86_400_000 }, pt)).toBe("30 d");
+    expect(describeNodeConfig("wait", { mode: "fixed", duration_ms: 2 * 3_600_000 }, pt)).toBe("2 h");
+    expect(describeNodeConfig("wait", { mode: "fixed", duration_ms: 90 * 60_000 }, pt)).toBe("90 min");
+    expect(
+      describeNodeConfig("wait", { mode: "fixed", duration_ms: 30 * 86_400_000, immune_to_reply: true }, pt),
+    ).toBe("30 d · não encurta com resposta");
+    expect(
+      describeNodeConfig("wait", { mode: "fixed", duration_ms: 30 * 86_400_000, immune_to_reply: true }, es),
+    ).not.toContain("não encurta");
+  });
+
   it("em espanhol o card de repetição e o de casar resposta também traduzem", () => {
     // Os dois chegaram por outra branch chamando `describeNodeConfig` sem `t`, e
     // o padrão identidade escondia o esquecimento de quem só lê em português.

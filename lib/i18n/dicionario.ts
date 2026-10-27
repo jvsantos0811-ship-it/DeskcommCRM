@@ -2862,6 +2862,25 @@ export const DICIONARIO: Traducoes = {
   "Duração (minutos)": { es: "Duración (minutos)" },
   "Mínimo (min)": { es: "Mínimo (min)" },
   "Máximo (min)": { es: "Máximo (min)" },
+  // Fork, item 5: a espera em horas/dias e a espera imune à resposta.
+  "Duração (horas)": { es: "Duración (horas)" },
+  "Duração (dias)": { es: "Duración (días)" },
+  "Mínimo (horas)": { es: "Mínimo (horas)" },
+  "Mínimo (dias)": { es: "Mínimo (días)" },
+  "Máximo (horas)": { es: "Máximo (horas)" },
+  "Máximo (dias)": { es: "Máximo (días)" },
+  // ("horas" e "dias" já existiam no dicionário: chave repetida quebra o tsc.)
+  "Continuar esperando mesmo se o cliente responder": { es: "Seguir esperando aunque el cliente responda" },
+  "Para cadência longa, como um retorno mensal: a resposta do cliente não encurta nem cancela esta espera. Precisa de pelo menos 24 horas.": {
+    es: "Para cadencias largas, como un retorno mensual: la respuesta del cliente no acorta ni cancela esta espera. Necesita al menos 24 horas.",
+  },
+  "Com menos de 24 horas de espera, o fluxo não publica com esta opção ligada.": {
+    es: "Con menos de 24 horas de espera, el flujo no se publica con esta opción activada.",
+  },
+  "não encurta com resposta": { es: "no se acorta con respuesta" },
+  "Com “Cancelar se o lead responder” desligado, a resposta do cliente não para este fluxo: ela ENCURTA a espera em curso, e o próximo passo sai logo em seguida. Numa régua de vendas, ligue essa opção no gatilho.": {
+    es: "Con “Cancelar si el lead responde” desactivado, la respuesta del cliente no detiene este flujo: ACORTA la espera en curso y el siguiente paso sale enseguida. En una cadencia de ventas, active esa opción en el disparador.",
+  },
   "Orientação (opcional)": { es: "Orientación (opcional)" },
   "Classes (separadas por vírgula)": { es: "Clases (separadas por comas)" },
   "Esperar a resposta por (minutos)": { es: "Esperar la respuesta durante (minutos)" },

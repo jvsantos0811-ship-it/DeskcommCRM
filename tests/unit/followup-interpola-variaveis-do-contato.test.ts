@@ -286,3 +286,87 @@ describe("modelo do follow-up (#2528)", () => {
     expect(runBeforeSend.mock.calls[0]![0].body).toBe("Oi {{lead.custom_fields.servico}}, tudo?");
   });
 });
+
+/**
+ * 3º caso (fork, briefing do Operador item 5): a ORIENTAÇÃO do passo de IA.
+ *
+ * O `prompt_hint` seguia só com a volta: "pergunte se {{primeiro_nome}} já tem
+ * a data do parto" chegava ao modelo com a marcação crua. Agora passa pelo
+ * mesmo render do texto fixo — e só paga a leitura do contato quando tem `{{`.
+ */
+describe("orientação do passo de IA (item 5)", () => {
+  function grafo(prompt_hint: string): FlowGraph {
+    return {
+      nodes: [{ id: "action-1", type: "action", config: { mode: "ai_message", prompt_hint } }],
+      edges: [],
+    } as unknown as FlowGraph;
+  }
+
+  function enrollment(): EnrollmentRow {
+    return {
+      id: "enr-1",
+      organization_id: ORG,
+      pointer_id: "ptr-1",
+      version_id: "ver-1",
+      contact_id: CONTATO,
+      conversation_id: null,
+      current_node_id: "action-1",
+      status: "active",
+      next_eval_at: NOW.toISOString(),
+      claimed_until: null,
+      attempts: 0,
+      max_attempts: 5,
+      last_error: null,
+      steps_taken: 3,
+      outcome: null,
+      cancel_reason: null,
+      started_at: NOW.toISOString(),
+      completed_at: null,
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  async function enfileirar(prompt_hint: string, contexto: Record<string, unknown> | null) {
+    const payloads: Array<Record<string, unknown>> = [];
+    const loadRenderContext = vi.fn(async () => contexto);
+    const db = {
+      loadFlowGraph: vi.fn(async () => grafo(prompt_hint)),
+      loadLeadFacts: vi.fn(async () => ({ lead_stage: null, tags: [] })),
+      loadRenderContext,
+      loadEnrollmentEvents: vi.fn(async () => []),
+      loadLastInboundBody: vi.fn(async () => null),
+      loadFlowPointerName: vi.fn(async () => null),
+      insertEnrollmentEvent: vi.fn(async () => ({ inserted: true })),
+      updateEnrollment: vi.fn(async () => {}),
+    } as unknown as AdminClient;
+    const deps: TickDeps = {
+      db,
+      clock: () => NOW,
+      enqueueJob: async (job) => {
+        payloads.push(job.payload as unknown as Record<string, unknown>);
+      },
+    };
+    await avancarEnrollmentAtivo(deps, enrollment());
+    expect(payloads).toHaveLength(1);
+    return { payload: payloads[0]!, loadRenderContext };
+  }
+
+  it("⭐ a orientação chega ao modelo com o PRIMEIRO NOME, não com a marcação", async () => {
+    const { payload } = await enfileirar("Pergunte se {{primeiro_nome}} já tem a data do parto.", {
+      contact: { name: "Ana Souza" },
+      lead: null,
+    });
+
+    expect(payload.prompt_hint).toBe("Pergunte se Ana já tem a data do parto.");
+  });
+
+  it("orientação sem marcação não lê o contato — nada novo sai do banco", async () => {
+    const { payload, loadRenderContext } = await enfileirar("Retome a conversa com gentileza.", {
+      contact: { name: "Ana Souza" },
+      lead: null,
+    });
+
+    expect(payload.prompt_hint).toBe("Retome a conversa com gentileza.");
+    expect(loadRenderContext).not.toHaveBeenCalled();
+  });
+});
