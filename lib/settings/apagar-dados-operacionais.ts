@@ -51,6 +51,10 @@ export type TabelaOperacional =
   // SEMPRE num reset "total" da organização, e o PDF dela continuaria
   // ocupando o bucket sem nenhuma linha apontando pra ele.
   | "crm_proposals"
+  // 9008 (fork): o contrato do negócio tem a MESMA forma — negócio e contato
+  // SET NULL, porque contrato é documento —, então pela mesma razão precisa de
+  // raiz própria, e o PDF dele sai do bucket `contratos` junto.
+  | "crm_contracts"
   | "crm_leads"
   | "contacts";
 
@@ -64,6 +68,7 @@ export const RAIZES_DO_APAGAMENTO: readonly Raiz[] = [
   { tabela: "calendar_appointments", porque: "FK RESTRICT para contacts" },
   { tabela: "orders", porque: "FK SET NULL para contacts; ninguém a referencia" },
   { tabela: "crm_proposals", porque: "FK SET NULL para contacts e crm_leads (D10) — raiz própria" },
+  { tabela: "crm_contracts", porque: "FK SET NULL para contacts e crm_leads (9008, como a D10) — raiz própria" },
   { tabela: "crm_leads", porque: "FK SET NULL para contacts" },
   { tabela: "contacts", porque: "a raiz do grafo — sempre por último" },
 ] as const;
@@ -86,6 +91,7 @@ function contagensZeradas(): ContagensApagadas {
     calendar_appointments: 0,
     orders: 0,
     crm_proposals: 0,
+    crm_contracts: 0,
     crm_leads: 0,
     contacts: 0,
   };
@@ -128,29 +134,53 @@ export async function apagarDadosOperacionaisDaOrg(
   // com as linhas de `crm_proposals` apagadas acima. O contador de numeração
   // (`crm_proposal_counters`) NÃO é tocado por este reset — a organização
   // pode zerar o atendimento e continuar numerando propostas de onde parou.
-  // `storage.list()` pagina em 100 por padrão (storage-js) — sem o laço,
-  // qualquer organização com mais de 100 propostas ficava com PDFs órfãos
-  // no bucket depois do reset. Sempre lista do zero: cada `remove()` já tira
-  // do bucket os arquivos que acabaram de ser listados, então a próxima
-  // chamada devolve o lote seguinte na mesma posição — não precisa (nem pode
-  // confiar em) offset, que uma listagem que muda debaixo do pé tornaria
-  // instável.
+  // 9008 (fork): os PDFs de contrato moram no bucket `contratos`, com o mesmo
+  // desenho de pasta plana por organização (`lib/contratos/arquivo.ts`) — a
+  // mesma limpeza, e a contagem soma nos `pdfsRemovidos` da auditoria.
   let pdfsRemovidos = 0;
+  for (const bucket of BUCKETS_DE_PDF) {
+    pdfsRemovidos += await esvaziarPastaDaOrganizacao(client, bucket, organizationId);
+  }
+
+  return { ok: true, counts, pdfsRemovidos };
+}
+
+/** Os buckets de PDF que o reset esvazia: `<org>/<arquivo>.pdf`, sem subpasta. */
+const BUCKETS_DE_PDF = ["propostas", "contratos"] as const;
+
+/**
+ * Esvazia a pasta da organização num bucket de PDF e devolve quantos arquivos
+ * saíram. Falha de listagem ou de remoção PARA a limpeza daquele bucket sem
+ * derrubar o reset — as linhas já foram apagadas, e um arquivo órfão é dívida
+ * menor que um reset pela metade.
+ *
+ * `storage.list()` pagina em 100 por padrão (storage-js) — sem o laço,
+ * qualquer organização com mais de 100 arquivos ficava com PDFs órfãos. Sempre
+ * lista do zero: cada `remove()` já tira do bucket os arquivos que acabaram de
+ * ser listados, então a próxima chamada devolve o lote seguinte na mesma
+ * posição — não precisa (nem pode confiar em) offset, que uma listagem que muda
+ * debaixo do pé tornaria instável.
+ */
+async function esvaziarPastaDaOrganizacao(
+  client: SupabaseClient,
+  bucket: (typeof BUCKETS_DE_PDF)[number],
+  organizationId: string,
+): Promise<number> {
+  let removidos = 0;
   const LOTE = 100;
   for (;;) {
     const { data: arquivos, error: listErr } = await client.storage
-      .from("propostas")
+      .from(bucket)
       .list(organizationId, { limit: LOTE });
     if (listErr || !arquivos || arquivos.length === 0) break;
 
     const { error: removeErr } = await client.storage
-      .from("propostas")
+      .from(bucket)
       .remove(arquivos.map((a) => `${organizationId}/${a.name}`));
     if (removeErr) break;
-    pdfsRemovidos += arquivos.length;
+    removidos += arquivos.length;
 
     if (arquivos.length < LOTE) break;
   }
-
-  return { ok: true, counts, pdfsRemovidos };
+  return removidos;
 }

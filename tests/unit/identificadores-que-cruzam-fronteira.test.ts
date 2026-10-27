@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ALFABETO_DO_NOME_NO_STORAGE } from "@/lib/ai/skills/package";
+import { caminhoDaCopiaNaConversa, caminhoDoAssinado, nomeDoArquivoParaOCliente } from "@/lib/contratos/arquivo";
 import { TETO_NOME_DE_SESSAO_WAHA, nomeCurtoDaSessao, nomeDaSessaoNovo } from "@/lib/channels/nome-da-sessao";
 import { randomId } from "@/lib/random-id";
 import { nomeDaSessaoDeVoz } from "@/lib/wacalls/nome-da-sessao";
@@ -82,7 +83,23 @@ const FRONTEIRAS: Fronteira[] = [
       "https://supabase.com/docs/guides/storage/uploads/file-limits — seção «File name restrictions»",
     lacuna:
       "a mesma página documenta o alfabeto do nome de arquivo e não documenta teto de comprimento da chave. Forma entra no teste; número, não.",
-    medir: () => [ORG, VERSAO, "minha skill", "SKILL.md", "assets", "referencia.md"],
+    medir: () => [
+      ORG,
+      VERSAO,
+      "minha skill",
+      "SKILL.md",
+      "assets",
+      "referencia.md",
+      // 9008 (fork): o nome do contrato vem do TÍTULO que a pessoa digitou, com
+      // acento e símbolo — é o caso que mais facilmente sairia do alfabeto.
+      ...caminhoDaCopiaNaConversa(
+        ORG,
+        ORG,
+        ORG,
+        nomeDoArquivoParaOCliente("Procuração “ad judicia” — Ação nº 12/2026 & substabelecimento"),
+      ).split("/"),
+      ...caminhoDoAssinado(ORG, ORG).split("/"),
+    ],
   },
   {
     id: "api.idempotency-key",
@@ -187,6 +204,13 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
+  // O contrato do negócio (fork, 9008): o original e a via assinada em
+  // `contratos/<org>/<contrato>[-assinado].pdf` (dois uuids), e a cópia que sai
+  // ao cliente em `whatsapp-media/<org>/<conversa>/contrato-<id>/<Nome>.pdf`,
+  // com o nome passado por `nomeDoArquivoParaOCliente` (medido acima).
+  { arquivo: "app/api/v1/leads/[id]/contracts/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/contracts/[id]/send/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/contracts/[id]/decide/route.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },

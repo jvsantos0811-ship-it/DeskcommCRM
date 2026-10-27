@@ -55,6 +55,9 @@ const linhasPorTabela: Record<string, number> = {};
 /** D10: arquivos "existentes" na pasta da organização no bucket `propostas`. */
 let arquivosNoBucket: Array<{ name: string }> = [];
 const removidosDoBucket: string[][] = [];
+/** 9008 (fork): arquivos na pasta da organização no bucket `contratos`. */
+let arquivosDeContrato: Array<{ name: string }> = [];
+const removidosDosContratos: string[][] = [];
 let listagemDoBucketFalha = false;
 
 vi.mock("next/headers", () => ({
@@ -120,6 +123,20 @@ function clienteFalso() {
     },
     storage: {
       from(bucket: string) {
+        if (bucket === "contratos") {
+          return {
+            async list(pasta: string, options?: { limit?: number }) {
+              if (pasta !== ORG) return { data: [], error: null };
+              return { data: arquivosDeContrato.slice(0, options?.limit ?? 100), error: null };
+            },
+            async remove(caminhos: string[]) {
+              removidosDosContratos.push(caminhos);
+              const nomes = new Set(caminhos.map((c) => c.split("/").pop()));
+              arquivosDeContrato = arquivosDeContrato.filter((a) => !nomes.has(a.name));
+              return { data: null, error: null };
+            },
+          };
+        }
         if (bucket !== "propostas") throw new Error(`bucket inesperado: ${bucket}`);
         return {
           // O `storage-js` real devolve a PRIMEIRA página quando não recebe
@@ -167,6 +184,8 @@ beforeEach(() => {
   for (const k of Object.keys(linhasPorTabela)) delete linhasPorTabela[k];
   arquivosNoBucket = [];
   removidosDoBucket.length = 0;
+  arquivosDeContrato = [];
+  removidosDosContratos.length = 0;
   listagemDoBucketFalha = false;
 });
 
@@ -191,7 +210,7 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
     }
   });
 
-  it("apaga exatamente as sete raízes declaradas — nem tabela a mais, nem a menos", async () => {
+  it("apaga exatamente as oito raízes declaradas — nem tabela a mais, nem a menos", async () => {
     await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
     expect(delecoes.map((d) => d.tabela)).toEqual([
       "messages",
@@ -199,6 +218,8 @@ describe("zona de perigo: o apagamento não sai da própria organização", () =
       "calendar_appointments",
       "orders",
       "crm_proposals",
+      // 9008 (fork): o contrato do negócio, raiz própria pelo mesmo motivo da D10.
+      "crm_contracts",
       "crm_leads",
       "contacts",
     ]);
@@ -376,5 +397,25 @@ describe("zona de perigo: D10 — os PDFs de proposta somem junto (bucket `propo
 
     expect(r.ok).toBe(true);
     expect(removidosDoBucket).toEqual([]);
+  });
+});
+
+describe("zona de perigo: 9008 (fork) — os PDFs de contrato somem junto (bucket `contratos`)", () => {
+  it("apaga as linhas de crm_contracts da própria organização e esvazia a pasta dela no bucket", async () => {
+    arquivosNoBucket = [{ name: "p1.pdf" }];
+    arquivosDeContrato = [{ name: "c1.pdf" }, { name: "c1-assinado.pdf" }];
+    const r = await apagarDadosOperacionaisDaOrganizacao({ confirmNome: NOME_DA_ORG });
+
+    expect(r.ok).toBe(true);
+    const contratos = delecoes.find((d) => d.tabela === "crm_contracts");
+    expect(contratos?.filtros.organization_id).toBe(ORG);
+    // Antes de crm_leads e de contacts: a FK é SET NULL, e a linha não pode
+    // sobreviver órfã ao reset.
+    const ordem = delecoes.map((d) => d.tabela);
+    expect(ordem.indexOf("crm_contracts")).toBeLessThan(ordem.indexOf("contacts"));
+    expect(removidosDosContratos).toEqual([[`${ORG}/c1.pdf`, `${ORG}/c1-assinado.pdf`]]);
+    const meta = auditadas[0]!.metadata as { pdfs_removidos: number };
+    // propostas + contratos, na mesma contagem da auditoria.
+    expect(meta.pdfs_removidos).toBe(3);
   });
 });

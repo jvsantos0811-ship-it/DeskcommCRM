@@ -257,6 +257,24 @@ export interface ProposalRow {
 }
 
 /**
+ * Contrato do negócio (fork, migration 9008). A anonimização expurga o PDF e
+ * tira o título (o gatilho da 9008); o que se apaga a pedido do titular é o
+ * que se entrega a pedido dele. O ARQUIVO não vai no pacote — mesma regra das
+ * propostas: ele o recebeu no WhatsApp, e o caminho interno não sai.
+ */
+export interface ContractRow {
+  id: string;
+  titulo: string;
+  status: string;
+  enviado_em: string | null;
+  decidido_em: string | null;
+  motivo: string | null;
+  created_at: string;
+  tem_pdf: boolean;
+  tem_via_assinada: boolean;
+}
+
+/**
  * Tarefa combinada SOBRE a pessoa (migration 0210).
  *
  * ⚠️ ESTE BLOCO NASCEU COM A OUTRA METADE, e não depois dela. A migration liga o
@@ -670,6 +688,8 @@ export interface ExportPayload {
   appointments: AppointmentRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
+  /** Contratos do negócio enviados a ele (fork, 9008) — ver `ContractRow`. */
+  contracts: ContractRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
@@ -1541,6 +1561,36 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Contratos do negócio (fork, 9008) — contact_id direto em crm_contracts. O
+  // gatilho da 9008 expurga o PDF e o título na anonimização; este bloco é a
+  // outra metade.
+  let contracts: ContractRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("crm_contracts")
+      .select("id, titulo, status, enviado_em, decidido_em, motivo, created_at, arquivo_path, assinado_path")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] contracts load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("contracts", data, 500);
+      contracts = (data as Array<Omit<ContractRow, "tem_pdf" | "tem_via_assinada"> & {
+        arquivo_path: string | null;
+        assinado_path: string | null;
+      }>).map(({ arquivo_path, assinado_path, ...c }) => ({
+        ...c,
+        tem_pdf: Boolean(arquivo_path),
+        tem_via_assinada: Boolean(assinado_path),
+      }));
+    }
+  }
+
   // Empresas e pessoas (0448/0449) — ver o comentário do campo `b2b` no tipo.
   // A pessoa vem de `contacts.person_id`; as linhas de planilha casam pelo
   // contato OU pela pessoa, o MESMO escopo da redação da 0449. Erro lança:
@@ -2279,6 +2329,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     appointments,
     sales,
     proposals,
+    contracts,
     tasks,
     webhook_captures,
     audit_log_extract,
@@ -2473,6 +2524,7 @@ function emptyPayload(
     appointments: [],
     sales: [],
     proposals: [],
+    contracts: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],

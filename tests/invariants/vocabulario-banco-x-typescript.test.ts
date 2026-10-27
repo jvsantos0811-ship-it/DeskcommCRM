@@ -346,6 +346,22 @@ const PARES: Array<{
     simbolo: "KNOWLEDGE_SEARCH_AUTHOR_KINDS",
   },
   {
+    tabela: "crm_contracts",
+    coluna: "status",
+    // lib/contratos/vocabulario.ts → STATUS_DO_CONTRATO (fork, migration 9008).
+    // Nasce no MESMO commit da migration, como manda a lição desta lista.
+    arquivo: "lib/contratos/vocabulario.ts",
+    simbolo: "STATUS_DO_CONTRATO",
+  },
+  {
+    tabela: "crm_contracts",
+    coluna: "provedor_assinatura",
+    // lib/contratos/vocabulario.ts → PROVEDORES_DE_ASSINATURA. Hoje só `manual`;
+    // ligar um serviço de assinatura mexe nos dois lados, e este par cobra.
+    arquivo: "lib/contratos/vocabulario.ts",
+    simbolo: "PROVEDORES_DE_ASSINATURA",
+  },
+  {
     tabela: "passagens_de_atendimento",
     coluna: "motor",
     // lib/escalacao/passagem.ts → MOTORES_DA_PASSAGEM (tupla `as const`, como

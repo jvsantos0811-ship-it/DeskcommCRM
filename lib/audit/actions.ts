@@ -165,6 +165,12 @@ export const AUDIT_ACTIONS = [
   "message.schedule_created",
   "message.schedule_cancelled",
   "message.scheduled_run",
+  // Contrato do negócio (migration 9008): anexar, enviar ao cliente e marcar o
+  // desfecho. O metadata leva o negócio e o desfecho — nunca o título, que
+  // costuma nomear o cliente.
+  "contract.created",
+  "contract.sent",
+  "contract.decided",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",

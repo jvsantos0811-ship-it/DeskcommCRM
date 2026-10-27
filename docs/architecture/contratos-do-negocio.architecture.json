@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Contratos do negócio",
+    "subtitle": "PDF do escritório enviado por uma pessoa pelo WhatsApp, desfecho marcado à mão (fork, migration 9008)",
+    "output": "contratos-do-negocio.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "ui", "label": "Interface" },
+    { "id": "api", "label": "Rotas de sessão (agent+)" },
+    { "id": "data", "label": "Banco e Storage" },
+    { "id": "saida", "label": "Saída e retorno" }
+  ],
+  "mainPath": ["secao", "rota_anexar", "tabela", "rota_enviar", "handler", "rota_decidir", "timeline"],
+  "nodes": [
+    { "id": "secao", "lane": "ui", "col": 1, "type": "frontend", "label": "ContratosDoNegocio (dossiê do card)" },
+    { "id": "rota_anexar", "lane": "api", "col": 1, "type": "service", "label": "POST /leads/[id]/contracts" },
+    { "id": "rota_enviar", "lane": "api", "col": 2, "type": "service", "label": "POST /contracts/[id]/send" },
+    { "id": "rota_decidir", "lane": "api", "col": 3, "type": "service", "label": "POST /contracts/[id]/decide" },
+    { "id": "rota_arquivo", "lane": "api", "col": 4, "type": "service", "label": "GET /contracts/[id]/arquivo" },
+    { "id": "provedor", "lane": "api", "col": 5, "type": "service", "label": "provedorDeAssinatura (manual hoje)" },
+    { "id": "tabela", "lane": "data", "col": 1, "type": "database", "label": "crm_contracts" },
+    { "id": "bucket", "lane": "data", "col": 2, "type": "storage", "label": "bucket contratos" },
+    { "id": "copia", "lane": "data", "col": 3, "type": "storage", "label": "whatsapp-media/<org>/<conversa>/contrato-<id>" },
+    { "id": "lgpd", "lane": "data", "col": 4, "type": "database", "label": "trg_redigir_contratos_ao_anonimizar → storage_redaction_queue" },
+    { "id": "handler", "lane": "saida", "col": 1, "type": "service", "label": "sendMessageHandler (envio de pessoa)" },
+    { "id": "mensagem", "lane": "saida", "col": 2, "type": "database", "label": "messages (status de entrega)" },
+    { "id": "timeline", "lane": "saida", "col": 3, "type": "database", "label": "crm_lead_activities + api_audit_log" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "secao", "to": "rota_anexar", "label": "PDF + nome" },
+    { "id": "e2", "from": "rota_anexar", "to": "bucket", "label": "original" },
+    { "id": "e3", "from": "rota_anexar", "to": "tabela", "label": "rascunho" },
+    { "id": "e4", "from": "secao", "to": "rota_enviar", "label": "Enviar ao cliente" },
+    { "id": "e5", "from": "rota_enviar", "to": "provedor", "label": "preparar (link de assinatura)" },
+    { "id": "e6", "from": "rota_enviar", "to": "copia", "label": "cópia com nome legível" },
+    { "id": "e7", "from": "rota_enviar", "to": "handler", "label": "documento" },
+    { "id": "e8", "from": "handler", "to": "mensagem", "label": "queued/sent/failed" },
+    { "id": "e9", "from": "mensagem", "to": "secao", "label": "na fila / entregue / lido" },
+    { "id": "e10", "from": "rota_enviar", "to": "tabela", "label": "enviado ou motivo da falha" },
+    { "id": "e11", "from": "secao", "to": "rota_decidir", "label": "assinado / recusado / cancelado" },
+    { "id": "e12", "from": "rota_decidir", "to": "bucket", "label": "via assinada" },
+    { "id": "e13", "from": "rota_decidir", "to": "tabela", "label": "desfecho" },
+    { "id": "e14", "from": "rota_enviar", "to": "timeline", "label": "contract_sent" },
+    { "id": "e15", "from": "rota_decidir", "to": "timeline", "label": "contract_signed/declined/cancelled" },
+    { "id": "e16", "from": "secao", "to": "rota_arquivo", "label": "Abrir PDF" },
+    { "id": "e17", "from": "rota_arquivo", "to": "bucket", "label": "URL assinada curta" },
+    { "id": "e18", "from": "tabela", "to": "lgpd", "label": "virada de is_anonymized" },
+    { "id": "e19", "from": "lgpd", "to": "bucket", "label": "expurgo" },
+    { "id": "e20", "from": "rota_anexar", "to": "timeline", "label": "contract_uploaded" }
+  ]
+}

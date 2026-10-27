@@ -31,6 +31,7 @@ function payload(): ExportPayload {
     appointments: [],
     sales: [],
     proposals: [],
+    contracts: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],

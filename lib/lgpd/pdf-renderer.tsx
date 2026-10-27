@@ -519,6 +519,29 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
           </View>
         ) : null}
 
+        {/* Contratos do negócio (fork, 9008) — o documento que ele recebeu
+            para assinar e o desfecho registrado pela equipe. */}
+        {data.contracts?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Contratos</Text>
+            {data.contracts.map((c) => (
+              <View key={c.id} style={styles.itemBlock}>
+                <Text>
+                  {c.titulo} · {c.status}
+                </Text>
+                <Text style={styles.small}>
+                  Criado em {fmtDate(c.created_at)}
+                  {c.enviado_em ? ` · enviado em ${fmtDate(c.enviado_em)}` : ""}
+                  {c.decidido_em ? ` · desfecho em ${fmtDate(c.decidido_em)}` : ""}
+                  {c.tem_pdf ? " · documento em PDF enviado" : ""}
+                  {c.tem_via_assinada ? " · via assinada arquivada" : ""}
+                </Text>
+                {c.motivo ? <Text style={styles.small}>Motivo: {c.motivo}</Text> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {/* Agenda — vai no PDF, e não só no JSON, porque é a substância legível
             do Art. 18 II: "houve consulta no dia tal, sobre isto". `activities`
             fica só no JSON de propósito (type/source_module é telemetria); um
