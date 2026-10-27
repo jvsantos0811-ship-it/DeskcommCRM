@@ -38,8 +38,8 @@ const SESSAO_ES = randomUUID();
 beforeAll(async () => {
   await pool.query(
     `insert into organizations (id, slug, legal_name, display_name, timezone, locale) values
-       ($1, $1::text, 'Agendadas PT', 'Agendadas PT', 'America/Sao_Paulo', 'pt-BR'),
-       ($2, $2::text, 'Agendadas ES', 'Agendadas ES', 'America/Mexico_City', 'es-MX')`,
+       ($1::uuid, $1::text, 'Agendadas PT', 'Agendadas PT', 'America/Sao_Paulo', 'pt-BR'),
+       ($2::uuid, $2::text, 'Agendadas ES', 'Agendadas ES', 'America/Mexico_City', 'es-MX')`,
     [ORG_PT, ORG_ES],
   );
   await pool.query(
