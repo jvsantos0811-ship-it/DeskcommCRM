@@ -102,7 +102,8 @@ test("F1 — ponto fixo mostra a RAZÃO, não um cadeado mudo", async ({ page })
   // embedding, ou "—" quando a instalação não tem chave — nunca o modelo de
   // conversa da organização, que era o que o painel anunciava aqui.
   for (const id of ["embedding_indexar", "embedding_consultar"]) {
-    await expect(page.locator(`[data-testid="modelo-${id}"]`)).toHaveText(/(text-embedding|gemini-embedding)|^—$/);
+    // `em-uso-…`, e não `modelo-…`: este último é o seletor de modelo do cartão.
+    await expect(page.locator(`[data-testid="em-uso-${id}"]`)).toHaveText(/(text-embedding|gemini-embedding)|^—$/);
   }
   await page.screenshot({ path: "evidence/provedores/03-ponto-fixo-com-razao.png", fullPage: true });
 });
