@@ -155,14 +155,15 @@ export interface PontoDeIa {
    * `usa` diz o que ele de fato chama, em par fechado: serve para o que NÃO
    * tem degrau. `escada` é o caso contrário — o ponto não tem resposta própria,
    * e o resolvedor devolve o degrau que quem chamou decidiu
-   * (`entrada.transcricao`). Marcar `escada` é o que impede a tela de voltar a
-   * anunciar um `whisper-1` fixo para quem transcreve pelo modelo de conversa
-   * da organização (#2190).
+   * (`entrada.transcricao` ou `entrada.embedding`). Marcar `escada` é o que
+   * impede a tela de voltar a anunciar um `whisper-1` fixo para quem transcreve
+   * pelo modelo de conversa da organização (#2190) — e, nos dois pontos de
+   * embedding, o modelo de conversa como se gerasse vetor (fork, item 8).
    */
   fixo?: {
     razao: string;
     usa?: { provider: string; modelId: string };
-    escada?: "transcricao";
+    escada?: "transcricao" | "embedding";
   };
   registraEm: DestinoDeTelemetria;
   /**
@@ -531,6 +532,11 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     fixo: {
       razao:
         "O material indexado e a busca precisam usar exatamente o mesmo modelo — são coordenadas de um mesmo mapa. Trocar só um dos lados não dá erro: o agente simplesmente para de achar o seu conteúdo, sem avisar. Para mudar de modelo aqui é preciso reindexar tudo de uma vez.",
+      // Fork, item 8: sem `escada`, o resolvedor descia até o padrão da
+      // organização e o painel anunciava o modelo de CONVERSA aqui. Quem decide
+      // é `resolverChaveDeEmbedding`, e a rota do painel lhe pergunta
+      // (`lib/ai/embeddings/anuncio.ts`).
+      escada: "embedding",
     },
     sintomaDeFalha:
       "Você sobe um documento e ele nunca fica pronto para uso; o agente responde sem conhecer o seu material.",
@@ -547,10 +553,17 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "Encontra, entre os seus documentos, os trechos que respondem à pergunta do cliente.",
     papel: "lembrar",
     exige: { embeddingDims: 1536 },
-    emissor: "lib/agent-engine/edge/llm/embed.ts",
+    // A busca do agente (`lib/agent-engine/agent/search-knowledge.ts`), a do
+    // atendimento legado (`workers/ai-response-worker.ts`) e a da tela
+    // (`lib/ai/knowledge/busca.ts`) embedam a pergunta por `embedText`, com
+    // `ponto: "embedding_consultar"`. Este campo apontava para
+    // `lib/agent-engine/edge/llm/embed.ts`, que nenhum código importava — e foi
+    // removido (fork, item 8).
+    emissor: "lib/ai/embed.ts",
     fixo: {
       razao:
         "Precisa usar o mesmo modelo com que o material foi indexado. Se divergir, a busca continua funcionando e devolve resultados errados — falha silenciosa, e por isso a troca é feita junto com a reindexação, não aqui.",
+      escada: "embedding",
     },
     sintomaDeFalha:
       "O agente responde de forma genérica, ignorando o que está escrito nos seus documentos.",

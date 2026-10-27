@@ -224,35 +224,60 @@ describe("a decisão explica a si mesma", () => {
   });
 });
 
-describe("aviso de capacidade que não precisa de catálogo", () => {
-  it("aponta modelo que não é de embedding num ponto de embedding", () => {
+describe("os pontos de embedding anunciam a escada, não o padrão (fork, item 8)", () => {
+  // Antes, `embedding_indexar`/`embedding_consultar` eram `fixo` sem resposta
+  // própria e desciam a cadeia: sem binding, o painel anunciava o MODELO DE
+  // CONVERSA da organização ("claude-sonnet-5") em "Buscar no seu material".
+  const ANUNCIO = {
+    provider: "openai",
+    modelId: "openai/text-embedding-3-small",
+    motivo: "Usando uma chave da organização cadastrada em Credenciais.",
+    avisos: [] as string[],
+  };
+
+  it("⭐ sem binding, anuncia o modelo que a escada escolheu — nunca o de conversa", () => {
+    const d = decidirBinding(entrada({ pontoId: "embedding_indexar", embedding: ANUNCIO }));
+    expect(d.modelId).toBe("openai/text-embedding-3-small");
+    expect(d.modelId).not.toBe(PADRAO.defaultModel);
+    expect(d.origem).toBe("fixo_do_produto");
+    expect(d.motivo).toBe(ANUNCIO.motivo);
+  });
+
+  it("um binding com modelo de conversa não muda o anúncio; o aviso vem da escada", () => {
+    const avisoDaEscada =
+      'O painel aponta "claude-sonnet-5" para este ponto, mas o modelo de embedding é fixo (openai/text-embedding-3-small) — trocá-lo exigiria reindexar todo o material de uma vez.';
     const d = decidirBinding(
       entrada({
         pontoId: "embedding_consultar",
         binding: binding({ purpose: "embedding_consultar", model_id: "claude-sonnet-5" }),
+        embedding: { ...ANUNCIO, avisos: [avisoDaEscada] },
       }),
     );
-    expect(d.avisos.join(" ")).toContain("modelo de embedding");
+    expect(d.modelId).toBe("openai/text-embedding-3-small");
+    expect(d.avisos).toContain(avisoDaEscada);
   });
 
-  it("aceita modelo de embedding sem reclamar", () => {
+  it("sem chave nenhuma: \"—\" com o que falta, não um modelo inventado", () => {
     const d = decidirBinding(
       entrada({
-        pontoId: "embedding_consultar",
-        binding: binding({
-          purpose: "embedding_consultar",
-          model_id: "openai/text-embedding-3-small",
-        }),
+        pontoId: "embedding_indexar",
+        embedding: { provider: "", modelId: null, motivo: "Nenhuma chave para preparar o seu material.", avisos: [] },
       }),
     );
-    expect(d.avisos).toEqual([]);
+    expect(d.modelId).toBeNull();
+    expect(d.motivo).toMatch(/Nenhuma chave/);
   });
 
-  it("não reclama de modelo de conversa em ponto de conversa", () => {
-    const d = decidirBinding(
-      entrada({ binding: binding({ model_id: "claude-sonnet-5" }) }),
-    );
-    expect(d.avisos).toEqual([]);
+  it("quem esquece de entregar o anúncio recebe \"—\", nunca o padrão da organização", () => {
+    const d = decidirBinding(entrada({ pontoId: "embedding_consultar" }));
+    expect(d.modelId).toBeNull();
+    expect(d.provider).toBe("");
+    expect(d.motivo).toMatch(/não foi resolvida/);
+  });
+
+  it("controle: um ponto de conversa segue a cadeia de sempre", () => {
+    expect(decidirBinding(entrada({ embedding: ANUNCIO })).modelId).toBe(PADRAO.defaultModel);
+    expect(decidirBinding(entrada({ binding: binding({ model_id: "claude-sonnet-5" }) })).avisos).toEqual([]);
   });
 });
 
