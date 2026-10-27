@@ -55872,6 +55872,93 @@ comment on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) is
 
 notify pgrst, 'reload schema';
 
+-- ---- a passagem para humano cancela as mensagens agendadas da conversa (migration 9007, fork) ----
+-- Gatilho em `passagens_de_atendimento`, a linha que todo caminho de passagem grava.
+-- ANTES da VARREDURA anon: função nova em `public` nasce exposta, e a varredura é
+-- quem cura quem ATUALIZA. Cabeçalho completo na migration.
+create or replace function public.fn_passagem_cancela_agendadas()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_fuso text;
+  v_espanhol boolean;
+  v_trecho text;
+  v_quando text;
+  r record;
+begin
+  begin
+    select o.timezone, coalesce(o.locale, 'pt-BR') like 'es%'
+      into v_fuso, v_espanhol
+      from public.organizations o
+     where o.id = new.organization_id;
+
+    if v_fuso is null or not exists (select 1 from pg_timezone_names where name = v_fuso) then
+      v_fuso := 'America/Sao_Paulo';
+    end if;
+
+    for r in
+      update public.scheduled_messages s
+         set status = 'cancelled',
+             cancelled_at = now(),
+             cancelled_by_user_id = null,
+             updated_at = now()
+       where s.organization_id = new.organization_id
+         and s.conversation_id = new.conversation_id
+         and s.status = 'scheduled'
+      returning s.body, s.send_at
+    loop
+      v_trecho := regexp_replace(btrim(r.body), '\s+', ' ', 'g');
+      if char_length(v_trecho) > 120 then
+        v_trecho := left(v_trecho, 117) || '…';
+      end if;
+
+      if v_espanhol then
+        v_quando := to_char(r.send_at at time zone v_fuso, 'DD/MM "a las" HH24:MI');
+        insert into public.conversation_notes
+          (organization_id, conversation_id, body, created_by_user_id, created_by_name)
+        values (
+          new.organization_id, new.conversation_id,
+          'Mensaje programado cancelado: la conversación pasó a atención humana. Saldría el '
+            || v_quando || '. Si todavía tiene sentido, prográmelo de nuevo.'
+            || E'\n\n' || 'Texto: "' || v_trecho || '"',
+          null, 'Sistema');
+      else
+        v_quando := to_char(r.send_at at time zone v_fuso, 'DD/MM "às" HH24:MI');
+        insert into public.conversation_notes
+          (organization_id, conversation_id, body, created_by_user_id, created_by_name)
+        values (
+          new.organization_id, new.conversation_id,
+          'Mensagem agendada cancelada: a conversa passou para atendimento humano. Ela sairia em '
+            || v_quando || '. Se ainda fizer sentido, agende de novo.'
+            || E'\n\n' || 'Texto: "' || v_trecho || '"',
+          null, 'Sistema');
+      end if;
+    end loop;
+  exception when others then
+    raise warning 'fn_passagem_cancela_agendadas: % (conversa %)', sqlerrm, new.conversation_id;
+  end;
+  return null;
+end;
+$$;
+
+-- As DUAS origens de EXECUTE (o default privileges do baseline e o grant a
+-- PUBLIC do Postgres). Função de gatilho não é chamada por ninguém: disparar o
+-- gatilho não exige EXECUTE de quem grava a passagem.
+revoke execute on function public.fn_passagem_cancela_agendadas() from public, anon, authenticated;
+
+drop trigger if exists trg_passagem_cancela_agendadas on public.passagens_de_atendimento;
+create trigger trg_passagem_cancela_agendadas
+  after insert on public.passagens_de_atendimento
+  for each row
+  execute function public.fn_passagem_cancela_agendadas();
+
+comment on function public.fn_passagem_cancela_agendadas() is
+  'Gatilho da passagem IA → humano: cancela as mensagens agendadas ainda em scheduled da conversa e deixa uma nota no fio por mensagem. '
+  'Nunca derruba o registro da passagem (falha vira WARNING). Migration 9007 (fork).';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
