@@ -253,6 +253,17 @@ export const customFieldSchema = z.object({
    * existe pronta para as escritas do servidor, ainda não plugada (#2521).
    */
   allow_new: z.boolean().optional(),
+  /**
+   * CAMPO DE QUALIFICAÇÃO COM STATUS (PC-003, item 2). Ligado, o campo guarda
+   * DOIS valores: o dado (em `crm_leads.custom_fields`, como sempre) e o status
+   * da resposta (em `crm_leads.status_dos_campos`): CONFIRMADO, NEGADO,
+   * NAO_SABE, NAO_SE_APLICA, PENDENTE ou CONTRADITORIO. Para a TRAVA DA IA, um
+   * campo com status só conta como preenchido com CONFIRMADO, NEGADO ou
+   * NAO_SE_APLICA — "não sei" e "contraditório" barram o avanço. Pessoas
+   * movendo pela tela seguem a régua de sempre (só o dado). Ausente = campo
+   * comum, o caminho de todo funil instalado hoje.
+   */
+  com_status: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 

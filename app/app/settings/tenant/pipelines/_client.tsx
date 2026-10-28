@@ -662,6 +662,28 @@ function PipelineEditor({
                 }}
               />
             )}
+            {/* ── CAMPO COM STATUS (PC-003) ─────────────────────────────────
+                O campo de qualificação guarda o dado E o status da resposta
+                (confirmado, negado, não sabe…). Para a IA, só a resposta dada
+                libera a etapa que exige o campo. Desmarcado tira a chave, para
+                o settings ficar igual ao de antes. */}
+            <label className="flex items-center gap-1 text-xs md:col-span-4">
+              <input
+                type="checkbox"
+                aria-label={`${t("Campo com status")} ${i + 1}`}
+                data-testid={`campo-com-status-${i}`}
+                checked={f.com_status === true}
+                onChange={(ev) => {
+                  const next = [...fields];
+                  const { com_status: _semStatus, ...semChave } = f;
+                  next[i] = ev.target.checked ? { ...f, com_status: true } : semChave;
+                  setFields(next);
+                }}
+              />
+              {t(
+                "Campo de qualificação com status (confirmado, negado, não sabe…): a IA só avança a etapa que exige este campo com a resposta dada",
+              )}
+            </label>
             {/* ── LISTA PESQUISÁVEL (#2521) ────────────────────────────────
                 Duas coisas só deste tipo: a válvula "permitir valor novo" e a
                 importação de opções em lote. A importação usa o CSV que a

@@ -59,6 +59,8 @@ const bodySchema = z
      * conversa para uma pessoa (`lib/agent-engine/agent/etapa-exige-humano.ts`).
      */
     requires_human: z.boolean().optional(),
+    /** PC-003: etapa "só pessoa move" — o modo conservador da IA não move para cá. */
+    so_pessoa_move: z.boolean().optional(),
     /**
      * Janela de "esfriando" da etapa, em HORAS — a coluna
      * `crm_stages.expected_duration_hours`, que o radar já lê
