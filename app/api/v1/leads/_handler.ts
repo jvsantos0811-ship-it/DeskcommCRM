@@ -11,6 +11,16 @@ import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
+import { mesclaStatusDosCampos } from "@/lib/leads/status-dos-campos";
+import {
+  CODIGO_ETAPA_SO_PESSOA_MOVE,
+  CODIGO_GANHO_SO_POR_ASSINATURA,
+  RECUSA_DE_GANHO_PELA_IA,
+  modoConservadorDoAgente,
+  recusaDeEtapaParaAIa,
+  recusaDeEtapaSoPessoa,
+  registrarRecusaPeloSupabase,
+} from "@/lib/leads/trava-da-ia";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -890,6 +900,17 @@ export async function updateLeadHandler(
     patch.expected_close_date = input.expected_close_date;
   }
   if (input.tags !== undefined) patch.tags = input.tags;
+  // PC-003: o status dos campos de qualificação. Mescla com o que a leitura
+  // trouxe (`null` apaga uma chave). ⚠️ Mesma janela de corrida que o
+  // `custom_fields` tinha antes da 0502: duas escritas simultâneas de status em
+  // chaves diferentes podem perder uma. Aceito por ora — o status é escrito
+  // pela IA de um turno por vez (fila por lead) e pela pessoa no dossiê.
+  if (input.status_dos_campos !== undefined) {
+    patch.status_dos_campos = mesclaStatusDosCampos(
+      (existing as { status_dos_campos?: unknown }).status_dos_campos,
+      input.status_dos_campos,
+    );
+  }
   // ⛔ `custom_fields` NÃO ENTRA NO `patch`, e a ausência é o conserto.
   //
   // Isto era `patch.custom_fields = { ...prev, ...input.custom_fields }`, com
@@ -1182,7 +1203,7 @@ export async function moveLeadHandler(
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, organization_id, name, is_lost, is_won")
+    .select("id, pipeline_id, organization_id, name, is_lost, is_won, so_pessoa_move")
     .eq("id", input.to_stage_id)
     .maybeSingle();
   if (stageErr) {
@@ -1205,6 +1226,51 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir(RECUSA_DE_TROCA_DE_FUNIL, ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── A TRAVA DA IA (PC-003) ──────────────────────────────────────────────────
+  //
+  // Quem chama é a IA (o turno do agente ou o operador, pela ponte MCP com o
+  // ator `ai_agent`)? Então: ganho NUNCA (só por evento de assinatura), e no
+  // modo conservador a etapa "só pessoa move" fica fora de alcance. A régua de
+  // campos logo abaixo também fica mais estrita para ela (campo com status).
+  // Pessoas, automações e integrações seguem exatamente como antes.
+  const ehIa = ctx.actor.type === "ai_agent";
+  const agenteDaIa = ctx.actor.type === "ai_agent" ? (ctx.actor.agent_id ?? null) : null;
+  const recusaDaIa = async (
+    tipo: "etapa_recusada" | "ganho_recusado",
+    codigo: string,
+    motivo: string,
+    camposFaltantes?: ReadonlyArray<{ chave: string; rotulo: string }>,
+  ): Promise<void> => {
+    // O mesmo cliente do handler: a IA chega pela ponte MCP com o cliente de
+    // serviço, e a organização sai do ctx (fonte confiável), nunca do corpo.
+    const { versaoId } = await modoConservadorDoAgente(supabase, ctx.organization_id, agenteDaIa);
+    await registrarRecusaPeloSupabase(supabase, {
+      organizationId: ctx.organization_id,
+      tipo,
+      agentId: agenteDaIa,
+      agentVersionId: versaoId,
+      contactId: (lead as { contact_id?: string | null }).contact_id ?? null,
+      leadId,
+      ferramenta: "crm_move_lead_stage",
+      codigo,
+      etapaPedida: stage.name,
+      ...(camposFaltantes ? { camposFaltantes } : {}),
+      motivo,
+    });
+  };
+  if (ehIa && stage.is_won && stage.id !== lead.stage_id) {
+    await recusaDaIa("ganho_recusado", CODIGO_GANHO_SO_POR_ASSINATURA, RECUSA_DE_GANHO_PELA_IA);
+    throw new ApiError(422, CODIGO_GANHO_SO_POR_ASSINATURA, undefined, ctx.requestId, RECUSA_DE_GANHO_PELA_IA);
+  }
+  if (ehIa && (stage as { so_pessoa_move?: boolean }).so_pessoa_move === true && stage.id !== lead.stage_id) {
+    const { ligado } = await modoConservadorDoAgente(supabase, ctx.organization_id, agenteDaIa);
+    if (ligado) {
+      const frase = recusaDeEtapaSoPessoa(stage.name);
+      await recusaDaIa("etapa_recusada", CODIGO_ETAPA_SO_PESSOA_MOVE, frase);
+      throw new ApiError(422, CODIGO_ETAPA_SO_PESSOA_MOVE, undefined, ctx.requestId, frase);
+    }
   }
 
   // ── RETOMAR COMO NOVO NEGÓCIO (issue #1538) ────────────────────────────────
@@ -1278,7 +1344,22 @@ export async function moveLeadHandler(
           desfecho: stage.is_won ? "won" : stage.is_lost ? "lost" : null,
         },
         motivoDeGanho: input.won_reason ?? null,
+        // PC-003: a IA lê o status do campo de qualificação, não só o dado.
+        exigirStatus: ehIa,
       });
+  if (vereditoDeCampos.faltando.length > 0 && ehIa) {
+    // PC-003 (A1/A3): a frase que o modelo lê diz a etapa e o que falta, e a
+    // recusa fica registrada na aba Execuções do agente.
+    const frase = recusaDeEtapaParaAIa(stage.name, vereditoDeCampos.faltando);
+    await recusaDaIa("etapa_recusada", "required_fields_missing", frase, vereditoDeCampos.faltando);
+    throw new ApiError(
+      422,
+      "required_fields_missing",
+      { faltando: vereditoDeCampos.faltando },
+      ctx.requestId,
+      frase,
+    );
+  }
   if (vereditoDeCampos.faltando.length > 0) {
     const recusa = recusaDeCamposObrigatorios(vereditoDeCampos.faltando, ctx.idioma);
     throw new ApiError(

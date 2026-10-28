@@ -48,6 +48,7 @@ import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { camposVisiveis } from "@/lib/schemas/mostrar-quando";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
+import { STATUS_QUE_PREENCHEM, statusDosCampos } from "@/lib/leads/status-dos-campos";
 
 /**
  * `crm_pipelines.settings` do funil do lead — a carga que TODOS os caminhos
@@ -128,6 +129,16 @@ interface EntradaDeCampos {
    * cairia na mesma recusa da primeira: o lead ainda não foi gravado.
    */
   customFieldsPropostos?: Record<string, unknown> | null;
+  /**
+   * A RÉGUA DA IA (PC-003, item 2): com `true`, um campo marcado `com_status`
+   * só conta como preenchido quando `crm_leads.status_dos_campos[chave]` é
+   * CONFIRMADO, NEGADO ou NAO_SE_APLICA — "não sei", "pendente",
+   * "contraditório" e a ausência barram, mesmo com um dado escrito. Só os
+   * caminhos da IA ligam isto; pessoas movendo pela tela seguem a régua de
+   * sempre (o dado), como o pedido manda ("não mudar o comportamento de
+   * pessoas").
+   */
+  exigirStatus?: boolean;
 }
 
 /** `undefined`/`null`/branco/array vazio são ausência; `false` e `0` são resposta. */
@@ -197,6 +208,17 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
     // que a tela escondeu transformaria "esconder" em "travar". O valor que
     // ele já tinha continua no lead — esta função só decide se PERGUNTA.
     if (!visiveis.has(campo.key)) continue;
+    if (entrada.exigirStatus === true && campo.com_status === true) {
+      const status = statusDosCampos(entrada.lead.status_dos_campos)[campo.key];
+      if (status !== undefined && STATUS_QUE_PREENCHEM.has(status)) continue;
+      faltando.push({
+        chave: campo.key,
+        rotulo: campo.label,
+        tipo: campo.type,
+        ...(campo.options ? { opcoes: campo.options } : {}),
+      });
+      continue;
+    }
     if (valorPreenchido(valores[campo.key])) continue;
     faltando.push({
       chave: campo.key,

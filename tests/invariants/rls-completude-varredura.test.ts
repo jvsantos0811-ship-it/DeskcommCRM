@@ -341,6 +341,14 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "isolamento é medido num sentido só (org de teste → outra). Migration 0482.",
   },
   {
+    tabela: "assinatura_webhook_chaves",
+    razao:
+      "tests/invariants/trava-de-etapa-e-de-ganho.test.ts — tabela exclusiva do " +
+      "servidor (o segredo vive só como hash): SELECT/INSERT/UPDATE/DELETE por " +
+      "authenticated e anon recusados no catálogo e por JWT real das duas " +
+      "organizações (0 linhas, permission denied), RLS ligada. Migration 9011 (fork).",
+  },
+  {
     tabela: "cobranca_assinaturas",
     razao:
       "tests/invariants/cobranca-isolamento.test.ts — dois tenants reais por JWT: " +

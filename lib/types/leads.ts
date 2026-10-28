@@ -107,6 +107,8 @@ export interface Lead {
   source_metadata: Record<string, unknown>;
   external_id: string | null;
   custom_fields: Record<string, unknown>;
+  /** PC-003: status de cada campo de qualificação (`crm_leads.status_dos_campos`). */
+  status_dos_campos?: Record<string, string> | null;
   tags: string[];
   /**
    * Derivado (não é coluna): os marcadores do CONTATO deste negócio.

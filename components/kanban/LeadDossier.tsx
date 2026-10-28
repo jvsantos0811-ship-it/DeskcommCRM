@@ -10,6 +10,7 @@ import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
 import { ChatDoNegocio } from "./ChatDoNegocio";
 import { ContratosDoNegocio } from "./ContratosDoNegocio";
+import { AssinaturaConfirmada } from "./AssinaturaConfirmada";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { EtapasDoNegocio, type EtapaDoNegocio } from "./EtapasDoNegocio";
@@ -200,6 +201,14 @@ export function LeadDossier({
                 das tarefas, e não debaixo da linha do tempo inteira. Mesma régua
                 de quem pode agir (`agent`+, "qualquer atendente"). */}
             <ContratosDoNegocio leadId={lead.id} podeEditar={podeEditarTarefas} aberto={open} />
+            {/* PC-003: o ganho por assinatura — só gerente (a rota confere). */}
+            <AssinaturaConfirmada
+              leadId={lead.id}
+              pipelineId={pipelineId}
+              status={lead.status}
+              tags={lead.tags ?? []}
+              podeConfirmar={podeCriarProposta && !user.support}
+            />
             {/* A linha do tempo fica À VISTA, sem aba: é ela que responde "de onde
                 veio este card?" (entrou no funil, primeira mensagem, troca de
                 funil). Escondida numa aba, o pop-up abriria mudo justamente para

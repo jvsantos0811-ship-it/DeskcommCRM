@@ -711,6 +711,20 @@ export function StagesSection({
                 {t("Só atendimento humano: com um negócio aqui, a IA não responde o cliente e chama a equipe")}
               </label>
 
+              {/* PC-003: etapa "só pessoa move" (`crm_stages.so_pessoa_move`). Vale
+                  para agentes no modo conservador: a IA qualifica e passa para a
+                  equipe, mas não move o negócio para cá. */}
+              <label className="flex items-center gap-2 text-xs text-text-muted">
+                <Switch
+                  checked={etapa.so_pessoa_move === true}
+                  onCheckedChange={(v) => aplicar(etapa.id, { so_pessoa_move: v })}
+                  disabled={ocupado}
+                  aria-label={`${t("Só pessoa move para")} «${etapa.name}»`}
+                  data-testid={`so-pessoa-move-${etapa.id}`}
+                />
+                {t("Só pessoa move: agentes no modo conservador não movem negócios para esta etapa")}
+              </label>
+
               {passo && (
                 <p className="text-xs text-text-muted" data-testid={`passo-de-${etapa.id}`}>
                   {t("O assistente usa esta etapa para")} «{t(ROTULO_DO_PASSO[passo])}».{" "}

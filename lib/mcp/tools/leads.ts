@@ -11,6 +11,7 @@
  *
  * Write tools exigem role>=manager + scope mcp:write (gate no server core).
  */
+import { statusDeCampoSchema } from "@/lib/leads/status-dos-campos";
 import { z } from "zod";
 
 import {
@@ -378,6 +379,19 @@ const updateInputShape = {
    * nunca como escrivã.
    */
   custom_fields: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * PC-003: o STATUS da resposta de cada campo de qualificação que o funil
+   * marcou "com status". Use CONFIRMADO/NEGADO/NAO_SE_APLICA só quando o
+   * cliente RESPONDEU; NAO_SABE quando ele disse que não sabe; CONTRADITORIO
+   * quando ele se contradisse; PENDENTE quando ainda não perguntou. A etapa que
+   * exige o campo só aceita a IA com a resposta dada.
+   */
+  status_dos_campos: z
+    .record(z.string(), statusDeCampoSchema.nullable())
+    .optional()
+    .describe(
+      "status de cada campo de qualificação: CONFIRMADO, NEGADO, NAO_SABE, NAO_SE_APLICA, PENDENTE ou CONTRADITORIO",
+    ),
 };
 
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {

@@ -184,11 +184,25 @@ export interface ResultadoDaSincronizacao {
      * da #917 com outro nome.
      */
     | "campos_obrigatorios"
+    /**
+     * PC-003: a etapa de destino é de GANHO. A IA nunca leva o card a ganho —
+     * o ganho só acontece por evento de assinatura (provedor ou pessoa gerente).
+     */
+    | "ganho_so_por_assinatura"
+    /**
+     * PC-003: modo conservador do agente ligado e a etapa de destino marcada
+     * "só pessoa move". O card fica onde está; a pessoa da equipe move.
+     */
+    | "so_pessoa_move"
+    /** PC-003: `apenasConferir` — todas as réguas passaram; nada foi escrito. */
+    | "pode_mover"
     | "falha_de_escrita"
     | "indisponivel";
   leadId?: string;
   stageName?: string;
   detalhe?: string;
+  /** PC-003: os campos que faltaram, quando `motivo` é `campos_obrigatorios`. */
+  faltando?: Array<{ chave: string; rotulo: string }>;
 }
 
 /**
@@ -220,6 +234,14 @@ export async function sincronizaEstagioDoAgente(
      * caminho que ainda não foi migrado, em silêncio.
      */
     escopoDeFunis?: readonly string[];
+    /** PC-003: modo conservador da versão do agente (etapas "só pessoa move"). */
+    modoConservador?: boolean;
+    /**
+     * PC-003: só CONFERE se o movimento passaria por todas as réguas, sem
+     * escrever nada — o `update_lead_state` pergunta ANTES de avançar o funil
+     * do agente, para devolver a recusa ao modelo em vez de avançar calado.
+     */
+    apenasConferir?: boolean;
   },
 ): Promise<ResultadoDaSincronizacao> {
   // ⚠️ O erro do SELECT É LIDO, e isso não é zelo: o supabase-js NÃO LANÇA em
@@ -232,7 +254,7 @@ export async function sincronizaEstagioDoAgente(
       // `custom_fields` e `won_reason` entram POR CAUSA da régua de campos
       // obrigatórios (#1536): sem eles na leitura, `validaCamposExigidos` só
       // veria `undefined` e recusaria movimento legítimo de um card preenchido.
-      "id, organization_id, pipeline_id, stage_id, status, created_at, last_activity_at, custom_fields, won_reason",
+      "id, organization_id, pipeline_id, stage_id, status, created_at, last_activity_at, custom_fields, won_reason, status_dos_campos",
     )
     .eq("organization_id", input.organizationId)
     .eq("contact_id", input.contactId);
@@ -249,6 +271,7 @@ export async function sincronizaEstagioDoAgente(
     last_activity_at: string | null;
     custom_fields: Record<string, unknown> | null;
     won_reason: string | null;
+    status_dos_campos: unknown;
   }>;
 
   const rota = resolveActiveLeadForContact(
@@ -292,7 +315,7 @@ export async function sincronizaEstagioDoAgente(
     // `is_lost` entra porque a decisão de perda (#917) é sobre esta coluna: sem
     // ela, etapa de perda é indistinguível de etapa comum e o agente escreveria a
     // etapa que o banco recusa — recusa que chega ao worker como falha de escrita.
-    .select("id, name, agent_stage_hint, is_archived, is_lost, is_won")
+    .select("id, name, agent_stage_hint, is_archived, is_lost, is_won, so_pessoa_move")
     .eq("pipeline_id", lead.pipeline_id);
   // Mesmo motivo do SELECT acima: sem esta linha, banco fora = pipeline sem
   // hint nenhum = "sem_mapeamento", e o incidente se disfarça de configuração.
@@ -326,8 +349,22 @@ export async function sincronizaEstagioDoAgente(
     id: string;
     is_lost?: boolean | null;
     is_won?: boolean | null;
+    so_pessoa_move?: boolean | null;
   }>;
   const etapaDeDestino = etapasCandidatas.find((s) => s.id === destino.stageId);
+  // PC-003: o espelho do funil do agente NUNCA leva o card a ganho.
+  if (etapaDeDestino?.is_won) {
+    return {
+      moveu: false,
+      motivo: "ganho_so_por_assinatura",
+      leadId: lead.id,
+      stageName: destino.stageName,
+    };
+  }
+  // PC-003: modo conservador — a etapa "só pessoa move" fica com a equipe.
+  if (input.modoConservador === true && etapaDeDestino?.so_pessoa_move === true) {
+    return { moveu: false, motivo: "so_pessoa_move", leadId: lead.id, stageName: destino.stageName };
+  }
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as unknown as Record<string, unknown>,
     settingsDoFunil: settings,
@@ -335,14 +372,22 @@ export async function sincronizaEstagioDoAgente(
       stageId: destino.stageId,
       desfecho: etapaDeDestino?.is_won ? "won" : etapaDeDestino?.is_lost ? "lost" : null,
     },
+    // PC-003: este caminho é SEMPRE a IA (o funil do agente) — a régua dela
+    // lê o status do campo de qualificação.
+    exigirStatus: true,
   });
   if (vereditoDeCampos.faltando.length > 0) {
     return {
       moveu: false,
       motivo: "campos_obrigatorios",
       leadId: lead.id,
+      stageName: destino.stageName,
       detalhe: recusaDeCamposObrigatorios(vereditoDeCampos.faltando, null).mensagem,
+      faltando: vereditoDeCampos.faltando.map((c) => ({ chave: c.chave, rotulo: c.rotulo })),
     };
+  }
+  if (input.apenasConferir === true) {
+    return { moveu: false, motivo: "pode_mover", leadId: lead.id, stageName: destino.stageName };
   }
 
   // O erro DESTE select é descartado de propósito — e a diferença para os dois de

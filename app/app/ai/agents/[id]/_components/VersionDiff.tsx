@@ -90,6 +90,8 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
     ["handoff_tool_enabled", "handoff_tool_enabled"],
     ["handoff_legal_enabled", "handoff_legal_enabled"],
     ["cases_enabled", "cases_enabled"],
+    ["estado_do_funil_ligado", "estado_do_funil_ligado"],
+    ["modo_conservador", "modo_conservador"],
     ["split_messages", "split_messages"],
     ["split_max_chars", "split_max_chars"],
     ["inbound_debounce_ms", "inbound_debounce_ms"],

@@ -181,6 +181,13 @@ const versionShapeSchema = z
     handoff_legal_enabled: z.boolean().default(true),
     proposal_ai_draft_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
+    /**
+     * PC-003 (A5): a ferramenta `update_lead_state` do agente. Agente NOVO nasce
+     * desligado; quem edita uma versão existente recebe o valor dela da tela.
+     */
+    estado_do_funil_ligado: z.boolean().default(false),
+    /** PC-003 (item 6): modo conservador — não move para etapas "só pessoa move". */
+    modo_conservador: z.boolean().default(false),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
     // pelo pacing anti-ban. Defaults espelham a migration 0059.
     split_messages: z.boolean().default(false),
@@ -269,6 +276,8 @@ export const versionPatchSchema = versionShapeSchema
     handoff_legal_enabled: versionShapeSchema.shape.handoff_legal_enabled.removeDefault(),
     proposal_ai_draft_enabled: versionShapeSchema.shape.proposal_ai_draft_enabled.removeDefault(),
     cases_enabled: versionShapeSchema.shape.cases_enabled.removeDefault(),
+    estado_do_funil_ligado: versionShapeSchema.shape.estado_do_funil_ligado.removeDefault(),
+    modo_conservador: versionShapeSchema.shape.modo_conservador.removeDefault(),
     split_messages: versionShapeSchema.shape.split_messages.removeDefault(),
     split_max_chars: versionShapeSchema.shape.split_max_chars.removeDefault(),
     followup: followupPatchSchema,

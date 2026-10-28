@@ -65,7 +65,11 @@ import {
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { HANDOFF_REASON_ORCAMENTO } from '../edge/llm/orcamento';
-import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
+import {
+  abreAvisoDoEspelhoRecusado,
+  conferirMovimentoDoAgente,
+  mirrorLeadStageToCrm,
+} from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -83,6 +87,7 @@ import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue
 import {
   applyLeadStateUpdate,
   getLeadState,
+  LEAD_STAGES,
   type LeadStage,
   type LeadStateRow,
 } from './lead-state';
@@ -246,6 +251,14 @@ import {
   type VetoDoTurno,
 } from '@/lib/messaging/frase-segura';
 import { registrarRecusaDaIa } from './recusas';
+import { blocoDosCamposDoNegocio } from './campos-do-negocio-no-turno';
+import {
+  CODIGO_ETAPA_SO_PESSOA_MOVE,
+  CODIGO_GANHO_SO_POR_ASSINATURA,
+  RECUSA_DE_GANHO_PELA_IA,
+  recusaDeEtapaParaAIa,
+  recusaDeEtapaSoPessoa,
+} from '@/lib/leads/trava-da-ia';
 import { horarioDaEquipeDaOrg, type HorarioDaEquipe } from '@/lib/escalacao/horario-da-equipe';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -358,7 +371,8 @@ export const AGENT_TOOL_DEFS = {
       'Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → ' +
       'negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification ' +
       '(budget/authority/need/timeline), next_action e reason (evidência curta do avanço). ' +
-      'Nunca invente avanço sem evidência na conversa.',
+      'Nunca invente avanço sem evidência na conversa. Você nunca marca "won": o ganho só é ' +
+      'registrado quando o contrato é assinado. Se a etapa exigir campos, a recusa diz o que falta.',
     // Schema LARGO só para o SDK (o modelo vê os campos); a validação REAL é a
     // whitelist .strict() dentro de applyLeadStateUpdate — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -4166,6 +4180,77 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.update_lead_state,
       execute: async (raw) => {
         try {
+          // ── PC-003: a trava de etapa e de ganho ─────────────────────────────
+          // (A4) Ganho NUNCA pela IA — nem com a chave ligada. O ganho é da
+          // assinatura do contrato (provedor ou pessoa gerente).
+          const pedido =
+            raw && typeof raw === 'object' && !Array.isArray(raw)
+              ? (raw as { stage?: unknown })
+              : {};
+          if (pedido.stage === 'won') {
+            await registrarRecusaDaIa(
+              pool,
+              {
+                organizationId: tenantId,
+                tipo: 'ganho_recusado',
+                agentId: agentConfig?.agentId ?? null,
+                agentVersionId: agentConfig?.versionId ?? null,
+                contactId: leadId,
+                conversationId: input.conversationId,
+                ferramenta: 'update_lead_state',
+                codigo: CODIGO_GANHO_SO_POR_ASSINATURA,
+                etapaPedida: 'won',
+                motivo: RECUSA_DE_GANHO_PELA_IA,
+              },
+              runLog,
+            );
+            return {
+              ok: false,
+              error: { code: CODIGO_GANHO_SO_POR_ASSINATURA, message: RECUSA_DE_GANHO_PELA_IA },
+            };
+          }
+          // (A1/A3/A8) ANTES de avançar o funil do agente, a mesma pergunta
+          // que o espelho faria: o card pode ir para a etapa deste passo?
+          // Recusa por régua da IA (campo vazio / status que não responde,
+          // modo conservador, ganho) volta ao modelo — e o funil do agente NÃO
+          // avança, para os dois funis não contarem histórias diferentes.
+          if (typeof pedido.stage === 'string' && (LEAD_STAGES as readonly string[]).includes(pedido.stage)) {
+            const barrado = await conferirMovimentoDoAgente(deps.crmCfg, {
+              tenantId,
+              leadId,
+              toStage: pedido.stage as LeadStage,
+              ...(agentConfig !== null ? { pipelineIds: agentConfig.pipelineIds } : {}),
+              modoConservador: agentConfig?.modoConservador === true,
+            });
+            if (barrado !== null) {
+              const mensagem =
+                barrado.codigo === 'ganho_so_por_assinatura'
+                  ? RECUSA_DE_GANHO_PELA_IA
+                  : barrado.codigo === 'so_pessoa_move'
+                    ? recusaDeEtapaSoPessoa(barrado.etapa)
+                    : recusaDeEtapaParaAIa(barrado.etapa, barrado.faltando);
+              await registrarRecusaDaIa(
+                pool,
+                {
+                  organizationId: tenantId,
+                  tipo: barrado.codigo === 'ganho_so_por_assinatura' ? 'ganho_recusado' : 'etapa_recusada',
+                  agentId: agentConfig?.agentId ?? null,
+                  agentVersionId: agentConfig?.versionId ?? null,
+                  contactId: leadId,
+                  leadId: barrado.negocioId,
+                  conversationId: input.conversationId,
+                  ferramenta: 'update_lead_state',
+                  codigo:
+                    barrado.codigo === 'so_pessoa_move' ? CODIGO_ETAPA_SO_PESSOA_MOVE : barrado.codigo,
+                  etapaPedida: barrado.etapa,
+                  camposFaltantes: barrado.faltando,
+                  motivo: mensagem,
+                },
+                runLog,
+              );
+              return { ok: false, error: { code: barrado.codigo, message: mensagem } };
+            }
+          }
           const update = await applyLeadStateUpdate(
             pool,
             { tenantId, leadId, jobId: liveJob().id },
@@ -4187,6 +4272,7 @@ async function executarTurnoDoAgente(
               leadId,
               toStage: update.transition.to,
               ...(agentConfig !== null ? { pipelineIds: agentConfig.pipelineIds } : {}),
+              modoConservador: agentConfig?.modoConservador === true,
               ...(update.transition.reason !== undefined
                 ? { reason: update.transition.reason }
                 : {}),
@@ -4727,10 +4813,24 @@ async function executarTurnoDoAgente(
     //
     // A remoção é CONDICIONAL a o novo dono existir (ver entrega-de-capacidade):
     // tirar de um lado sem garantir o outro não separa papéis, perde capacidade.
-    const entregues = capacidadesEntreguesAoOperador({
-      operadorLigado: agentConfig?.operatorEnabled ?? false,
-      ferramentasDoOperador: agentConfig?.operatorToolIds ?? [],
-    });
+    const entregues = [
+      ...capacidadesEntreguesAoOperador({
+        operadorLigado: agentConfig?.operatorEnabled ?? false,
+        ferramentasDoOperador: agentConfig?.operatorToolIds ?? [],
+      }),
+      // PC-003 (A5): a chave da ferramenta por agente. Desligada, a ferramenta
+      // sai do turno e a instrução sai da abertura (o mesmo caminho das
+      // capacidades entregues ao Operador). Sem agente publicado (legado),
+      // nada muda.
+      ...(agentConfig !== null &&
+      agentConfig.estadoDoFunilLigado === false &&
+      !capacidadesEntreguesAoOperador({
+        operadorLigado: agentConfig.operatorEnabled ?? false,
+        ferramentasDoOperador: agentConfig.operatorToolIds ?? [],
+      }).includes('update_lead_state')
+        ? ['update_lead_state']
+        : []),
+    ];
     for (const nome of entregues) delete rawTools[nome];
     if (entregues.length > 0) {
       runLog.info('capacidades entregues ao operador — fora do turno do conversador', {
@@ -5028,8 +5128,13 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    // PC-003 (A10): os campos do negócio com status, para o modelo ler o
+    // estado da qualificação em vez de adivinhar. Fora do teste sem contato.
+    const camposDoNegocioBlock =
+      preview?.kind === 'sandbox' ? '' : await blocoDosCamposDoNegocio(pool, tenantId, leadId || null);
     const openingSuffixes = [
       agoraBlock,
+      camposDoNegocioBlock,
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,

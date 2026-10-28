@@ -54,6 +54,14 @@ export interface PublishedAgentConfig {
   multimodalInput: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
   casesEnabled: boolean;
+  /**
+   * PC-003: a ferramenta `update_lead_state` está ligada nesta versão? Versões
+   * anteriores à 9011 nascem ligadas (comportamento de sempre); novas, desligadas.
+   * Opcional no tipo: AUSENTE vale como ligada (fixtures e clones antigos).
+   */
+  estadoDoFunilLigado?: boolean;
+  /** PC-003: modo conservador — a IA não move para etapas "só pessoa move". */
+  modoConservador?: boolean;
   /** JSON versionado com `followup.callback_enabled` e os fluxos normais. */
   followup?: unknown;
   /** tool_ids do catálogo MCP habilitadas na tela (2B-tools). */
@@ -143,6 +151,8 @@ interface Row {
   inbound_debounce_ms: number | null;
   multimodal_input: boolean;
   cases_enabled: boolean;
+  estado_do_funil_ligado: boolean | null;
+  modo_conservador: boolean | null;
   followup: unknown;
   tool_ids: string[] | null;
   active_kb_version_id: string | null;
@@ -176,6 +186,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.inbound_debounce_ms,
             v.multimodal_input,
             v.cases_enabled,
+            v.estado_do_funil_ligado,
+            v.modo_conservador,
             v.followup,
             v.tool_ids,
             a.active_kb_version_id,
@@ -237,6 +249,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     inboundDebounceMs: r.inbound_debounce_ms ?? null,
     multimodalInput: r.multimodal_input,
     casesEnabled: r.cases_enabled,
+    // `?? true` cobre o clone sem a 9011: sem a coluna, vale o comportamento de antes.
+    estadoDoFunilLigado: r.estado_do_funil_ligado ?? true,
+    modoConservador: r.modo_conservador === true,
     followup: r.followup,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro

@@ -648,13 +648,28 @@ describe("crm_close_demand", () => {
       return { data: null, error: null };
     };
 
+    // Ator HUMANO (token de integração de uma pessoa): desde o PC-003 a IA
+    // nunca chega a esta pergunta — ganho pela IA é recusado antes (teste abaixo).
+    const ctx = ctxDe(semEstagio, cap);
     const res = (await crmCloseDemand.handler(
       { lead_id: LEAD, outcome: "won", reason: undefined },
-      ctxDe(semEstagio, cap),
+      { ...ctx, actor: { ...ctx.actor, type: "user" } } as typeof ctx,
     )) as { encerrado: boolean; motivo: string };
 
     expect(res.encerrado).toBe(false);
     expect(res.motivo).toBe("pipeline_no_won_stage");
+  });
+
+  it("PC-003: a IA nunca marca ganho — recusa antes de qualquer escrita", async () => {
+    const cap = novasCapturas();
+    const res = (await crmCloseDemand.handler(
+      { lead_id: LEAD, outcome: "won", reason: undefined },
+      ctxDe(() => ({ data: null, error: null }), cap),
+    )) as { encerrado: boolean; motivo: string };
+
+    expect(res.encerrado).toBe(false);
+    expect(res.motivo).toBe("ganho_so_por_assinatura");
+    expect(cap.updates).toHaveLength(0);
   });
 });
 

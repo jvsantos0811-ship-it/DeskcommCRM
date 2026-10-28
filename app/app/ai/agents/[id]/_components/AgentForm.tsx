@@ -196,6 +196,8 @@ interface FormState {
   handoff_legal_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
+  estado_do_funil_ligado: boolean;
+  modo_conservador: boolean;
   split_messages: boolean;
   split_max_chars: number;
   /** Janela de rajada (ms) do agente. `null` = usa a env da instalação. */
@@ -307,6 +309,9 @@ export function buildState(args: {
     handoff_legal_enabled: version?.handoff_legal_enabled ?? true,
     proposal_ai_draft_enabled: version?.proposal_ai_draft_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
+    // PC-003: agente NOVO (sem versão) nasce com a marcação do funil desligada.
+    estado_do_funil_ligado: version?.estado_do_funil_ligado ?? false,
+    modo_conservador: version?.modo_conservador ?? false,
     split_messages: version?.split_messages ?? false,
     split_max_chars: version?.split_max_chars ?? 600,
     inbound_debounce_ms: version?.inbound_debounce_ms ?? null,
@@ -372,6 +377,8 @@ function toVersionPayload(s: FormState) {
     handoff_legal_enabled: s.handoff_legal_enabled,
     proposal_ai_draft_enabled: s.proposal_ai_draft_enabled,
     cases_enabled: s.cases_enabled,
+    estado_do_funil_ligado: s.estado_do_funil_ligado,
+    modo_conservador: s.modo_conservador,
     split_messages: s.split_messages,
     split_max_chars: s.split_max_chars,
     inbound_debounce_ms: s.inbound_debounce_ms,
@@ -1353,6 +1360,41 @@ export function AgentForm(props: Props) {
             <p className="text-xs text-muted-foreground">
               {t(
                 "Diferente de passar a conversa: aqui o agente continua atendendo. Quando esbarra em algo que só uma pessoa resolve — aprovar um desconto, por exemplo — ele abre um pedido interno e retoma assim que for respondido.",
+              )}
+            </p>
+          </Card>
+
+          {/* PC-003: o que a IA pode fazer no funil */}
+          <Card className="space-y-3 p-4" data-testid="agente-trava-do-funil">
+            <h3 className="text-sm font-medium">{t("Avanço do negócio no funil")}</h3>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="estado_do_funil_ligado"
+                checked={form.estado_do_funil_ligado}
+                onCheckedChange={(v) => patch({ estado_do_funil_ligado: v })}
+                disabled={disabled}
+              />
+              <Label htmlFor="estado_do_funil_ligado">
+                {t("Deixar o agente marcar o avanço do atendimento no funil")}
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ligado, o agente avança o negócio pelas etapas conforme a conversa. Mesmo ligado, ele nunca marca o negócio como ganho: o ganho só é registrado com o contrato assinado. E ele não avança uma etapa se faltar um campo obrigatório.",
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="modo_conservador"
+                checked={form.modo_conservador}
+                onCheckedChange={(v) => patch({ modo_conservador: v })}
+                disabled={disabled}
+              />
+              <Label htmlFor="modo_conservador">{t("Modo conservador")}</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ligado, o agente qualifica e passa para a equipe, mas não move o negócio para as etapas marcadas “só pessoa move” em Configurações › Etapas do funil. Bom para colocar um cliente novo no ar.",
               )}
             </p>
           </Card>

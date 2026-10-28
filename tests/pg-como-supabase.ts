@@ -383,6 +383,9 @@ class InsercaoPg<T> implements PromiseLike<RespostaFalsa<null>> {
     const valores = chaves.map((k) => {
       const v = this.linha[k];
       // jsonb/array vão como parâmetro; objeto solto o driver não converte.
+      // Array DE OBJETOS só pode ser jsonb (não existe array Postgres de
+      // objeto): vai como JSON, como o PostgREST faria.
+      if (Array.isArray(v) && v.some((x) => x !== null && typeof x === "object")) return JSON.stringify(v);
       return v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : v;
     });
     const marcas = chaves.map((_, i) => `$${i + 1}`).join(", ");

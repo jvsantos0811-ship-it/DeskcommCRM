@@ -51,6 +51,13 @@ export type MirrorReason =
    * dado falta. O `detalhe` vem de `recusaDeCamposObrigatorios`, com os rótulos.
    */
   | 'campos_obrigatorios'
+  /**
+   * PC-003: a etapa de destino é de ganho — a IA nunca fecha. O ganho é da
+   * assinatura (provedor ou pessoa gerente). Aviso na Central, não incidente.
+   */
+  | 'ganho_so_por_assinatura'
+  /** PC-003: modo conservador + etapa "só pessoa move". Aviso na Central. */
+  | 'so_pessoa_move'
   | 'crm_error'
   | 'crm_unavailable';
 
@@ -184,6 +191,29 @@ export function avisoDoEspelhoRecusado(input: {
     };
   }
 
+  if (motivo === 'ganho_so_por_assinatura') {
+    return {
+      title: 'O assistente quis fechar um negócio — o ganho é da assinatura do contrato',
+      body:
+        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", que no seu funil ` +
+        `é a etapa de ganho. A IA não fecha negócio: o ganho é registrado quando o contrato é assinado. ` +
+        `Ninguém mexeu no card. Quando o contrato estiver assinado, abra o negócio e use ` +
+        `"Assinatura confirmada" (pessoa com papel de gerente).`,
+      dedupe: DEDUPE_DO_ESPELHO,
+    };
+  }
+
+  if (motivo === 'so_pessoa_move') {
+    return {
+      title: 'O assistente quis mover um negócio para uma etapa que só a equipe move',
+      body:
+        `O assistente concluiu que este negócio deveria ir para "${etapaDeDestino}", mas ele está no ` +
+        `modo conservador e essa etapa está marcada "só pessoa move". Ninguém mexeu no card. ` +
+        `Confira o atendimento e, se fizer sentido, mova o card você mesmo.`,
+      dedupe: DEDUPE_DO_ESPELHO,
+    };
+  }
+
   if (MIRROR_WARN_ONLY.has(motivo)) return null;
 
   return {
@@ -244,6 +274,8 @@ export async function mirrorLeadStageToCrm(
     reason?: string;
     /** Funis autorizados na versão publicada; ausente só no caminho legado. */
     pipelineIds?: readonly string[];
+    /** PC-003: modo conservador da versão do agente. */
+    modoConservador?: boolean;
   },
   deps: Deps = {},
 ): Promise<MirrorResult> {
@@ -257,6 +289,7 @@ export async function mirrorLeadStageToCrm(
       contactId: input.leadId,
       passo: input.toStage,
       ...(input.pipelineIds !== undefined ? { escopoDeFunis: input.pipelineIds } : {}),
+      ...(input.modoConservador !== undefined ? { modoConservador: input.modoConservador } : {}),
     });
 
     if (r.moveu || r.motivo === 'ja_esta_la') return { ok: true };
@@ -287,6 +320,14 @@ export async function mirrorLeadStageToCrm(
       campos_obrigatorios: {
         reason: 'campos_obrigatorios',
         detail: 'a etapa de destino exige campos que o negócio não tem preenchidos',
+      },
+      ganho_so_por_assinatura: {
+        reason: 'ganho_so_por_assinatura',
+        detail: 'a etapa de destino é de ganho, e o ganho só vem da assinatura do contrato',
+      },
+      so_pessoa_move: {
+        reason: 'so_pessoa_move',
+        detail: 'modo conservador: a etapa de destino é "só pessoa move"',
       },
       ambiguo: {
         reason: 'not_configured',
@@ -320,5 +361,58 @@ export async function mirrorLeadStageToCrm(
       reason: 'crm_error',
       detail: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+/**
+ * PC-003 — a pergunta ANTES de avançar o funil do agente: o card poderia ir
+ * para a etapa que este passo mapeia? Usa a MESMA função do espelho (com
+ * `apenasConferir`), então a resposta não diverge do que o espelho faria.
+ *
+ * Devolve `null` quando nada barra (inclusive "não há card para mover" — o
+ * funil do agente segue valendo sozinho, como sempre). Devolve a recusa quando
+ * o card NÃO poderia andar por uma régua da IA: ganho, modo conservador ou
+ * campo obrigatório/status. Erro de leitura = `null` (o espelho, depois,
+ * registra o incidente como sempre).
+ */
+export async function conferirMovimentoDoAgente(
+  cfg: CrmEdgeConfig,
+  input: {
+    tenantId: string;
+    leadId: string;
+    toStage: LeadStage;
+    pipelineIds?: readonly string[];
+    modoConservador?: boolean;
+  },
+  deps: Deps = {},
+): Promise<
+  | null
+  | {
+      codigo: 'ganho_so_por_assinatura' | 'so_pessoa_move' | 'required_fields_missing';
+      etapa: string;
+      negocioId: string | null;
+      faltando: Array<{ chave: string; rotulo: string }>;
+    }
+> {
+  const sync = deps.sync ?? sincronizaEstagioDoAgente;
+  try {
+    const r = await sync(cfg.supabase, {
+      organizationId: input.tenantId,
+      contactId: input.leadId,
+      passo: input.toStage,
+      ...(input.pipelineIds !== undefined ? { escopoDeFunis: input.pipelineIds } : {}),
+      ...(input.modoConservador !== undefined ? { modoConservador: input.modoConservador } : {}),
+      apenasConferir: true,
+    });
+    const etapa = r.stageName ?? input.toStage;
+    if (r.motivo === 'ganho_so_por_assinatura' || r.motivo === 'so_pessoa_move') {
+      return { codigo: r.motivo, etapa, negocioId: r.leadId ?? null, faltando: [] };
+    }
+    if (r.motivo === 'campos_obrigatorios') {
+      return { codigo: 'required_fields_missing', etapa, negocioId: r.leadId ?? null, faltando: r.faltando ?? [] };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

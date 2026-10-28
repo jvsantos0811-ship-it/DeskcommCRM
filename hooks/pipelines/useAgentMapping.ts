@@ -33,6 +33,8 @@ export interface EtapaDoFunil {
   avisar_na_central?: boolean;
   /** Etapa "só atendimento humano": a IA não fala com o cliente com o negócio aqui. */
   requires_human?: boolean;
+  /** PC-003: etapa "só pessoa move" (modo conservador da IA). */
+  so_pessoa_move?: boolean;
   /**
    * Janela de "esfriando" da etapa, em HORAS (issue #1532). `null` = sem
    * janela configurada e o radar cai no padrão de 24 h/72 h. `undefined` em

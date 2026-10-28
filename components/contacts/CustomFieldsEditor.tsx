@@ -61,6 +61,8 @@ export interface CustomFieldDef {
   mostrar_quando?: MostrarQuando;
   /** Só no `searchable_select`: aceita valor fora da lista (issue #2521). */
   allow_new?: boolean;
+  /** PC-003: campo de qualificação com status (o status é editado ao lado, no dossiê). */
+  com_status?: boolean;
 }
 
 interface Props {

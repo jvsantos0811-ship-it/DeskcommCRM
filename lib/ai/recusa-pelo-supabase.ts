@@ -5,7 +5,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { linhaDaRecusa, type RecusaDaIa } from "@/lib/agent-engine/agent/recusas";
+import { linhaDaRecusa, type RecusaDaIa } from "@/lib/ai/recusas-da-ia";
 
 export async function registrarRecusaPeloSupabase(supabase: SupabaseClient, r: RecusaDaIa): Promise<void> {
   try {

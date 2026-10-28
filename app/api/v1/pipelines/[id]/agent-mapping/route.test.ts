@@ -270,6 +270,8 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       // Fork, migration 9005: a chave «só atendimento humano» também é lida daqui.
       // Ausente na fixture = desligada.
       requires_human: false,
+      // PC-003: a etapa "só pessoa move" entra na projeção — a tela a liga e desliga.
+      so_pessoa_move: false,
       // #1532: a janela de esfriando acompanha a mesma leitura — sem ela, a
       // tela de etapas nasceria sempre com o campo vazio e gravaria por cima
       // da configuração. Ausente na fixture = etapa sem janela = null.
