@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,7 +66,38 @@ vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
-vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
+vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeSubmenu: () => null }));
+/**
+ * PC-011: marcar/desmarcar pessoal mora no menu "⋯" do cabeçalho. O menu do
+ * Radix só monta ao abrir por ponteiro; este dublê desenha o conteúdo sempre, e
+ * o `onSelect` do item vira o clique — o que se mede aqui é a REGRA (quem vê,
+ * o que pede confirmação), não o abrir do menu.
+ */
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div role="menu">{children}</div>,
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    asChild,
+    disabled,
+    ...resto
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+    asChild?: boolean;
+    disabled?: boolean;
+    [k: string]: unknown;
+  }) =>
+    asChild ? (
+      <>{children}</>
+    ) : (
+      <div role="menuitem" aria-disabled={disabled} onClick={onSelect} {...resto}>
+        {children}
+      </div>
+    ),
+}));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({

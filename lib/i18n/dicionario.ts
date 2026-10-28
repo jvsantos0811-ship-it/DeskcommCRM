@@ -16816,6 +16816,22 @@ export const DICIONARIO: Traducoes = {
   "Contrato assinado": { es: "Contrato firmado" },
   "Contrato recusado": { es: "Contrato rechazado" },
   "Contrato cancelado": { es: "Contrato cancelado" },
+  // PC-011 — telas de conversa compactas
+  "Sair do modo foco (Esc)": { es: "Salir del modo foco (Esc)" },
+  "Modo foco: só a conversa na tela": { es: "Modo foco: solo la conversación en pantalla" },
+  "Sair do modo foco": { es: "Salir del modo foco" },
+  "Modo foco": { es: "Modo foco" },
+  Devolver: { es: "Devolver" },
+  "Janela de resposta": { es: "Ventana de respuesta" },
+  "Mais detalhes": { es: "Más detalles" },
+  "Mostrar o aviso": { es: "Mostrar el aviso" },
+  "Recolher o aviso": { es: "Contraer el aviso" },
+  "Sugerir resposta (não envia nada)": { es: "Sugerir respuesta (no envía nada)" },
+  "Mudar etapa": { es: "Cambiar etapa" },
+  "Partes do negócio": { es: "Partes del negocio" },
+  "Contato e dados": { es: "Contacto y datos" },
+  "Tarefas e linha do tempo": { es: "Tareas y línea de tiempo" },
+  Mostrar: { es: "Mostrar" },
 };
 
 /**

@@ -5,6 +5,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Clock } from "@/lib/ui/icons";
@@ -66,5 +69,44 @@ export function SnoozeButton({ conversationId, snoozeUntil, disabled }: Props) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * O MESMO "Lembrar", como submenu do "⋯" do cabeçalho do Inbox (PC-011): as
+ * mesmas três durações, o mesmo "Cancelar lembrete", a mesma rota. Só muda o
+ * lugar — o botão de cima fica para quem o usa fora do menu.
+ */
+export function SnoozeSubmenu({ conversationId, snoozeUntil, disabled }: Props) {
+  const t = useT();
+  const { snooze, cancel } = useSnoozeConversation();
+  const isActive = isSnoozeActive(snoozeUntil);
+  const isPending = snooze.isPending || cancel.isPending;
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger disabled={disabled || isPending} className="gap-2">
+        <Clock size={14} weight="regular" aria-hidden />
+        {isActive ? t("Lembrete ativo") : t("Lembrar")}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        {isActive ? (
+          <DropdownMenuItem onClick={() => cancel.mutate({ conversation_id: conversationId })}>
+            {t("Cancelar lembrete")}
+          </DropdownMenuItem>
+        ) : (
+          DURATIONS.map((d) => (
+            <DropdownMenuItem
+              key={d.hours}
+              onClick={() =>
+                snooze.mutate({ conversation_id: conversationId, duration_hours: d.hours })
+              }
+            >
+              {t(d.label)}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }

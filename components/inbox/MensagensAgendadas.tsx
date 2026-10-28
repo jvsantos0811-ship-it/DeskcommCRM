@@ -10,6 +10,8 @@ import {
   TEXTO_MAXIMO,
   type MensagemAgendada,
 } from "@/lib/inbox/mensagens-agendadas";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Clock, X } from "@/lib/ui/icons";
 
 /** `yyyy-MM-ddTHH:mm` no fuso do navegador — o formato do `datetime-local`. */
@@ -27,15 +29,12 @@ function sugestao(): string {
 }
 
 /**
- * Mensagens agendadas da conversa — a faixa logo acima do campo de texto.
- *
- * Fica FORA do Composer de propósito: o Composer é o "mandar agora", com
- * anexos, templates, citação e nota interna, e agendar é só texto nesta versão
- * (ver a migration 9001). Um formulário próprio deixa claro que o que se
- * escreve aqui NÃO sai agora, e serve igual no Inbox e no pop-up do negócio.
+ * Mensagens agendadas da conversa — a LISTA logo acima do campo de texto.
  *
  * O que mostra: as pendentes (com Cancelar) e as que falharam (com o motivo).
- * As que saíram somem daqui — elas já estão no fio da conversa.
+ * As que saíram somem daqui — elas já estão no fio da conversa. Sem nenhuma,
+ * não ocupa altura nenhuma (PC-011): o "Agendar mensagem" mora na barra de
+ * escrever, como ícone (`AgendarMensagem`, abaixo).
  */
 export function MensagensAgendadas({
   conversationId,
@@ -47,11 +46,7 @@ export function MensagensAgendadas({
 }) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
-  const { lista, agendar, cancelar } = useScheduledMessages(conversationId);
-  const [aberto, setAberto] = useState(false);
-  const [texto, setTexto] = useState("");
-  const [quando, setQuando] = useState(sugestao);
-  const [erro, setErro] = useState<string | null>(null);
+  const { lista, cancelar } = useScheduledMessages(conversationId);
 
   const visiveis = (lista.data ?? []).filter(
     (m) => m.status === "scheduled" || m.status === "sending" || m.status === "failed",
@@ -65,6 +60,66 @@ export function MensagensAgendadas({
       hour: "2-digit",
       minute: "2-digit",
     });
+
+  if (visiveis.length === 0) return null;
+
+  return (
+    <div className="max-h-28 overflow-y-auto border-t border-border px-3 py-1.5 text-xs" data-mensagens-agendadas>
+      <ul className="flex flex-col gap-1" aria-label={t("Mensagens agendadas")}>
+        {visiveis.map((m: MensagemAgendada) => (
+          <li
+            key={m.id}
+            data-agendada-status={m.status}
+            className={
+              "flex items-start gap-2 rounded-md border px-2.5 py-1 " +
+              (m.status === "failed" ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/40")
+            }
+          >
+            <Clock size={14} className="mt-0.5 shrink-0 text-text-muted" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-text">
+                {m.status === "failed"
+                  ? t("Não foi enviada")
+                  : m.status === "sending"
+                    ? t("Enviando…")
+                    : `${t("Agendada para")} ${formatar(m.send_at)}`}
+              </p>
+              <p className="line-clamp-2 break-words text-text-muted">{m.body}</p>
+              {m.status === "failed" && m.error && (
+                <p className="mt-0.5 text-destructive">{m.error}</p>
+              )}
+            </div>
+            {podeCancelar(m.status) && podeAgendar && (
+              <button
+                type="button"
+                onClick={() => cancelar.mutate(m.id)}
+                disabled={cancelar.isPending}
+                className="flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-text-muted hover:bg-muted hover:text-text disabled:opacity-60"
+              >
+                <X size={12} aria-hidden />
+                {t("Cancelar")}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * O "Agendar mensagem" na barra de escrever (PC-011): um ícone de relógio que
+ * abre o MESMO formulário de antes num balão — só texto, até 60 dias, sai em
+ * nome de quem agendou. Fica fora do campo de texto de propósito: o que se
+ * escreve aqui NÃO sai agora.
+ */
+export function AgendarMensagem({ conversationId }: { conversationId: string }) {
+  const t = useT();
+  const { agendar } = useScheduledMessages(conversationId);
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [quando, setQuando] = useState(sugestao);
+  const [erro, setErro] = useState<string | null>(null);
 
   const enviar = () => {
     const data = new Date(quando);
@@ -86,68 +141,28 @@ export function MensagensAgendadas({
     );
   };
 
-  if (!podeAgendar && visiveis.length === 0) return null;
-
   return (
-    <div className="border-t border-border px-3 py-2 text-xs" data-mensagens-agendadas>
-      {visiveis.length > 0 && (
-        <ul className="mb-2 flex flex-col gap-1.5" aria-label={t("Mensagens agendadas")}>
-          {visiveis.map((m: MensagemAgendada) => (
-            <li
-              key={m.id}
-              data-agendada-status={m.status}
-              className={
-                "flex items-start gap-2 rounded-md border px-2.5 py-1.5 " +
-                (m.status === "failed" ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/40")
-              }
-            >
-              <Clock size={14} className="mt-0.5 shrink-0 text-text-muted" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-text">
-                  {m.status === "failed"
-                    ? t("Não foi enviada")
-                    : m.status === "sending"
-                      ? t("Enviando…")
-                      : `${t("Agendada para")} ${formatar(m.send_at)}`}
-                </p>
-                <p className="line-clamp-2 break-words text-text-muted">{m.body}</p>
-                {m.status === "failed" && m.error && (
-                  <p className="mt-0.5 text-destructive">{m.error}</p>
-                )}
-              </div>
-              {podeCancelar(m.status) && podeAgendar && (
-                <button
-                  type="button"
-                  onClick={() => cancelar.mutate(m.id)}
-                  disabled={cancelar.isPending}
-                  className="flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-text-muted hover:bg-muted hover:text-text disabled:opacity-60"
-                >
-                  <X size={12} aria-hidden />
-                  {t("Cancelar")}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {podeAgendar && !aberto && (
-        <button
+    <Popover
+      open={aberto}
+      onOpenChange={(v) => {
+        setAberto(v);
+        if (!v) setErro(null);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
           type="button"
-          onClick={() => setAberto(true)}
-          className="flex h-7 items-center gap-1.5 rounded-md px-2 font-medium text-text-muted hover:bg-muted hover:text-text"
-        >
-          <Clock size={14} aria-hidden />
-          {t("Agendar mensagem")}
-        </button>
-      )}
-
-      {podeAgendar && aberto && (
-        <div
-          role="group"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
           aria-label={t("Agendar mensagem")}
-          className="flex flex-col gap-2 rounded-md border border-primary/40 bg-primary/5 p-2.5"
+          title={t("Agendar mensagem")}
         >
+          <Clock size={18} aria-hidden />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-[min(22rem,calc(100vw-2rem))] p-2.5 text-xs">
+        <div role="group" aria-label={t("Agendar mensagem")} className="flex flex-col gap-2">
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -198,7 +213,7 @@ export function MensagensAgendadas({
             {t("Sai em seu nome, pelo mesmo canal da conversa. Se não puder sair, você vê o motivo aqui e no fio.")}
           </p>
         </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }

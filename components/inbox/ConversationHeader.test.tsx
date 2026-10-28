@@ -52,7 +52,7 @@ vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 // a barra de ações, não a carteira (que tem arquivo próprio).
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
-vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
+vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeSubmenu: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
@@ -165,7 +165,9 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("open")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    // PC-011: Arquivar mora no "⋯" — abre o menu e escolhe o item.
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Arquivar" }));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();
@@ -188,7 +190,9 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("closed")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    // PC-011: Arquivar mora no "⋯" — abre o menu e escolhe o item.
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Arquivar" }));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();

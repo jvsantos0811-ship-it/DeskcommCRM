@@ -16,6 +16,7 @@ import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentP
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
+import { AgendarMensagem } from "@/components/inbox/MensagensAgendadas";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import {
   MentionMenu,
@@ -122,6 +123,12 @@ interface Props {
    * `draft_id` que o consumo usa depois do clique.
    */
   rascunho?: AvisoDeRascunho | null;
+  /**
+   * Mostra o ícone "Agendar mensagem" na barra (PC-011). Quem decide é a tela
+   * que monta o composer, com a mesma regra de antes: falso para somente
+   * leitura, contato bloqueado ou conversa encerrada.
+   */
+  podeAgendar?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -140,10 +147,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     respondendo,
     onCancelarResposta,
     rascunho = null,
+    podeAgendar = false,
   },
   ref,
 ) {
   const t = useT();
+  // Onde o painel de sugestão põe o ícone "Sugerir resposta" (PC-011): um
+  // lugar na barra de escrever, preenchido por portal pelo próprio painel.
+  const [alvoDaSugestao, setAlvoDaSugestao] = useState<HTMLSpanElement | null>(null);
   const [text, setText] = useState(initialDraft);
   // O aviso some no primeiro ENVIO: depois do clique o rascunho foi usado, e
   // deixar a faixa prometendo texto que já saiu seria mentira de tela.
@@ -633,7 +644,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         )}
       >
         {mode === "reply" && (
-          <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
+          <ReplyReviewPanel
+            conversationId={conversationId}
+            disabled={isDisabled}
+            alvoDoBotao={alvoDaSugestao}
+          />
         )}
         <TemplateMenu
           open={menuOpen}
@@ -689,7 +704,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             </p>
           </div>
         )}
-        <div className="mb-1.5 flex gap-1">
+        <div className="mb-1 flex gap-1">
           <button
             type="button"
             onClick={() => setMode("reply")}
@@ -779,6 +794,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               });
             }}
           />
+          {mode === "reply" && podeAgendar && <AgendarMensagem conversationId={conversationId} />}
+          {mode === "reply" && <span ref={setAlvoDaSugestao} className="contents" />}
           <textarea
             ref={taRef}
             value={text}

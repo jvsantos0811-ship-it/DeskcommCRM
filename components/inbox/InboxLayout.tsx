@@ -44,6 +44,7 @@ import { togglePainelDoContato } from "@/app/actions/inbox/togglePainelDoContato
 import type { AvisoDeRascunho } from "@/lib/inbox/rascunho-sugerido";
 import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
+import { useModoFoco } from "@/hooks/inbox/useModoFoco";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   LIMITES_FICHA,
@@ -252,6 +253,11 @@ export function InboxLayout({
    * sem ele o painel só reagiria depois da volta ao servidor.
    */
   const [painelRecolhido, setPainelRecolhido] = useState(painelRecolhidoInicial);
+  /**
+   * MODO FOCO (PC-011): com uma conversa aberta, a lista e a ficha saem da
+   * frente e a conversa fica com a tela. Sem conversa não há o que focar.
+   */
+  const { modoFoco, alternarFoco } = useModoFoco(Boolean(selectedId));
   const alternarPainelDoContato = useCallback(() => {
     const proximo = !painelRecolhido;
     setPainelRecolhido(proximo);
@@ -697,17 +703,21 @@ export function InboxLayout({
     <OpenConversationProvider conversationId={selectedId}>
     <div
       ref={gradeRef}
+      data-modo-foco={modoFoco ? "true" : "false"}
       className={cn(
-        "grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
+        "grid relative h-[calc(100dvh-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1",
+        !modoFoco && "md:grid-cols-[300px_1fr]",
         // Recolhido (issue #3004), a terceira trilha vira o trilho estreito do
         // botão de expandir e a conversa fica com o que era da ficha. Duas
         // listas em vez de uma classe com valor em variável: o Tailwind precisa
         // do literal para gerar o CSS.
-        painelRecolhido
-          ? "xl:grid-cols-[272px_1fr_2.75rem] 2xl:grid-cols-[300px_1fr_2.75rem]"
-          : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
+        modoFoco
+          ? null
+          : painelRecolhido
+            ? "xl:grid-cols-[272px_1fr_2.75rem] 2xl:grid-cols-[300px_1fr_2.75rem]"
+            : "xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]",
       )}
-      style={estiloDaGrade}
+      style={modoFoco ? undefined : estiloDaGrade}
       /*
        * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
        * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
@@ -748,6 +758,7 @@ export function InboxLayout({
         className={cn(
           "h-full min-h-0 flex-col border-r border-border md:flex",
           colunas.lista,
+          modoFoco && "hidden md:hidden",
         )}
       >
         <BotaoIniciarConversa />
@@ -855,6 +866,8 @@ export function InboxLayout({
               }
               buscaAberta={buscaAberta}
               botaoBuscaRef={botaoBuscaRef}
+              modoFoco={modoFoco}
+              onAlternarFoco={alternarFoco}
             />
             {buscaAberta && (
               <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
@@ -882,7 +895,7 @@ export function InboxLayout({
                 </Button>
               </div>
             )}
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-hidden" data-testid="area-de-mensagens">
               <ChatThread
                 conversationId={selectedConversation.id}
                 searchTerm={buscaAberta ? busca.termo : ""}
@@ -899,7 +912,11 @@ export function InboxLayout({
                 contatoId={selectedConversation.contacts?.id ?? null}
               />
             </div>
-            <RetentionNotice conversationId={selectedConversation.id} />
+            <RetentionNotice
+              key={`conformidade:${selectedConversation.id}`}
+              conversationId={selectedConversation.id}
+              modoFoco={modoFoco}
+            />
             {selectedConversation.contacts?.id && (
               <NumeroForaDoAr
                 key={`numero:${selectedConversation.id}`}
@@ -942,6 +959,9 @@ export function InboxLayout({
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}
+              podeAgendar={
+                !supportReadonly && !blockedReason && selectedConversation.status !== "closed"
+              }
               initialDraft={
                 rascunhoVivo?.leitura.estado === "sugerido" ? rascunhoVivo.leitura.texto : ""
               }
@@ -960,7 +980,7 @@ export function InboxLayout({
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
+      <div className={cn("hidden h-full min-h-0 min-w-0", !modoFoco && "xl:block")}>
         <CRMSidePanel
           conversation={selectedConversation}
           recolhido={painelRecolhido}
@@ -979,7 +999,7 @@ export function InboxLayout({
         ficha), o que evita medir a conversa para saber onde a terceira trilha
         começa.
       */}
-      {efetivas && (
+      {efetivas && !modoFoco && (
         <>
           <span
             role="separator"

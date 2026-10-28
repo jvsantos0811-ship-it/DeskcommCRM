@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,16 +10,13 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
  *
  * ─── O que este arquivo prova, e o que ele NÃO prova ─────────────────────────
  *
- * A issue pede duas coisas: (1) menu "⋯" para as ações menos usadas e (2) guia
- * curta em cada botão. A (2) está aqui. A (1) NÃO foi implementada — e o motivo
- * é medido, não estético: `tests/unit/inbox-header-nao-trava.test.tsx` (do
- * mantenedor, commit `e079acf30`) afirma que as ações continuam TODAS na barra e
- * que um botão "Mais ações" **não pode existir**; o próprio JSX deste componente
- * diz por quê ("um menu 'mais' … esconderia ação de quem atende"). Esconder ação
- * da barra é regra de PRODUTO (`#1625`, `#1627`, `#2700` fechado sem merge em
- * 14/10 — e `#2810`, do mantenedor, merged no mesmo dia, nos MESMOS arquivos,
- * resolveu a mesma altura com uma fileira que rola). Quem muda essa regra é ele.
- * A paridade abaixo é o que garante que seguimos do lado certo dela.
+ * A issue pedia duas coisas: (1) menu "⋯" para as ações menos usadas e (2) guia
+ * curta em cada botão. A (2) entrou no #3003. A (1) era regra de PRODUTO, e quem
+ * a decidiu foi o dono deste fork no PC-011 (28/10/2026): Assumir e Fechar
+ * ficam à vista; Transferir, Lembrar, Arquivar e Marcar como pessoal vão para o
+ * "⋯", com o mesmo efeito e a mesma confirmação. A paridade abaixo mede o
+ * CABEÇALHO inteiro (barra + menu): mudar o lugar de uma ação é permitido,
+ * fazê-la sumir não.
  *
  * ─── Por que a paridade é por CENÁRIO, e não uma lista só ────────────────────
  *
@@ -82,7 +80,47 @@ vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/components/voice/DialButton", () => ({ DialButton: () => null }));
 vi.mock("@/components/inbox/VideoCallButton", () => ({ VideoCallButton: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({
-  SnoozeButton: () => <button type="button">Lembrar</button>,
+  SnoozeSubmenu: () => (
+    <div role="menuitem" data-dentro-do-menu>
+      Lembrar
+    </div>
+  ),
+}));
+/**
+ * O "⋯" é um menu do Radix, que só monta o conteúdo ao abrir e abre por evento
+ * de ponteiro — o jsdom não o abre de forma confiável. O dublê desenha o
+ * conteúdo SEMPRE, marcado com `data-dentro-do-menu`, para a paridade enxergar
+ * o que o menu oferece e o caso do PC-011 saber o que está dentro e o que está
+ * fora dele. O `onSelect` vira `onClick`, que é o que o Radix chama no clique.
+ */
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
+    <div role="menu" data-dentro-do-menu>
+      {children}
+    </div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    asChild,
+    disabled,
+    ...resto
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+    asChild?: boolean;
+    disabled?: boolean;
+    [k: string]: unknown;
+  }) =>
+    asChild ? (
+      <>{children}</>
+    ) : (
+      <div role="menuitem" aria-disabled={disabled} onClick={onSelect} {...resto}>
+        {children}
+      </div>
+    ),
 }));
 
 /**
@@ -217,7 +255,8 @@ const CENARIOS: Cenario[] = [
     nome: "contato marcado como pessoal — o par inverte",
     contato: { is_personal: true },
     auth: { user: { id: "u1", support: null, is_platform_admin: true } },
-    ancora: "Desmarcar pessoal",
+    // "Desmarcar pessoal" mora no ⋯ desde o PC-011; a âncora é um botão à vista.
+    ancora: "Assumir",
     esperadas: [
       "Assumir",
       "Transferir",
@@ -259,21 +298,29 @@ function montar(cenario: Cenario) {
   );
 }
 
-/** A barra de ações — ancorada por rótulo, nunca por índice fixo (contrato da catraca). */
+/**
+ * As ações do cabeçalho — a barra E o "⋯" (PC-011). Ancorada por rótulo, nunca
+ * por índice fixo: sobe do botão-âncora até o elemento que contém o menu.
+ */
 function barraDeAcoes(ancora: string): HTMLElement {
   const botao = screen.getByText(ancora).closest("button");
   expect(botao, `a âncora "${ancora}" não renderizou um botão`).toBeTruthy();
   const barra = (botao as HTMLElement).parentElement;
   expect(barra, "a barra de ações não renderizou").toBeTruthy();
+  expect(
+    within(barra as HTMLElement).queryByRole("menu"),
+    "o menu \"⋯\" saiu da barra de ações",
+  ).not.toBeNull();
   return barra as HTMLElement;
 }
 
-/** "Esta ação está alcançável nesta barra?" — por texto (botão) ou por nome acessível (ícone). */
+/** "Esta ação está alcançável no cabeçalho?" — botão, link ou item do "⋯". */
 function naBarra(barra: HTMLElement, rotulo: string): boolean {
   return (
     within(barra).queryAllByText(rotulo).length > 0 ||
     within(barra).queryByRole("button", { name: rotulo }) !== null ||
-    within(barra).queryByRole("link", { name: rotulo }) !== null
+    within(barra).queryByRole("link", { name: rotulo }) !== null ||
+    within(barra).queryByRole("menuitem", { name: rotulo }) !== null
   );
 }
 
@@ -315,7 +362,9 @@ describe("#3003 — guia curta: todo botão da barra diz o que faz", () => {
       montar(cenario);
       const barra = barraDeAcoes(cenario.ancora);
 
-      const alvos = Array.from(barra.querySelectorAll<HTMLElement>("button, a[href]"));
+      const alvos = Array.from(
+        barra.querySelectorAll<HTMLElement>('button, a[href], [role="menuitem"]'),
+      );
       expect(alvos.length, "a barra não renderizou botão nenhum").toBeGreaterThan(0);
 
       for (const el of alvos) {
@@ -339,10 +388,16 @@ describe("#3003 — guia curta: todo botão da barra diz o que faz", () => {
   it("a guia não renomeou nenhum botão — o nome acessível continua sendo o rótulo visível", () => {
     montar(CENARIO_MAIS_COMPLETO);
     const barra = barraDeAcoes("Liberar");
-    for (const rotulo of ["Assumir", "Liberar", "Devolver ao automático", "Transferir", "Fechar"]) {
+    for (const rotulo of ["Assumir", "Liberar", "Fechar"]) {
       const botao = within(barra).getByRole("button", { name: rotulo });
       expect(botao.textContent?.trim()).toBe(rotulo);
     }
+    expect(within(barra).getByRole("menuitem", { name: "Transferir" }).textContent?.trim()).toBe(
+      "Transferir",
+    );
+    // PC-011: abaixo do `2xl` o rótulo VISÍVEL encurta para "Devolver"; o nome
+    // acessível segue o completo, que é o que a régua e os e2e procuram.
+    expect(within(barra).getByRole("button", { name: "Devolver ao automático" })).toBeTruthy();
   });
 });
 
@@ -380,4 +435,44 @@ describe("#3003 — a guia de Liberar não promete o automático quando ele não
       expect(screen.getByRole("button", { name: "Liberar" }).getAttribute("title")).toBe(caso.guia);
     });
   }
+});
+
+/**
+ * PC-011 — O QUE FICA À VISTA E O QUE VAI PARA O "⋯".
+ *
+ * Decisão do dono (28/10/2026): no notebook o cabeçalho comia a altura da
+ * conversa. Assumir e Fechar ficam como botões, sem abrir menu; Transferir,
+ * Lembrar, Arquivar e Marcar como pessoal moram no "⋯". Os gestos de quem
+ * manda (Liberar, Devolver/Pausar o automático) ficam à vista: são eles que
+ * respondem "a IA está falando com este cliente?".
+ */
+describe("PC-011 — Assumir e Fechar à vista; o resto no ⋯", () => {
+  function dentroDoMenu(el: HTMLElement | null): boolean {
+    return el?.closest("[data-dentro-do-menu]") != null;
+  }
+
+  it("Assumir e Fechar são botões fora do menu", () => {
+    montar(CENARIOS[0]!);
+    for (const rotulo of ["Assumir", "Fechar"]) {
+      const botao = screen.getByRole("button", { name: rotulo });
+      expect(dentroDoMenu(botao), `"${rotulo}" foi parar dentro do ⋯`).toBe(false);
+    }
+  });
+
+  it("Transferir, Lembrar, Arquivar e Marcar como pessoal estão no ⋯", () => {
+    montar(CENARIOS[0]!);
+    expect(screen.getByRole("button", { name: "Mais ações" })).toBeTruthy();
+    for (const rotulo of ["Transferir", "Lembrar", "Arquivar", "Marcar como pessoal"]) {
+      const item = screen.getByText(rotulo);
+      expect(dentroDoMenu(item), `"${rotulo}" deveria estar no ⋯`).toBe(true);
+      expect(screen.queryByRole("button", { name: rotulo }), `"${rotulo}" ainda é botão solto`).toBeNull();
+    }
+  });
+
+  it("os gestos de quem manda continuam à vista", () => {
+    montar(CENARIO_MAIS_COMPLETO);
+    for (const rotulo of ["Liberar", "Devolver ao automático"]) {
+      expect(dentroDoMenu(screen.getByRole("button", { name: rotulo }))).toBe(false);
+    }
+  });
 });

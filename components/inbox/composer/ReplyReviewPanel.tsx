@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -7,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
+import { CircleNotch, Sparkle } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 import { motivoDoVeto, sugestaoParaMostrar } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 type Draft = {
   id: string;
@@ -20,9 +23,20 @@ type Draft = {
 export function ReplyReviewPanel({
   conversationId,
   disabled,
+  alvoDoBotao,
 }: {
   conversationId: string;
   disabled?: boolean;
+  /**
+   * TELA COMPACTA (PC-011). Quando a prop vem (mesmo `null`, enquanto a barra
+   * de escrever ainda monta), o "Sugerir resposta" vira um ÍCONE dentro da
+   * barra de escrever — renderizado lá por portal — e a caixa "Assistência do
+   * agente" só aparece quando há o que mostrar: uma sugestão para revisar, o
+   * andamento dela ou o aviso depois de aprovar/rejeitar. Sem a prop, a caixa
+   * de sempre, com o botão dentro. O fluxo é o mesmo nos dois casos: gerar não
+   * envia nada, e só "Aprovar e enviar" manda o texto.
+   */
+  alvoDoBotao?: HTMLElement | null;
 }) {
   const t = useT(),
     qc = useQueryClient(),
@@ -107,24 +121,63 @@ export function ReplyReviewPanel({
     stale: "Sugestão obsoleta: a conversa mudou",
     failed: "Não foi possível concluir a sugestão ou o envio",
   };
+  const compacto = alvoDoBotao !== undefined;
+  const avisoVisivel =
+    notice !== null &&
+    (!draft ||
+      (notice.draftId === draft.id &&
+        (notice.kind === "error" ||
+          ["approved", "sending", "sent", "dismissed"].includes(draft.status))));
+  const botaoIcone =
+    compacto && alvoDoBotao
+      ? createPortal(
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={disabled || busy}
+            onClick={generate}
+            aria-label={t("Sugerir resposta")}
+            title={busy ? t("Preparando…") : t("Sugerir resposta (não envia nada)")}
+            data-testid="sugerir-resposta-icone"
+          >
+            {busy ? (
+              <CircleNotch size={18} className="animate-spin" aria-hidden />
+            ) : (
+              <Sparkle size={18} aria-hidden />
+            )}
+          </Button>,
+          alvoDoBotao,
+        )
+      : null;
+  // Compacta e sem nada a mostrar: só o ícone na barra, nenhuma caixa.
+  if (compacto && !draft && !avisoVisivel) return botaoIcone;
   return (
+    <>
+    {botaoIcone}
     <section
-      className="mb-3 space-y-2 rounded-md border bg-muted/30 p-3"
+      className={cn(
+        "space-y-2 rounded-md border bg-muted/30",
+        compacto ? "mb-2 max-h-[40dvh] overflow-y-auto p-2" : "mb-3 p-3",
+      )}
       aria-label={t("Assistência do agente")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">
           {t(draft ? (statuses[draft.status] ?? "Assistência do agente") : "Assistência do agente")}
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || busy}
-          onClick={generate}
-        >
-          {t(busy ? "Preparando…" : "Sugerir resposta")}
-        </Button>
+        {!compacto && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || busy}
+            onClick={generate}
+          >
+            {t(busy ? "Preparando…" : "Sugerir resposta")}
+          </Button>
+        )}
       </div>
       {draft && (
         <>
@@ -199,15 +252,12 @@ export function ReplyReviewPanel({
         pessoa clicaria em Rejeitar e a tela apenas esvaziaria, sem dizer nada.
         Quando ainda há sugestão, o aviso continua amarrado a ela.
       */}
-      {notice &&
-        (!draft ||
-          (notice.draftId === draft.id &&
-            (notice.kind === "error" ||
-              ["approved", "sending", "sent", "dismissed"].includes(draft.status)))) && (
-          <p role="status" className="text-xs">
-            {notice.message}
-          </p>
-        )}
+      {avisoVisivel && notice && (
+        <p role="status" className="text-xs">
+          {notice.message}
+        </p>
+      )}
     </section>
+    </>
   );
 }
