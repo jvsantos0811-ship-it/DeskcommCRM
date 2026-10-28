@@ -101,7 +101,8 @@ import {
   type CheckpointContent,
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
-import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
+import { buildOpeningMessage, mensagensPendentesDoCliente, ritualBlocks } from "./abertura/ritual";
+import { gravarTempoDoTurno } from "./tempo-do-turno";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
@@ -240,6 +241,9 @@ import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
   anotarUltimaInboundVista,
+  clienteEscreveuDepoisDaLeitura,
+  guardarBolhasRetidas,
+  lerBolhasRetidas,
   respostaFicouObsoleta,
   ultimaInboundJaRespondida,
 } from './turno-ja-respondido';
@@ -1232,6 +1236,11 @@ export interface InboundTurnKnobs {
    * `respostaFicouObsoleta`. Ausente = desligada (testes que não a exercitam).
    */
   respostaObsoletaTetoMs?: number;
+  /**
+   * Teto de cada chamada de ferramenta (AGENT_TOOL_TIMEOUT_MS, PC-002 item 4).
+   * Ausente = a regra de uma tentativa por turno fica DESLIGADA (testes antigos).
+   */
+  ferramentaTempoMaximoMs?: number;
   /** circuit breaker de tools por run (F2-15) — env TOOL_BREAKER_* */
   breaker: ToolBreakerThresholds;
   /**
@@ -1458,7 +1467,7 @@ export function claimsCurrentInboundIsEmpty(candidate: string, currentInbound: s
  *
  * ## Por que não basta "a última inbound"
  *
- * O drain COALESCE rajada: com `INBOUND_DEBOUNCE_MS` (default 8000), a segunda
+ * O drain COALESCE rajada: com a espera deslizante (`INBOUND_DEBOUNCE_MS`, PC-002), a segunda
  * mensagem do cliente não ganha job próprio — ela "entra de carona" no job da
  * primeira (`edge/crm/drain.ts`, "Coalescência"). O turno responde à mensagem que
  * o job aponta, e isso está certo; mas quem só olhasse essa mensagem não OUVIRIA
@@ -1524,6 +1533,11 @@ export interface AgentTurnInput {
     origemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
+    /**
+     * O que o turno anterior começou a dizer e ficou retido porque o cliente
+     * escreveu no meio (PC-002, Fase 1, item 3). Vazio = nada retido.
+     */
+    naoEnviadas?: readonly string[];
     /**
      * Projetar o contexto (spec 16 §4)? Decidido pelo turno, ver `turnoProjeta`.
      *
@@ -2856,6 +2870,35 @@ async function executarTurnoDoAgente(
   // ligada, NADA mais sai dele, nem a pergunta pendente do roteiro (que segue
   // feita para o turno da mensagem nova). Ver `perguntaDoRoteiroPodeSair`.
   let turnoDescartado = false;
+  // PARAR NO MEIO (PC-002, Fase 1, item 3): o cliente escreveu depois que este
+  // turno leu a conversa e a resposta JÁ tinha começado a sair. As bolhas que
+  // ainda não saíram ficam retidas (e vão para o payload do job, onde o turno
+  // da mensagem nova as lê); nada mais sai deste turno.
+  let respostaCortada = false;
+  const bolhasRetidas: string[] = [];
+  // MEDIÇÃO (PC-002, item 5): quando a 1ª bolha saiu, quantas mensagens do
+  // cliente o turno respondeu e quantas ferramentas falharam. Gravado no fim.
+  let primeiraBolhaEm: Date | null = null;
+  let mensagensRespondidas = 0;
+  let ferramentasQueFalharam = 0;
+  const reter = async (trechos: readonly string[]): Promise<void> => {
+    respostaCortada = true;
+    turnoDescartado = true;
+    bolhasRetidas.push(...trechos);
+    runLog.info('resposta cortada no meio — o cliente escreveu de novo; o resto ficou retido', {
+      job_id: job?.id ?? null,
+      conversation_id: input.conversationId,
+      bolhas_retidas: trechos.length,
+    });
+    if (job === null) return;
+    try {
+      await guardarBolhasRetidas(pool, { organizationId: tenantId, jobId: liveJob().id }, trechos);
+    } catch (err) {
+      runLog.warn('bolhas retidas não gravadas no job', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  };
   // TURNO MUDO: quantas vezes o modelo chamou `send_message` e se passou a conversa à
   // equipe. Os dois dizem que o silêncio foi decisão — só sem eles o motor pede a
   // correção do turno que terminou sem falar com o cliente (ver depois da chamada principal).
@@ -3261,6 +3304,7 @@ async function executarTurnoDoAgente(
           send: (finalBody: string) => {
             pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
             seq += 1;
+            if (primeiraBolhaEm === null) primeiraBolhaEm = new Date();
             return liveChannel().send({
               tenantId,
               leadId,
@@ -3488,6 +3532,31 @@ async function executarTurnoDoAgente(
         let fotosQueFaltaram = 0;
         try {
           dupTrava.reservar(body);
+          // PARAR NO MEIO (PC-002, item 3): a resposta JÁ começou a sair e o
+          // cliente escreveu de novo. Um segundo send_message não sai — vira
+          // trecho retido, que o turno da mensagem nova recebe.
+          if (
+            !preview &&
+            seq > 0 &&
+            (respostaCortada ||
+              (await clienteEscreveuDepoisDaLeitura(pool, {
+                organizationId: tenantId,
+                conversationId: input.conversationId,
+                jobId: liveJob().id,
+              })))
+          ) {
+            await reter([body]);
+            dupTrava.liberar(body);
+            return {
+              ok: false,
+              error: {
+                code: 'resposta_obsoleta',
+                message:
+                  'O cliente mandou mensagem nova enquanto você respondia; o que já saiu conta como dito, e ESTA parte NÃO foi enviada. ' +
+                  'NÃO chame send_message de novo neste turno — encerre agora. O próximo turno lê a conversa inteira e responde a tudo de uma vez.',
+              },
+            };
+          }
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
           // Só antes do PRIMEIRO envio — cortar a meio uma resposta já começada é pior
           // que a duplicata. A mensagem nova tem job próprio, que lê a conversa inteira
@@ -3715,6 +3784,7 @@ async function executarTurnoDoAgente(
                 media?: FotoParaEnvio,
               ): Promise<ChannelSendResult> => {
                 seq += 1;
+                if (primeiraBolhaEm === null) primeiraBolhaEm = new Date();
                 return liveChannel().send({
                   tenantId,
                   leadId,
@@ -3748,6 +3818,36 @@ async function executarTurnoDoAgente(
                     // `esperaForaDoLock` (paga antes de o guardrail tomar o lock do número) —
                     // issue #654. Neste ponto fica só o jitter anti-ban entre bolhas.
                     send: (bubble) => enviar(bubble),
+                    // PARAR NO MEIO (PC-002, item 3): entre uma bolha e a
+                    // próxima, se o cliente escreveu, o resto não sai. Falha
+                    // da consulta degrada para seguir: a pergunta é afinação.
+                    ...(preview
+                      ? {}
+                      : {
+                          continuar: async (): Promise<boolean> => {
+                            if (respostaCortada) return false;
+                            try {
+                              return !(await clienteEscreveuDepoisDaLeitura(pool, {
+                                organizationId: tenantId,
+                                conversationId: input.conversationId,
+                                jobId: liveJob().id,
+                              }));
+                            } catch {
+                              return true;
+                            }
+                          },
+                          aoReter: async (retidas: string[]): Promise<void> => {
+                            // O roteiro pergunta "a pergunta saiu?" a `corposEnviados`:
+                            // o que ficou retido não saiu.
+                            const i = corposEnviados.lastIndexOf(finalBody);
+                            if (i >= 0) {
+                              let saiu = finalBody;
+                              for (const r of retidas) saiu = saiu.replace(r, '');
+                              corposEnviados[i] = saiu.trim();
+                            }
+                            await reter(retidas);
+                          },
+                        }),
                   }),
               });
             },
@@ -4608,6 +4708,21 @@ async function executarTurnoDoAgente(
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
+      // PC-002, item 4: erro de ferramenta não segura a resposta. Fora da
+      // regra, as de envio (devolvem erro de ENSINO que o modelo corrige no
+      // mesmo turno) e a passagem para a equipe (segurança: o pedido de humano
+      // não pode morrer na primeira falha).
+      ...(deps.knobs.ferramentaTempoMaximoMs !== undefined
+        ? {
+            umaTentativa: {
+              exceto: ['send_message', 'send_template', 'request_human_handoff'],
+              tempoMaximoMs: deps.knobs.ferramentaTempoMaximoMs,
+              aoFalhar: () => {
+                ferramentasQueFalharam += 1;
+              },
+            },
+          }
+        : {}),
     });
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
@@ -4759,7 +4874,28 @@ async function executarTurnoDoAgente(
       projeta: projetaContexto,
       mcp_tools_no_turno: mcpToolIdsDoTurno.length,
     });
+    // PC-002, item 3: o que o turno anterior desta conversa reteve no meio.
+    let naoEnviadas: string[] = [];
+    if (!preview && job !== null && input.inboundMessageId !== undefined) {
+      try {
+        naoEnviadas = await lerBolhasRetidas(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          conversationId: input.conversationId,
+          jobId: liveJob().id,
+        });
+      } catch (err) {
+        runLog.warn('bolhas retidas do turno anterior não lidas — seguindo sem elas', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      }
+    }
+    mensagensRespondidas = mensagensPendentesDoCliente(
+      effectiveContext.messages,
+      currentInboundText ?? undefined,
+    ).length;
     const openingBase = input.buildOpening({
+      naoEnviadas,
       previous: effectivePrevious,
       leadState,
       context: effectiveContext,
@@ -5160,6 +5296,7 @@ async function executarTurnoDoAgente(
               send: (finalBody: string) => {
                 pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
                 seq += 1;
+                if (primeiraBolhaEm === null) primeiraBolhaEm = new Date();
                 return liveChannel().send({
                   tenantId,
                   leadId,
@@ -5629,6 +5766,24 @@ async function executarTurnoDoAgente(
     // Turno que terminou sem enviar (veto, handoff, erro) também para de renovar.
     pararDigitando();
     await mcpCleanup?.();
+    // PC-002, item 5: o tempo deste turno, sem conteúdo de mensagem. Best-effort:
+    // a medida nunca derruba o turno que ela mede.
+    if (!preview && job !== null && liveJob().kind === 'inbound_turn') {
+      await gravarTempoDoTurno(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+        agentId: agentConfig?.agentId ?? null,
+        jobId: liveJob().id,
+        primeiraBolhaEm,
+        mensagensRespondidas,
+        bolhasRetidas: bolhasRetidas.length,
+        ferramentasQueFalharam,
+      }).catch((err: unknown) => {
+        runLog.warn('tempo do turno não gravado', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      });
+    }
   }
 }
 
@@ -5809,6 +5964,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         compromissosBlock,
         origemBlock,
         currentInboundText,
+        naoEnviadas,
       }) =>
         buildOpeningMessage(
           previous,
@@ -5820,6 +5976,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           compromissosBlock,
           currentInboundText,
           origemBlock,
+          naoEnviadas,
         ),
     });
   };

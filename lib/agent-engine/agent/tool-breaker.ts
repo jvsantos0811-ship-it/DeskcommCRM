@@ -50,6 +50,50 @@ export interface ToolBreakerOptions {
   log: Logger;
   /** campos estruturados dos warns (tenant/lead/job) — args crus jamais. */
   logFields?: Record<string, unknown>;
+  /**
+   * UMA TENTATIVA POR TURNO (PC-002, Fase 1, item 4). Ligado, a ferramenta que
+   * falhou uma vez (resultado `ok:false`, exceção ou tempo esgotado) não roda de
+   * novo neste turno: o modelo recebe que ela está fora e segue sem ela. Medido
+   * em 27/10/2026 na Raquel · Bórbora: a etiqueta falhou duas vezes e as
+   * respostas levaram 3, 8 e 4 minutos. Ausente = o comportamento de antes.
+   */
+  umaTentativa?: {
+    /**
+     * Ferramentas fora da regra: as de ENVIO devolvem erro de ENSINO (corpo
+     * vazio, resposta obsoleta, veto de guardrail) que o modelo PRECISA poder
+     * corrigir no mesmo turno — bloquear a 2ª chamada calaria o turno.
+     */
+    exceto: readonly string[];
+    /** Teto de cada chamada em ms (0 = sem teto). */
+    tempoMaximoMs: number;
+    /** Avisado a cada falha — o turno conta para a medição (item 5). */
+    aoFalhar?: (tool: string, motivo: 'resultado' | 'excecao' | 'tempo') => void;
+  };
+}
+
+/**
+ * Erros que NÃO são falha de ferramenta e precisam subir intactos: perda do
+ * job (o worker não pode completar um job que já não é dele) e os do provedor
+ * de modelo, que o turno trata no seu próprio caminho.
+ */
+function ehErroDeControle(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === 'job_settled' || err.name === 'AbortError' || err.constructor.name.startsWith('Llm');
+}
+
+class TempoEsgotado extends Error {
+  override readonly name = 'tempo_esgotado';
+}
+
+function comTeto<T>(p: Promise<T>, ms: number): Promise<T> {
+  if (!(ms > 0)) return p;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new TempoEsgotado()), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -73,7 +117,12 @@ export const READ_ONLY_TOOLS = [
 export interface BreakerBlockedResult {
   ok: false;
   error: {
-    code: 'circuit_breaker_exact_failure' | 'circuit_breaker_same_tool' | 'circuit_breaker_no_progress';
+    code:
+      | 'circuit_breaker_exact_failure'
+      | 'circuit_breaker_same_tool'
+      | 'circuit_breaker_no_progress'
+      | 'ferramenta_fora_neste_turno'
+      | 'ferramenta_falhou';
     message: string;
   };
 }
@@ -121,6 +170,9 @@ export function wrapToolsWithBreaker(tools: ToolSet, opts: ToolBreakerOptions): 
   const toolFailures = new Map<string, number>(); // tool → falhas (args variados)
   const halted = new Set<string>(); // tools desativadas (same_tool_failure)
   const progress = new Map<string, { lastResultHash: string; repeats: number }>(); // read-only
+  const uma = opts.umaTentativa;
+  const fora = new Set<string>(); // PC-002: ferramentas que já falharam neste turno
+  const exceto = new Set(uma?.exceto ?? []);
 
   const logWarn = (msg: string, fields: Record<string, unknown>): void => {
     log.warn(msg, { ...opts.logFields, ...fields });
@@ -137,6 +189,17 @@ export function wrapToolsWithBreaker(tools: ToolSet, opts: ToolBreakerOptions): 
       const exactKey = `${toolName}:${argsHash}`;
 
       // ---- pré-execução: bloqueios ------------------------------------------
+      if (uma !== undefined && fora.has(toolName)) {
+        logWarn('ferramenta fora neste turno — falhou antes, não é tentada de novo', {
+          tool: toolName,
+          mode: 'uma_tentativa',
+        });
+        return blocked(
+          'ferramenta_fora_neste_turno',
+          `a ferramenta ${toolName} falhou neste turno e NÃO será tentada de novo. ` +
+            'Siga a conversa sem ela — não comente o erro com o cliente nem prometa o que dependia dela.',
+        );
+      }
       if (halted.has(toolName)) {
         const n = toolFailures.get(toolName) ?? 0;
         logWarn('breaker: chamada bloqueada (same_tool_failure halt)', {
@@ -181,7 +244,44 @@ export function wrapToolsWithBreaker(tools: ToolSet, opts: ToolBreakerOptions): 
       }
 
       // ---- execução real -----------------------------------------------------
-      const result = await execute(input, options);
+      let result: unknown;
+      if (uma !== undefined && !exceto.has(toolName)) {
+        try {
+          result = await comTeto(Promise.resolve(execute(input, options)), uma.tempoMaximoMs);
+        } catch (err) {
+          if (ehErroDeControle(err)) throw err;
+          const tempo = err instanceof TempoEsgotado;
+          fora.add(toolName);
+          uma.aoFalhar?.(toolName, tempo ? 'tempo' : 'excecao');
+          logWarn('ferramenta falhou — turno segue sem ela', {
+            tool: toolName,
+            mode: 'uma_tentativa',
+            motivo: tempo ? 'tempo_esgotado' : 'excecao',
+            tempo_maximo_ms: uma.tempoMaximoMs,
+            // Mensagem do erro truncada: nunca args nem resultado (PII).
+            error: tempo ? undefined : (err instanceof Error ? err.message : String(err)).slice(0, 160),
+            args_hash: argsHash,
+          });
+          return blocked(
+            'ferramenta_falhou',
+            tempo
+              ? `a ferramenta ${toolName} não respondeu a tempo neste turno (pode ter concluído ou não). Não a chame de novo agora; siga a conversa sem ela e não prometa o que dependia dela.`
+              : `a ferramenta ${toolName} falhou neste turno e NÃO será tentada de novo. Siga a conversa sem ela — não comente o erro com o cliente.`,
+          );
+        }
+        if (isFailureResult(result)) {
+          fora.add(toolName);
+          uma.aoFalhar?.(toolName, 'resultado');
+          logWarn('ferramenta devolveu erro — não é tentada de novo neste turno', {
+            tool: toolName,
+            mode: 'uma_tentativa',
+            motivo: 'resultado',
+            args_hash: argsHash,
+          });
+        }
+      } else {
+        result = await execute(input, options);
+      }
       const warnings: string[] = [];
 
       if (isFailureResult(result)) {

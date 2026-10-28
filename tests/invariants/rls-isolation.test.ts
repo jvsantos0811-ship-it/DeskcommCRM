@@ -602,6 +602,13 @@ beforeAll(() => {
           values (v_org, v_conv, 'rls invariant agendada', timestamptz '2030-01-01 12:00:00+00');
         end if;
 
+        -- migration 9009 (fork): tempo de resposta da IA na conversa semeada.
+        -- Leitura org-scoped sem gate de papel; a escrita so o worker faz.
+        if not exists (select 1 from public.tempos_de_resposta_da_ia where organization_id = v_org) then
+          insert into public.tempos_de_resposta_da_ia (organization_id, conversation_id, job_id)
+          values (v_org, v_conv, gen_random_uuid());
+        end if;
+
         -- migration 9008 (fork): contrato do negócio, preso ao lead e ao
         -- contato semeados. Leitura org-scoped sem gate de papel; a escrita só o
         -- servidor faz (authenticated só tem SELECT).
@@ -866,6 +873,10 @@ export const TABLES = [
   // vizinho com quem o escritório fechou. Leitura org-scoped sem gate de papel;
   // escrita só pelo servidor.
   "crm_contracts",
+  // migration 9009 (fork) — tempo de resposta da IA por turno: só horários e
+  // contagens, mas dizem com quem o escritório conversa e quando. Leitura
+  // org-scoped sem gate de papel; escrita só pelo worker.
+  "tempos_de_resposta_da_ia",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

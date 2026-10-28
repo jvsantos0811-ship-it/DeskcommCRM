@@ -91,15 +91,15 @@ describe("a abertura continua montando o que ela montava", () => {
     expect(t).toContain("Estado do funil");
   });
 
-  it("sem texto na mensagem atual, a abertura não promete fonte prioritária", () => {
+  it("sem texto nas mensagens do cliente, a abertura não promete o bloco delas", () => {
     const abertura = turno.buildOpeningMessage(null, null, contexto, "sem notas");
     expect(abertura).toContain("Novo turno de atendimento");
-    expect(abertura).toContain("## Mensagem atual do cliente");
+    expect(abertura).toContain("## Mensagens do cliente desde a sua última resposta");
     expect(abertura).toContain("Não há texto utilizável");
-    expect(abertura).not.toContain("## Mensagem atual do cliente — fonte prioritária");
+    expect(abertura).not.toContain("## Mensagens do cliente desde a sua última resposta (todas, em ordem)");
   });
 
-  it("com texto, a abertura declara a fonte prioritária e traz o texto", () => {
+  it("com texto, a abertura traz o bloco das mensagens do cliente com o texto", () => {
     const abertura = turno.buildOpeningMessage(
       null,
       null,
@@ -110,7 +110,7 @@ describe("a abertura continua montando o que ela montava", () => {
       "",
       "Quero agendar com a Drª Mara.",
     );
-    expect(abertura).toContain("## Mensagem atual do cliente — fonte prioritária");
+    expect(abertura).toContain("## Mensagens do cliente desde a sua última resposta (todas, em ordem)");
     expect(abertura).toContain("Quero agendar com a Drª Mara.");
   });
 });

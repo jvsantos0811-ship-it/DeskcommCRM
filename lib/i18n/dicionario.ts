@@ -873,6 +873,18 @@ export const DICIONARIO: Traducoes = {
   "Negócio retomado: ele voltou para a primeira etapa do funil.": { es: "Negocio retomado: volvió a la primera etapa del embudo." },
   "Nenhum negócio perdido neste filtro. Bom sinal.": { es: "Ningún negocio perdido en este filtro. Buena señal." },
   "Não foi possível carregar os negócios perdidos.": { es: "No se pudieron cargar los negocios perdidos." },
+  // PC-002 — tempo de resposta da IA (rota /api/v1/ai/tempos-de-resposta)
+  "1ª resposta": { es: "1.ª respuesta" },
+  "Espera (s)": { es: "Espera (s)" },
+  "Mensagens respondidas": { es: "Mensajes respondidos" },
+  "Bolhas retidas": { es: "Burbujas retenidas" },
+  "Ferramentas que falharam": { es: "Herramientas que fallaron" },
+  "Filtro inválido: confira o agente, a conversa e os dias (1 a 90).": {
+    es: "Filtro inválido: revisa el agente, la conversación y los días (1 a 90).",
+  },
+  "Não foi possível carregar os tempos de resposta da IA.": {
+    es: "No se pudieron cargar los tiempos de respuesta de la IA.",
+  },
   "Perdido há {n} dias": { es: "Perdido hace {n} días" },
   "Perdido por": { es: "Perdido por" },
   "Principais motivos (clique para filtrar)": { es: "Principales motivos (haz clic para filtrar)" },

@@ -53,6 +53,13 @@ export interface DrainKnobs {
   idleIntervalMs: number;
   /** Janela de coalescência de rajada inbound por contato (0 = sem debounce). */
   debounceMs: number;
+  /**
+   * Teto da espera DESLIZANTE desde a 1ª mensagem do lote (PC-002). Ausente ou
+   * 0 = janela ancorada de antes. Ver `decidirRajada` em ./debounce.ts.
+   */
+  debounceTetoMs?: number;
+  /** Espera de foto, vídeo e documento na janela deslizante (PC-002). */
+  debounceMidiaMs?: number;
   /** Evento 'processing' órfão volta a 'pending' após isto. */
   reapTimeoutMs: number;
   /**
@@ -239,6 +246,28 @@ async function debounceDoEvento(
       error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
     });
     return padraoInstalacao;
+  }
+}
+
+/**
+ * Tipo da mensagem que acordou o evento (`text`, `audio`, `image`…), para a
+ * espera deslizante escolher a espera longa de foto/documento. Falha da
+ * consulta degrada para `null` (= espera de texto): a espera é afinação.
+ */
+async function tipoDaMensagem(
+  pool: pg.Pool,
+  organizationId: string,
+  messageId: string | undefined,
+): Promise<string | null> {
+  if (messageId === undefined) return null;
+  try {
+    const { rows } = await pool.query<{ type: string | null }>(
+      'select type from messages where organization_id = $1 and id = $2',
+      [organizationId, messageId],
+    );
+    return rows[0]?.type ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -510,10 +539,19 @@ async function processEvent(
   //
   // A janela e a exclusão do job em HOLD (`held_run_after` no payload — a lição
   // do #830) moram em ./debounce.ts, com teste próprio.
+  const debounceMs = await debounceDoEvento(pool, event, p, knobs.debounceMs, log);
   const rajada = await decidirRajada(
     pool,
     { organizationId: event.organization_id, contactId: p.contact_id },
-    await debounceDoEvento(pool, event, p, knobs.debounceMs, log),
+    debounceMs,
+    Date.now(),
+    debounceMs > 0 && (knobs.debounceTetoMs ?? 0) > 0
+      ? {
+          tetoMs: knobs.debounceTetoMs ?? 0,
+          esperaMidiaMs: knobs.debounceMidiaMs ?? 0,
+          tipo: await tipoDaMensagem(pool, event.organization_id, p.inbound_message_id),
+        }
+      : undefined,
   );
   if (rajada.tipo === 'coalescido') {
     log.info('drain: rajada coalescida em job pendente', {

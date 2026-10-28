@@ -153,6 +153,17 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
    * Ausente = sem teto (o comportamento de antes).
    */
   maxBubbles?: number;
+  /**
+   * PARAR NO MEIO (PC-002, Fase 1, item 3). Perguntado ANTES de cada bolha
+   * depois da 1ª, já depois do jitter (é ali que o cliente teve tempo de
+   * escrever): `false` = o cliente escreveu de novo, as bolhas restantes não
+   * saem e vão para `aoReter`. Ausente = segue até o fim (o comportamento de
+   * antes). Falha da pergunta não pode calar a resposta: quem a injeta decide
+   * degradar para `true`.
+   */
+  continuar?: () => Promise<boolean>;
+  /** Recebe as bolhas que ficaram retidas quando `continuar` disse não. */
+  aoReter?: (retidas: string[]) => Promise<void> | void;
 }
 
 /**
@@ -236,7 +247,13 @@ export async function sendInBubbles<T extends BubbleOutcome>(
     // Antes da 1ª: o atraso humano do turno. Entre as demais: o jitter anti-ban
     // que já existia. Nunca os dois na mesma pausa.
     if (i === 0) await opts.antesDaPrimeira?.(bubbles[0]!);
-    else await opts.sleep(opts.jitter());
+    else {
+      await opts.sleep(opts.jitter());
+      if (opts.continuar !== undefined && !(await opts.continuar())) {
+        await opts.aoReter?.(bubbles.slice(i));
+        return last!;
+      }
+    }
     last = await opts.send(bubbles[i]!);
     if (!OK_KINDS.has(last.kind)) return last; // veto/bloqueio/falha: para aqui
   }

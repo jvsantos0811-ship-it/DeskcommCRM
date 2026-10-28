@@ -14,6 +14,7 @@ export function turnKnobsFromEnv(env: Env): InboundTurnKnobs {
     maxSendsPerTurn: env.MAX_SENDS_PER_TURN,
     queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
     respostaObsoletaTetoMs: env.RESPOSTA_OBSOLETA_TETO_MS,
+    ferramentaTempoMaximoMs: env.AGENT_TOOL_TIMEOUT_MS,
     breaker: {
       exactFailureWarn: env.TOOL_BREAKER_EXACT_WARN,
       exactFailureBlock: env.TOOL_BREAKER_EXACT_BLOCK,

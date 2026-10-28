@@ -45,15 +45,20 @@ const contexto: LeadContext = {
 } as unknown as LeadContext;
 
 describe("rajada coalescida: o turno responde à 1ª e OUVE a 2ª", () => {
-  it("o bloco de mensagem atual nomeia a mensagem do job — a PRIMEIRA", () => {
+  // PC-002 (27/10/2026): "responder à 1ª e só ouvir a 2ª" foi o defeito medido
+  // na Raquel · Bórbora ("Meu neto sofreu o acidente de moto" + "e ficou
+  // machucado"). A abertura agora traz AS DUAS, em ordem, e manda responder ao
+  // conjunto. A detecção (handoff, opt-out) continua por MENSAGEM, abaixo.
+  it("a abertura traz a PRIMEIRA e a SEGUNDA, em ordem, e manda responder ao conjunto", () => {
     // `currentInboundText` é o corpo da linha que o job aponta.
     const abertura = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", PRIMEIRA);
 
-    expect(abertura).toContain("## Mensagem atual do cliente — fonte prioritária");
-    expect(abertura).toContain(JSON.stringify({ texto: PRIMEIRA }));
-    // E não promove a segunda a "mensagem atual" — ela é do histórico, e é lá
-    // que o modelo a lê. Promovê-la desfaria o conserto do registro concorrente.
-    expect(abertura).not.toContain(JSON.stringify({ texto: SEGUNDA }));
+    expect(abertura).toContain("## Mensagens do cliente desde a sua última resposta (todas, em ordem)");
+    const i1 = abertura.indexOf(JSON.stringify({ texto: PRIMEIRA }));
+    const i2 = abertura.indexOf(JSON.stringify({ texto: SEGUNDA }));
+    expect(i1).toBeGreaterThan(-1);
+    expect(i2).toBeGreaterThan(i1);
+    expect(abertura).toContain("Responda ao conjunto, não só à última.");
   });
 
   it("o pedido de humano da 2ª mensagem É ouvido — é a linha que o pin quase calou", () => {
