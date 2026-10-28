@@ -361,3 +361,68 @@ describe("PC-002b — trava que barra a mensagem inteira nunca deixa o cliente m
     expect(enviados).toEqual([]);
   });
 });
+
+describe("PC-002b, item 7 — fila vazia com 'IA volta sozinha' ligada", () => {
+  const FRASE_DA_FILA = "Sua mensagem ficou registrada e a equipe responde no próximo horário de atendimento.";
+  const PASSAR = ferramentas({ nome: "request_human_handoff", args: { por_que: "Lead pediu para falar com uma pessoa." } });
+
+  async function estado() {
+    const { rows } = await pool.query<{ force_human: boolean; silenciada: string | null; na_fila: boolean }>(
+      `select ct.force_human, cv.bot_silenced_until::text as silenciada, (cv.metadata ? 'ia_na_fila') as na_fila
+         from contacts ct join conversations cv on cv.contact_id = ct.id and cv.id = $2
+        where ct.organization_id = $1 and ct.id = $3`,
+      [ORG, CONV, CONTACT],
+    );
+    return rows[0]!;
+  }
+  async function passagens(): Promise<number> {
+    const { rows } = await pool.query<{ n: number }>(
+      `select count(*)::int as n from passagens_de_atendimento where organization_id = $1 and conversation_id = $2`,
+      [ORG, CONV],
+    );
+    return rows[0]?.n ?? 0;
+  }
+
+  it("⭐ F1-p: o lead recebe a frase da organização e a próxima mensagem dele é respondida pela IA", async () => {
+    await pool.query(
+      `update organizations set settings = coalesce(settings, '{}'::jsonb)
+         || jsonb_build_object('frase_da_fila', $2::text, 'routing', jsonb_build_object('handoff_return_after_minutes', 30))
+       where id = $1`,
+      [ORG, FRASE_DA_FILA],
+    );
+    try {
+      // Turno 1: a IA passa para a equipe sem falar nada — o piso manda o aviso.
+      await turno(modelo([PASSAR, texto("ok")]).fake);
+      expect(enviados).toHaveLength(1);
+      expect(enviados[0], "o aviso tem de terminar com a frase da fila da organização").toMatch(
+        new RegExp(`${FRASE_DA_FILA.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+      );
+      const depois = await estado();
+      expect(depois.force_human, "ninguém pode assumir: a IA não pode ser calada").toBe(false);
+      expect(depois.silenciada).toBeNull();
+      expect(depois.na_fila).toBe(true);
+      expect(await passagens(), "a equipe tem de ser avisada mesmo assim").toBe(1);
+
+      // Turno 2: o lead escreve de novo; a IA pede a passagem outra vez e responde.
+      enviados = [];
+      await turno(modelo([PASSAR, enviar("Claro! Enquanto isso, me conta o que aconteceu?"), texto("ok")]).fake);
+      expect(enviados, "a próxima mensagem do lead tem de ser respondida pela IA").toEqual([
+        "Claro! Enquanto isso, me conta o que aconteceu?",
+      ]);
+      expect(await passagens(), "pedido repetido não abre outra passagem").toBe(1);
+    } finally {
+      await pool.query(`update organizations set settings = settings - 'frase_da_fila' - 'routing' where id = $1`, [ORG]);
+    }
+  });
+
+  it("controle: sem 'IA volta sozinha', a passagem cala a IA como sempre", async () => {
+    await turno(modelo([PASSAR, texto("ok")]).fake);
+    expect(enviados).toHaveLength(1);
+    const depois = await estado();
+    expect(depois.force_human).toBe(true);
+    expect(depois.na_fila).toBe(false);
+    enviados = [];
+    await turno(modelo([enviar("Oi de novo"), texto("ok")]).fake);
+    expect(enviados).toEqual([]);
+  });
+});

@@ -9,12 +9,17 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+// PC-002b (item 6): o padrão passou a ser SÓ ANOTAR; este arquivo mede o elo
+// da PASSAGEM, então a organização do teste escolheu "passar".
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    from: () => {
+    from: (tabela: string) => {
       const c: Record<string, unknown> = {};
       for (const m of ["select", "eq", "order", "limit"]) c[m] = () => c;
-      c.maybeSingle = async () => ({ data: null, error: null });
+      c.maybeSingle = async () =>
+        tabela === "organizations"
+          ? { data: { settings: { irritacao: "passar" } }, error: null }
+          : { data: null, error: null };
       return c;
     },
   }),

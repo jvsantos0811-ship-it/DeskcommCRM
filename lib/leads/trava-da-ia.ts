@@ -24,7 +24,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { CampoFaltando } from "@/lib/leads/campos-exigidos";
-import { linhaDaRecusa, type RecusaDaIa } from "@/lib/ai/recusas-da-ia";
 
 /** O código da recusa de ganho — o mesmo em todas as ferramentas. */
 export const CODIGO_GANHO_SO_POR_ASSINATURA = "ganho_so_por_assinatura";
@@ -87,17 +86,5 @@ export async function modoConservadorDoAgente(
   }
 }
 
-/**
- * Grava a recusa pelo cliente do PostgREST (rotas e ferramentas MCP). Nunca
- * lança: o registro não pode derrubar a recusa que ele descreve.
- */
-export async function registrarRecusaPeloSupabase(
-  supabase: SupabaseClient,
-  r: RecusaDaIa,
-): Promise<void> {
-  try {
-    await supabase.from("recusas_da_ia").insert(linhaDaRecusa(r));
-  } catch {
-    /* melhor-esforço — ver lib/agent-engine/agent/recusas.ts */
-  }
-}
+/** Gravação pelo PostgREST: uma só, em `lib/ai/recusa-pelo-supabase.ts`. */
+export { registrarRecusaPeloSupabase } from "@/lib/ai/recusa-pelo-supabase";

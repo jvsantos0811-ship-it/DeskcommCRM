@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { loadAgentVersionConfig } from "./agent-config";
 import { runAgentPreview, type InboundTurnDeps } from "./inbound-turn";
-import { newPreviewResult, scenarioContext } from "./preview";
+import { explicarTesteSemMensagem, newPreviewResult, scenarioContext } from "./preview";
 export async function testAgentVersion(
   pool: pg.Pool,
   deps: InboundTurnDeps,
@@ -45,6 +45,7 @@ export async function testAgentVersion(
     channelId: input.channelId,
     result,
   });
+  explicarTesteSemMensagem(result);
   return result;
 }
 

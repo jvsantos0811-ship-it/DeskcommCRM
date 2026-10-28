@@ -35,6 +35,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { registrarRecusaPeloSupabase } from "@/lib/ai/recusa-pelo-supabase";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -179,6 +180,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       agora: parsed.data.agora ? new Date(parsed.data.agora) : undefined,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
+    // PC-002b (item 5, F1-n): teste sem mensagem deixa o MOTIVO na aba
+    // Execuções ("Recusas e bloqueios"), não só na tela que já fechou.
+    if (result.candidates.length === 0 && result.impediments.length > 0) {
+      await registrarRecusaPeloSupabase(admin, {
+        organizationId,
+        tipo: "envio_bloqueado",
+        agentId: id,
+        agentVersionId: vid,
+        ferramenta: "testar",
+        trava: result.impediments[0]!.code,
+        codigo: result.impediments[0]!.code,
+        motivo: `[Testar] ${result.impediments.map((i) => i.message).join(" | ")}`,
+      });
+    }
     // #2490 — mídia pendente é teste REPROVADO, mesmo com candidato na mão: o
     // `send_message` que falhou a foto devolveu erro ao modelo, e aprovar a tela
     // com aquela resposta seria exatamente o "passou sem preparar" da issue.

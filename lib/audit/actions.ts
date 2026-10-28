@@ -1090,6 +1090,10 @@ export const AUDIT_ACTIONS = [
   // barra a mensagem inteira da IA. Só registra SE foi personalizada; o texto
   // fica no settings da organização.
   "settings.safe_phrase_updated",
+  // PC-002b (fork): o horário da equipe (quando a IA pode dizer que a equipe assume).
+  "settings.team_hours_updated",
+  // PC-002b (fork): a frase da fila vazia e o que fazer quando a IA percebe irritação.
+  "settings.queue_and_irritation_updated",
 
   // A identidade da Página/WABA que a Meta exige no Purchase de clique-para-WhatsApp
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.

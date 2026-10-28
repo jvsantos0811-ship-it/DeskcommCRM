@@ -25,7 +25,13 @@ import { createClient } from "@/lib/supabase/server";
 import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { configAssinatura } from "@/lib/messaging/assinatura";
 import { AssinaturaForm } from "./_assinatura-form";
+import { fraseDaFilaDaOrg } from "@/lib/escalacao/aviso-ao-lead";
+import { acaoDaIrritacao } from "@/lib/escalacao/irritacao";
+
 import { FraseSeguraForm } from "./_frase-segura-form";
+import { FilaEIrritacaoForm } from "./_fila-e-irritacao-form";
+import { HorarioDaEquipeForm } from "./_horario-da-equipe-form";
+import { horarioDaEquipeDaOrg } from "@/lib/escalacao/horario-da-equipe";
 import { fraseSeguraConfigurada, fraseSeguraPadrao } from "@/lib/messaging/frase-segura";
 import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
@@ -82,6 +88,10 @@ export default async function AtendimentoSettingsPage() {
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
       <FraseSeguraForm inicial={fraseInicial} padrao={frasePadrao} />
+      <HorarioDaEquipeForm inicial={horarioDaEquipeDaOrg(settings)} />
+      <FilaEIrritacaoForm
+        inicial={{ frase_da_fila: fraseDaFilaDaOrg(settings) ?? "", irritacao: acaoDaIrritacao(settings) }}
+      />
     </div>
   );
 }
