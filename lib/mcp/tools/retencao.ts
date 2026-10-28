@@ -38,6 +38,12 @@
  * como exceção (o wrapper do runtime a devolve como `{ error }` e o audit marca
  * a chamada como malsucedida).
  */
+import {
+  CODIGO_GANHO_SO_POR_ASSINATURA,
+  RECUSA_DE_GANHO_PELA_IA,
+  modoConservadorDoAgente,
+  registrarRecusaPeloSupabase,
+} from "@/lib/leads/trava-da-ia";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
@@ -469,6 +475,24 @@ export const crmCloseDemand: McpToolDefinition<typeof encerrarShape> = {
   requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    // PC-003: a IA nunca marca ganho — ganho só por evento de assinatura
+    // (provedor ou pessoa gerente). Perder continua liberado (com motivo).
+    if (input.outcome === "won" && ctx.actor.type === "ai_agent") {
+      const agentId = ctx.actor.agent_id ?? null;
+      const { versaoId } = await modoConservadorDoAgente(ctx.supabase, ctx.organizationId, agentId);
+      await registrarRecusaPeloSupabase(ctx.supabase, {
+        organizationId: ctx.organizationId,
+        tipo: "ganho_recusado",
+        agentId,
+        agentVersionId: versaoId,
+        leadId: input.lead_id,
+        ferramenta: "crm_close_demand",
+        codigo: CODIGO_GANHO_SO_POR_ASSINATURA,
+        etapaPedida: "won",
+        motivo: RECUSA_DE_GANHO_PELA_IA,
+      });
+      return { encerrado: false, motivo: CODIGO_GANHO_SO_POR_ASSINATURA, mensagem: RECUSA_DE_GANHO_PELA_IA };
+    }
     try {
       const { lead, jaEstava } = await encerraDemanda(
         ctx.supabase,

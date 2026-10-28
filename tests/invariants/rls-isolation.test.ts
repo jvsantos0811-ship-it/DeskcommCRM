@@ -617,6 +617,15 @@ beforeAll(() => {
           values (v_org, 'envio_bloqueado', 'case_promise', 'case_promise_without_case', 'rls invariant');
         end if;
 
+        -- migration 9011 (fork): assinatura confirmada (ganho por evento),
+        -- presa ao lead semeado. Leitura org-scoped sem gate de papel; a
+        -- escrita so o servidor faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.crm_assinaturas_confirmadas where organization_id = v_org) then
+          insert into public.crm_assinaturas_confirmadas (organization_id, lead_id, data_assinatura, origem)
+          select v_org, id, date '2026-10-28', 'pessoa'
+            from public.crm_leads where organization_id = v_org limit 1;
+        end if;
+
         -- migration 9008 (fork): contrato do negócio, preso ao lead e ao
         -- contato semeados. Leitura org-scoped sem gate de papel; a escrita só o
         -- servidor faz (authenticated só tem SELECT).
@@ -890,6 +899,11 @@ export const TABLES = [
   // o escritório conversa e onde a IA travou. Leitura org-scoped sem gate de
   // papel; escrita só pelo servidor/worker.
   "recusas_da_ia",
+  // migration 9011 (fork) — assinatura confirmada: o ganho por evento (pessoa
+  // gerente ou provedor), com data e quem registrou. Vazar entrega ao vizinho
+  // quem fechou contrato com o escritório e quando. Leitura org-scoped sem gate
+  // de papel; escrita só pelo servidor.
+  "crm_assinaturas_confirmadas",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

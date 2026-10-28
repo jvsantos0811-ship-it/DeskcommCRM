@@ -27,6 +27,8 @@ export interface AgentVersionRow {
   handoff_legal_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
+  estado_do_funil_ligado: boolean;
+  modo_conservador: boolean;
   operator_enabled: boolean;
   operator_model: string | null;
   operator_tool_ids: string[];

@@ -18,6 +18,7 @@ import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { ContactTagsEditor } from "@/components/inbox/ContactTagsEditor";
 import { EcoDoValor } from "./EcoDoValor";
+import { STATUS_DE_CAMPO, statusDosCampos, type StatusDeCampo } from "@/lib/leads/status-dos-campos";
 
 /**
  * As etiquetas do negócio SAÍRAM deste formulário (#2979): quem as edita é o
@@ -72,6 +73,16 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     lead.custom_fields ?? {},
   );
 
+  // PC-003: o status de cada campo de qualificação (`com_status` no funil).
+  // Mesma disciplina do diff dos campos: só o que a pessoa mudou viaja.
+  const camposComStatus = fieldDefs.filter((f) => f.com_status === true);
+  const [statusAtual, setStatusAtual] = useState<Record<string, StatusDeCampo>>(
+    statusDosCampos(lead.status_dos_campos),
+  );
+  const [statusCarregado, setStatusCarregado] = useState<Record<string, StatusDeCampo>>(
+    statusDosCampos(lead.status_dos_campos),
+  );
+
   const form = useForm<FormShape>({
     defaultValues: {
       title: lead.title,
@@ -90,6 +101,8 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     });
     setCustomFields(lead.custom_fields ?? {});
     setCamposCarregados(lead.custom_fields ?? {});
+    setStatusAtual(statusDosCampos(lead.status_dos_campos));
+    setStatusCarregado(statusDosCampos(lead.status_dos_campos));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
 
@@ -114,6 +127,12 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
         ? { custom_fields: soChavesAlteradas(camposCarregados, customFields) }
         : {}),
     };
+    // PC-003: só os status alterados; voltar a "sem status" manda `null`.
+    const statusMudados: Record<string, StatusDeCampo | null> = {};
+    for (const f of camposComStatus) {
+      if (statusAtual[f.key] !== statusCarregado[f.key]) statusMudados[f.key] = statusAtual[f.key] ?? null;
+    }
+    if (Object.keys(statusMudados).length > 0) patch.status_dos_campos = statusMudados;
 
     const parsed = updateLeadSchema.safeParse(patch);
     if (!parsed.success) {
@@ -130,6 +149,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       // O que acabou de gravar vira a nova régua: o segundo salvamento não
       // reenvia o primeiro, e uma limpeza alheia no intervalo não é atropelada.
       setCamposCarregados({ ...customFields });
+      setStatusCarregado({ ...statusAtual });
       toast.success(t("Lead atualizado"));
       onSaved?.();
     } catch {
@@ -208,6 +228,46 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
           </div>
         )}
 
+        {camposComStatus.length > 0 && (
+          <div className="space-y-2 border-t border-border pt-4" data-testid="status-dos-campos">
+            <p className="text-sm font-medium">{t("Status da qualificação")}</p>
+            <p className="text-xs text-text-muted">
+              {t(
+                "Para a IA avançar uma etapa que exige o campo, a resposta precisa estar Confirmada, Negada ou Não se aplica.",
+              )}
+            </p>
+            {camposComStatus.map((f) => (
+              <div key={f.key} className="flex items-center justify-between gap-3">
+                <Label htmlFor={`status-${f.key}`} className="text-sm">
+                  {f.label}
+                </Label>
+                <select
+                  id={`status-${f.key}`}
+                  data-testid={`status-${f.key}`}
+                  className="h-8 rounded-md border border-border bg-transparent px-2 text-sm"
+                  value={statusAtual[f.key] ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value as StatusDeCampo | "";
+                    setStatusAtual((atual) => {
+                      const proximo = { ...atual };
+                      if (v === "") delete proximo[f.key];
+                      else proximo[f.key] = v;
+                      return proximo;
+                    });
+                  }}
+                >
+                  <option value="">{t("Sem status")}</option>
+                  {STATUS_DE_CAMPO.map((s) => (
+                    <option key={s} value={s}>
+                      {rotuloTraduzido(t, s)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+
       <div className="flex justify-end gap-2">
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel} disabled={edit.isPending}>
@@ -220,4 +280,22 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       </div>
     </form>
   );
+}
+
+/** O rótulo do status no idioma da pessoa — literal por literal, nunca `t(variavel)`. */
+function rotuloTraduzido(t: (s: string) => string, s: StatusDeCampo): string {
+  switch (s) {
+    case "CONFIRMADO":
+      return t("Confirmado");
+    case "NEGADO":
+      return t("Negado");
+    case "NAO_SABE":
+      return t("Não sabe");
+    case "NAO_SE_APLICA":
+      return t("Não se aplica");
+    case "PENDENTE":
+      return t("Pendente");
+    case "CONTRADITORIO":
+      return t("Contraditório");
+  }
 }

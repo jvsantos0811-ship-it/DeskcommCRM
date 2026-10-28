@@ -113,6 +113,8 @@ export function buildCaseReplyOpeningMessage(
   context: LeadContext,
   notesIndexBlock: string,
   projeta = false,
+  /** Ferramentas que NÃO estão no turno (Operador ou chave do agente). */
+  entregues: readonly string[] = [],
 ): string {
   const caseIdShort = caseId.slice(0, 8);
   const note = body?.trim() ?? '';
@@ -131,7 +133,10 @@ export function buildCaseReplyOpeningMessage(
     '',
     'Repasse ao lead usando a tool send_message — NUNCA escreva a resposta como texto direto',
     '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
-    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+    // PC-003: sem a ferramenta (chave desligada no agente), sem a instrução.
+    ...(entregues.includes('update_lead_state')
+      ? []
+      : ['Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).']),
     'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
   ].join('\n');
 }
@@ -169,8 +174,8 @@ export function createCaseReplyTurnHandler(deps: InboundTurnDeps) {
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: caseConversation.channelSessionId,
       conversationId: caseConversation.conversationId,
-      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) =>
-        buildCaseReplyOpeningMessage(action, payload.case_id, payload.body, previous, leadState, context, notesIndexBlock, projeta),
+      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, entregues }) =>
+        buildCaseReplyOpeningMessage(action, payload.case_id, payload.body, previous, leadState, context, notesIndexBlock, projeta, entregues),
     });
   };
 }

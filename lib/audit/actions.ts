@@ -1081,6 +1081,11 @@ export const AUDIT_ACTIONS = [
   // A assinatura do emissor (#2066, PR #2079): quem ligou ou desligou o nome de
   // quem fala nas mensagens ao cliente, e com que nome a IA passou a assinar.
   "settings.message_signature_updated",
+  // PC-003 (fork): ganho por assinatura confirmada — pessoa gerente ou aviso
+  // `contrato.assinado` de provedor (origem e data no metadata).
+  "lead.signature_confirmed",
+  // PC-003 (fork): endereço/segredo do aviso de assinatura criado ou trocado.
+  "settings.signature_webhook_key_created",
   // PC-002b (fork): a frase segura — o que o cliente recebe quando uma trava
   // barra a mensagem inteira da IA. Só registra SE foi personalizada; o texto
   // fica no settings da organização.

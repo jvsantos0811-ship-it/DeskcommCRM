@@ -25,7 +25,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, estado_do_funil_ligado, modo_conservador, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -117,6 +117,30 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // PC-003 (A5): "agente existente mantém o estado atual". O schema dá `false`
+  // a quem não manda a chave (agente NOVO nasce desligado); aqui, versão nova
+  // de um agente que JÁ existe e não mandou a chave herda o valor da versão
+  // anterior — senão uma integração que cria rascunho pela API desligaria a
+  // ferramenta sem ninguém pedir.
+  const corpoCru = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  if (!("estado_do_funil_ligado" in corpoCru) || !("modo_conservador" in corpoCru)) {
+    const { data: anterior } = await admin
+      .from("ai_agent_versions")
+      .select("estado_do_funil_ligado, modo_conservador")
+      .eq("agent_id", id)
+      .eq("organization_id", organizationId)
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const a = anterior as { estado_do_funil_ligado?: boolean; modo_conservador?: boolean } | null;
+    if (a && !("estado_do_funil_ligado" in corpoCru) && typeof a.estado_do_funil_ligado === "boolean") {
+      v.estado_do_funil_ligado = a.estado_do_funil_ligado;
+    }
+    if (a && !("modo_conservador" in corpoCru) && typeof a.modo_conservador === "boolean") {
+      v.modo_conservador = a.modo_conservador;
+    }
+  }
+
   // Ordering: insert with retry on 23505 (race com unique(agent_id,version_number)).
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data: maxRow } = await admin
@@ -182,6 +206,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         handoff_legal_enabled: v.handoff_legal_enabled,
         proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
         cases_enabled: v.cases_enabled,
+        estado_do_funil_ligado: v.estado_do_funil_ligado,
+        modo_conservador: v.modo_conservador,
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         inbound_debounce_ms: v.inbound_debounce_ms,

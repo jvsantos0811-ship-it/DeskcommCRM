@@ -7,6 +7,7 @@
  *  - loseLeadSchema   → POST /api/v1/leads/[id]/lose (P-02, P-03)
  *  - bulkLeadActionSchema → POST /api/v1/leads/bulk  (AT-06, max 50)
  */
+import { statusDosCamposEntradaSchema } from "@/lib/leads/status-dos-campos";
 import { z } from "zod";
 
 /**
@@ -239,6 +240,13 @@ export const updateLeadSchema = z.object({
     .optional(),
   tags: z.array(z.string()).optional(),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * PC-003: o STATUS de cada campo de qualificação (`com_status` no funil):
+   * `{ chave: "CONFIRMADO" | "NEGADO" | "NAO_SABE" | "NAO_SE_APLICA" |
+   * "PENDENTE" | "CONTRADITORIO" | null }`. Mescla com o que já existe; `null`
+   * apaga o status daquele campo. Vai em `crm_leads.status_dos_campos`.
+   */
+  status_dos_campos: statusDosCamposEntradaSchema.optional(),
 });
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
 
