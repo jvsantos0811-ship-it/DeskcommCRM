@@ -56130,8 +56130,8 @@ comment on column public.crm_contracts.provedor_assinatura is
 comment on column public.crm_contracts.message_id is
   'A mensagem do último envio. O status de entrega é LIDO dela (DIRC: calcular), nunca copiado para esta linha.';
 
--- ---- importação do histórico do canal intermediado, em silêncio (migration 9011, fork) ----
--- Espelho da 9011; o porquê inteiro está no cabeçalho da migration. ANTES da
+-- ---- importação do histórico do canal intermediado, em silêncio (migration 9012, fork) ----
+-- Espelho da 9012; o porquê inteiro está no cabeçalho da migration. ANTES da
 -- VARREDURA anon: cria e redefine funções em `public`.
 create table if not exists public.importacoes_de_historico (
   id uuid primary key default gen_random_uuid(),
@@ -56201,7 +56201,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9011) não é atendimento: a mensagem de meses atrás
+  -- HISTÓRICO IMPORTADO (9012) não é atendimento: a mensagem de meses atrás
   -- não reabre conversa, não abre demanda e não entra na fila.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -56224,7 +56224,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9011): a mensagem antiga não é fato novo. Nenhum
+  -- HISTÓRICO IMPORTADO (9012): a mensagem antiga não é fato novo. Nenhum
   -- evento — senão IA, automação e follow-up acordariam para conversa de meses.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -56267,7 +56267,7 @@ begin
   -- Sem o corte, um 👍 somava +1 e invalidava o rascunho de resposta da tela à
   -- toa, além de contar junto com a reabertura (que este bloco também acabou de
   -- desligar).
-  -- HISTÓRICO IMPORTADO (9011) também não é fala nova.
+  -- HISTÓRICO IMPORTADO (9012) também não é fala nova.
   if public.fn_importacao_historica_em_curso() then
     return new;
   end if;
@@ -59625,3 +59625,51 @@ create policy tenant_isolation_tempos_de_resposta_da_ia_select on public.tempos_
 revoke all on public.tempos_de_resposta_da_ia from public, anon, authenticated;
 grant select on public.tempos_de_resposta_da_ia to authenticated;
 grant all on public.tempos_de_resposta_da_ia to service_role;
+
+
+-- ---- recusas e bloqueios da IA (migration 9010) ----
+create table if not exists public.recusas_da_ia (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  agent_id uuid references public.ai_agents(id) on delete set null,
+  agent_version_id uuid references public.ai_agent_versions(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  -- envio_bloqueado: uma trava barrou a mensagem inteira (PC-002b);
+  -- etapa_recusada: mover de etapa foi recusado (campo vazio, modo conservador);
+  -- ganho_recusado: a IA tentou marcar ganho (PC-003: ganho só por evento);
+  -- assinatura_recusada: aviso de assinatura de provedor inválido (PC-003).
+  tipo text not null,
+  ferramenta text,
+  trava text,
+  codigo text,
+  etapa_pedida text,
+  campos_faltantes jsonb not null default '[]'::jsonb,
+  motivo text,
+  created_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'recusas_da_ia_tipo_check'
+  ) then
+    alter table public.recusas_da_ia
+      add constraint recusas_da_ia_tipo_check
+      check (tipo in ('envio_bloqueado', 'etapa_recusada', 'ganho_recusado', 'assinatura_recusada'));
+  end if;
+end $$;
+
+create index if not exists recusas_da_ia_agente_idx
+  on public.recusas_da_ia (organization_id, agent_id, created_at desc);
+create index if not exists recusas_da_ia_contato_idx
+  on public.recusas_da_ia (organization_id, contact_id, created_at desc);
+
+alter table public.recusas_da_ia enable row level security;
+drop policy if exists tenant_isolation_recusas_da_ia_select on public.recusas_da_ia;
+create policy tenant_isolation_recusas_da_ia_select on public.recusas_da_ia
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.recusas_da_ia from public, anon, authenticated;
+grant select on public.recusas_da_ia to authenticated;
+grant all on public.recusas_da_ia to service_role;

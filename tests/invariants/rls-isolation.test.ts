@@ -609,7 +609,15 @@ beforeAll(() => {
           values (v_org, v_conv, gen_random_uuid());
         end if;
 
-        -- migration 9011 (fork): importação do histórico na sessão semeada.
+        -- migration 9010 (fork): recusa/bloqueio da IA. So ids e motivo,
+        -- nunca texto de conversa. Leitura org-scoped sem gate de papel; a
+        -- escrita so o servidor/worker faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.recusas_da_ia where organization_id = v_org) then
+          insert into public.recusas_da_ia (organization_id, tipo, trava, codigo, motivo)
+          values (v_org, 'envio_bloqueado', 'case_promise', 'case_promise_without_case', 'rls invariant');
+        end if;
+
+        -- migration 9012 (fork): importação do histórico na sessão semeada.
         -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
         if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
           insert into public.importacoes_de_historico (organization_id, channel_session_id, estado)
@@ -884,7 +892,12 @@ export const TABLES = [
   // contagens, mas dizem com quem o escritório conversa e quando. Leitura
   // org-scoped sem gate de papel; escrita só pelo worker.
   "tempos_de_resposta_da_ia",
-  // migration 9011 (fork) — importação do histórico do canal intermediado: só
+  // migration 9010 (fork) — recusas e bloqueios da IA: quando uma trava barrou
+  // a mensagem ou uma etapa/ganho foi recusado. Vazar entrega ao vizinho com quem
+  // o escritório conversa e onde a IA travou. Leitura org-scoped sem gate de
+  // papel; escrita só pelo servidor/worker.
+  "recusas_da_ia",
+  // migration 9012 (fork) — importação do histórico do canal intermediado: só
   // estado e contagens, mas dizem quantos contatos o escritório tem e quando os
   // trouxe. Leitura org-scoped sem gate de papel; escrita só pelo servidor.
   "importacoes_de_historico",

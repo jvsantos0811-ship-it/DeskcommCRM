@@ -1,5 +1,5 @@
--- manifest: **Importação do histórico do WhatsApp intermediado (coexistência pela Zernio), em silêncio.** Tabela `importacoes_de_historico` (organização, sessão do canal, funil e etapa de destino, triagem ligada, estado `na_fila`/`importando`/`triando`/`concluida`/`falhou`/`cancelada`, cursor de retomada, contagens e últimas falhas; uma importação viva por sessão). Função `fn_importar_conversa_historica` (só `service_role`): grava UMA conversa antiga numa transação — conversa nova nasce `closed`, mensagens com a data original (`sent_at` e `created_at`), só as mais antigas que a primeira já existente, sem duplicar (`unique (organization_id, external_id)`), carimbos da conversa sem contador de não lidas nem espera, e um negócio aberto (`source = importado_zernio`, tag `lead-antigo`) quando o contato não tem nenhum aberto nem pediu para parar. Durante a função, a chave de transação `deskcomm.importacao_historica` cala os três gatilhos de `messages` que reagem à fala do cliente (`fn_emit_message_event`, `fn_demanda_abre_no_inbound` e `fn_reply_inbound_revision`): nenhum `message.received`, nenhuma demanda, nenhuma revisão de rascunho, nenhuma IA, automação ou follow-up. Fora da função os gatilhos seguem iguais. Número 9011, faixa do fork. Idempotente; apêndice igual no `baseline.sql`.
--- 9011: importação do histórico do canal intermediado, em silêncio.
+-- manifest: **Importação do histórico do WhatsApp intermediado (coexistência pela Zernio), em silêncio.** Tabela `importacoes_de_historico` (organização, sessão do canal, funil e etapa de destino, triagem ligada, estado `na_fila`/`importando`/`triando`/`concluida`/`falhou`/`cancelada`, cursor de retomada, contagens e últimas falhas; uma importação viva por sessão). Função `fn_importar_conversa_historica` (só `service_role`): grava UMA conversa antiga numa transação — conversa nova nasce `closed`, mensagens com a data original (`sent_at` e `created_at`), só as mais antigas que a primeira já existente, sem duplicar (`unique (organization_id, external_id)`), carimbos da conversa sem contador de não lidas nem espera, e um negócio aberto (`source = importado_zernio`, tag `lead-antigo`) quando o contato não tem nenhum aberto nem pediu para parar. Durante a função, a chave de transação `deskcomm.importacao_historica` cala os três gatilhos de `messages` que reagem à fala do cliente (`fn_emit_message_event`, `fn_demanda_abre_no_inbound` e `fn_reply_inbound_revision`): nenhum `message.received`, nenhuma demanda, nenhuma revisão de rascunho, nenhuma IA, automação ou follow-up. Fora da função os gatilhos seguem iguais. Número 9012, faixa do fork. Idempotente; apêndice igual no `baseline.sql`.
+-- 9012: importação do histórico do canal intermediado, em silêncio.
 --
 -- ─── O que faltava ──────────────────────────────────────────────────────────
 --
@@ -107,7 +107,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9011) não é atendimento: a mensagem de meses atrás
+  -- HISTÓRICO IMPORTADO (9012) não é atendimento: a mensagem de meses atrás
   -- não reabre conversa, não abre demanda e não entra na fila.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -130,7 +130,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9011): a mensagem antiga não é fato novo. Nenhum
+  -- HISTÓRICO IMPORTADO (9012): a mensagem antiga não é fato novo. Nenhum
   -- evento — senão IA, automação e follow-up acordariam para conversa de meses.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -173,7 +173,7 @@ begin
   -- Sem o corte, um 👍 somava +1 e invalidava o rascunho de resposta da tela à
   -- toa, além de contar junto com a reabertura (que este bloco também acabou de
   -- desligar).
-  -- HISTÓRICO IMPORTADO (9011) também não é fala nova.
+  -- HISTÓRICO IMPORTADO (9012) também não é fala nova.
   if public.fn_importacao_historica_em_curso() then
     return new;
   end if;

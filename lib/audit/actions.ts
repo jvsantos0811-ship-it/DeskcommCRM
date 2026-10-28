@@ -278,7 +278,7 @@ export const AUDIT_ACTIONS = [
   "channel.social_webhook_ressincronizado",
   "channel.ai_access_updated",
   "channel.acervo_updated",
-  // Importação do histórico do canal intermediado (migration 9011): o PEDIDO.
+  // Importação do histórico do canal intermediado (migration 9012): o PEDIDO.
   // O desfecho é `lead.imported`, uma linha com o relatório inteiro.
   "channel.history_import_started",
   "channel.reconnected",
@@ -1084,6 +1084,14 @@ export const AUDIT_ACTIONS = [
   // A assinatura do emissor (#2066, PR #2079): quem ligou ou desligou o nome de
   // quem fala nas mensagens ao cliente, e com que nome a IA passou a assinar.
   "settings.message_signature_updated",
+  // PC-002b (fork): a frase segura — o que o cliente recebe quando uma trava
+  // barra a mensagem inteira da IA. Só registra SE foi personalizada; o texto
+  // fica no settings da organização.
+  "settings.safe_phrase_updated",
+  // PC-002b (fork): o horário da equipe (quando a IA pode dizer que a equipe assume).
+  "settings.team_hours_updated",
+  // PC-002b (fork): a frase da fila vazia e o que fazer quando a IA percebe irritação.
+  "settings.queue_and_irritation_updated",
 
   // A identidade da Página/WABA que a Meta exige no Purchase de clique-para-WhatsApp
   // (#2098): gravada pela tela de Conversões, em `organizations.settings.conversions`.

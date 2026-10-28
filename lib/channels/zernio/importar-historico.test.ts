@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * A importação do histórico não passa por NENHUMA porta que acorda o produto.
  *
  * O silêncio do banco é provado em `tests/invariants/importacao-de-historico-silenciosa.test.ts`
- * (a função 9011 não deixa evento, demanda nem fila). Este arquivo guarda o lado
+ * (a função 9012 não deixa evento, demanda nem fila). Este arquivo guarda o lado
  * do código: os dois módulos da importação não podem importar nem chamar os
  * caminhos da ingestão que disparam IA, automação, follow-up ou contador de não
  * lidas — um "reaproveitamento" inocente de `ingestZernioInbound` desfaria tudo.

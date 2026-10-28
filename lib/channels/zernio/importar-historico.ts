@@ -11,7 +11,7 @@
  * ─── Silêncio total ─────────────────────────────────────────────────────────
  *
  * Nada aqui passa por `efeitosDaEntrada`/`aplicarEfeitosPosEntrada`. A escrita
- * de cada conversa é UMA chamada a `fn_importar_conversa_historica` (9011),
+ * de cada conversa é UMA chamada a `fn_importar_conversa_historica` (9012),
  * que liga a chave de transação que cala os gatilhos de `messages`: nenhum
  * `message.received`, nenhuma demanda, nenhuma fila, nenhuma IA, automação ou
  * follow-up. O negócio nasce por `fn_nascer_lead_da_conversa` SEM `lead.created`

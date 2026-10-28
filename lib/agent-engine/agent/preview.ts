@@ -26,6 +26,7 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
+import { horarioDaEquipeDaOrg } from '@/lib/escalacao/horario-da-equipe';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
@@ -146,6 +147,12 @@ export async function previewGateContext(
         : false,
     openedCaseThisTurn: false,
     humanPromiseExtraTargets: p.agent.handoffKeywords,
+    // PC-002b (item 4): o MESMO horário da equipe que a produção lê — o Testar
+    // que barra "ainda hoje" dentro do horário mede outro sistema.
+    horarioDaEquipe: await db
+      .query<{ settings: unknown }>('select settings from organizations where id = $1', [org])
+      .then((r) => horarioDaEquipeDaOrg(r.rows[0]?.settings ?? null))
+      .catch(() => null),
     // A MESMA condição do turno real (`temFerramentaDeAgenda`): a prévia existe
     // para mostrar o que vai acontecer, e um gate que arma diferente aqui faz
     // quem afina o prompt testar contra outro sistema.
@@ -370,6 +377,14 @@ export function applyPreviewPolicy(
                 {
                   ...ctx,
                   ...liveContext?.(),
+                  // PC-002b (F1-j no Testar): `open_human_case` aqui vira PROPOSTA
+                  // (não grava caso), e a cadeia lia sempre "nenhum caso aberto"
+                  // — toda resposta que abria o caso e avisava a pessoa aparecia
+                  // como barrada no Testar, ao contrário da produção. Proposta de
+                  // abrir caso no MESMO turno conta como caso aberto, como lá.
+                  ...(p.result.proposals.some((x) => x.tool === 'open_human_case')
+                    ? { hasOpenCase: true, openedCaseThisTurn: true }
+                    : {}),
                   body,
                   semanticPromise,
                   factualClaim,
@@ -440,6 +455,38 @@ export function applyPreviewPolicy(
     }),
   ) as ToolSet;
 }
+/**
+ * PC-002b (item 5, F1-n): o teste que terminou SEM mensagem diz por quê.
+ *
+ * Medido na OE-005 (J4, "Quero falar com o advogado"): o Testar mostrou status
+ * `blocked`, nenhuma mensagem e nenhum motivo — e a aba Execuções dizia "Sem
+ * trace disponível". O que tinha acontecido: o agente passou a conversa para a
+ * equipe (`request_human_handoff`) sem escrever nada; em produção o sistema
+ * manda o aviso automático de passagem, mas o teste não simula aviso, e a tela
+ * não dizia nada disso.
+ *
+ * Quando já há impedimento (uma trava barrou), ele É o motivo e nada se
+ * acrescenta. Sem impedimento e sem candidata, um motivo é sempre escrito.
+ */
+export function explicarTesteSemMensagem(r: PreviewResult): void {
+  if (r.candidates.length > 0 || r.impediments.length > 0) return;
+  if (r.proposals.some((p) => p.tool === 'request_human_handoff')) {
+    r.impediments.push({
+      code: 'passou_para_a_equipe',
+      message:
+        'O agente passou a conversa para a equipe (request_human_handoff) sem escrever mensagem. ' +
+        'Em produção o cliente recebe o aviso automático de passagem; o teste não simula esse aviso.',
+    });
+    return;
+  }
+  r.impediments.push({
+    code: 'sem_mensagem',
+    message:
+      'O agente terminou sem chamar send_message: nenhuma mensagem sairia. Texto escrito fora da ' +
+      'ferramenta não chega ao cliente — confira o prompt.',
+  });
+}
+
 export function scenarioContext(
   messages: LeadContext['messages'],
   contact?: { name?: string; phone?: string },

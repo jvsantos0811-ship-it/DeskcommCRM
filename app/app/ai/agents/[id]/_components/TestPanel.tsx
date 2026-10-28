@@ -45,7 +45,7 @@ interface TestResponse {
     latency_ms?: number;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
-    candidates?: Array<{ body: string; trace: Array<{ gate: string; verdict: string }> }>;
+    candidates?: Array<{ body: string; trace: Array<{ gate: string; verdict: string; code?: string }> }>;
     proposals?: Array<{ tool: string; arguments: unknown }>;
     impediments?: Array<{ code: string; message: string }>;
     /**
@@ -133,6 +133,14 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const [contactPhone, setContactPhone] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
+  // PC-002b (F1-l): a conversa da sessão de teste. Cada "Executar teste" manda o
+  // histórico junto e acrescenta a mensagem e a resposta — o terceiro turno de
+  // uma qualificação se testa como ele acontece, não como uma conversa nova.
+  const [conversa, setConversa] = React.useState<
+    Array<{ direcao: "cliente" | "agente"; texto: string }>
+  >([]);
+  // PC-002b (F1-l): "que dia e hora é agora" no teste (vazio = agora de verdade).
+  const [agoraSimulado, setAgoraSimulado] = React.useState("");
 
   if (!target) {
     return (
@@ -156,7 +164,13 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
     setPending(true);
     setResult(null);
     try {
-      const body: Record<string, unknown> = { sample_message: message.trim() };
+      const enviada = message.trim();
+      const body: Record<string, unknown> = { sample_message: enviada };
+      if (conversa.length > 0) body.historico = conversa.slice(-40);
+      if (agoraSimulado) {
+        const instante = new Date(agoraSimulado);
+        if (!Number.isNaN(instante.getTime())) body.agora = instante.toISOString();
+      }
       if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
           ...(contactName.trim() ? { name: contactName.trim() } : {}),
@@ -179,6 +193,13 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         { timeoutMs: 120_000 },
       );
       setResult(res.data);
+      const resposta = (res.data.candidates ?? []).map((c) => c.body).join("\n\n").trim();
+      setConversa((atual) => [
+        ...atual,
+        { direcao: "cliente" as const, texto: enviada },
+        ...(resposta ? [{ direcao: "agente" as const, texto: resposta }] : []),
+      ]);
+      setMessage("");
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
     } catch (err) {
@@ -213,6 +234,62 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           </p>
           <p className="mt-1 text-muted-foreground">
             {t("Nenhuma mensagem é enviada via WhatsApp. O run é registrado como dry-run.")}
+          </p>
+        </div>
+
+        <div className="space-y-2" data-testid="teste-conversa">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {t("Conversa deste teste")}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="teste-nova-conversa"
+              disabled={pending || conversa.length === 0}
+              onClick={() => {
+                setConversa([]);
+                setResult(null);
+              }}
+            >
+              {t("Nova conversa")}
+            </Button>
+          </div>
+          {conversa.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Cada teste continua a conversa: o agente lê o que já foi dito aqui.")}
+            </p>
+          ) : (
+            <ol className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2 text-xs">
+              {conversa.map((m, i) => (
+                <li
+                  key={i}
+                  data-testid="teste-conversa-linha"
+                  className={m.direcao === "cliente" ? "text-foreground" : "text-muted-foreground"}
+                >
+                  <span className="font-medium">
+                    {m.direcao === "cliente" ? t("Cliente") : t("Agente")}:
+                  </span>{" "}
+                  <span className="whitespace-pre-wrap">{m.texto}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="test-agora">{t("Simular dia e hora (opcional)")}</Label>
+          <Input
+            id="test-agora"
+            type="datetime-local"
+            data-testid="teste-agora"
+            value={agoraSimulado}
+            onChange={(e) => setAgoraSimulado(e.target.value)}
+            disabled={pending || readOnly}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t("Vazio usa a hora de agora. O agente lê este dia e hora como o momento da mensagem.")}
           </p>
         </div>
 
@@ -309,6 +386,10 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                     "Estado do contato simulado. Canal, opt-out e contexto serão conferidos novamente antes de um envio real.",
                   )}
                 </p>
+                <TravasAcionadas
+                  traces={result.candidates.map((c) => c.trace)}
+                  impedimentos={result.impediments ?? []}
+                />
                 {result.candidates.map((candidate, i) => (
                   <details key={i}>
                     <summary>{t("Verificações da resposta")}</summary>
@@ -337,9 +418,14 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                     <p className="font-medium">
                       {t("Ações propostas: precisam de autorização separada")}
                     </p>
-                    <ul>
+                    <ul data-testid="teste-ferramentas-chamadas">
                       {result.proposals.map((x, i) => (
-                        <li key={i}>{x.tool}</li>
+                        <li key={i}>
+                          <span className="font-mono">{x.tool}</span>
+                          <pre className="overflow-auto whitespace-pre-wrap text-muted-foreground">
+                            {JSON.stringify(x.arguments, null, 2)}
+                          </pre>
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -351,6 +437,51 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * PC-002b (F1-l): as travas que AGIRAM nesta resposta, em linguagem de gente —
+ * a que barrou (impedimento) e a que mexeu sem barrar (ex.: aviso de IA
+ * acrescentado). As que só passaram ficam no detalhe técnico logo abaixo.
+ */
+function TravasAcionadas({
+  traces,
+  impedimentos,
+}: {
+  traces: Array<Array<{ gate: string; verdict: string; code?: string }>>;
+  impedimentos: Array<{ code: string; message: string }>;
+}) {
+  const t = useT();
+  const agiram = traces
+    .flat()
+    // "skipped" SEM código é só o resto da cadeia depois de um veto; COM código
+    // é uma trava que agiu sem barrar (ex.: barraria o envio real agora).
+    .filter((e) => e.verdict === "veto" || (e.verdict === "skipped" && !!e.code))
+    .map((e) => `${e.gate}: ${e.code ?? e.verdict}`);
+  if (agiram.length === 0 && impedimentos.length === 0) {
+    return (
+      <p data-testid="teste-travas-nenhuma" className="text-muted-foreground">
+        {t("Nenhuma trava barrou ou alterou esta resposta.")}
+      </p>
+    );
+  }
+  return (
+    <div data-testid="teste-travas-acionadas" className="rounded-md border border-border/60 p-2">
+      <p className="font-medium">{t("Travas acionadas")}</p>
+      <ul className="mt-1 space-y-1">
+        {impedimentos.map((x, i) => (
+          <li key={`imp-${i}`}>
+            <span className="font-mono">{x.code}</span> — {x.message}
+          </li>
+        ))}
+        {agiram.map((linha, i) => (
+          <li key={`ag-${i}`} className="font-mono">
+            {linha}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

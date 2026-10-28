@@ -144,3 +144,35 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   expect(context.context.contact.name).toBe('Maria Cenário');
   expect(context.context.contact.phone).toBe('+5511999999999');
 });
+
+describe('PC-002b (F1-j no Testar): caso aberto no mesmo turno conta como humano que existe', () => {
+  const promessa = 'Já registrei seu caso. A equipe vai assumir às 8h e falar com você por aqui.';
+  it('⭐ abrir o caso e prometer a equipe no MESMO turno — a resposta aparece como candidata', async () => {
+    const p = preview();
+    const ctx = { ...gate(), casesEnabled: true };
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(vi.fn()), send_message: definition(vi.fn()) },
+      p,
+      ctx,
+      () => [],
+    );
+    await Promise.all([
+      execute(tools, 'open_human_case', { body: 'Benefício acabando' }),
+      execute(tools, 'send_message', { body: promessa }),
+    ]);
+    expect(p.result.impediments).toEqual([]);
+    expect(p.result.candidates.map((c) => c.body)).toEqual([promessa]);
+  });
+  it('controle: prometer a equipe SEM abrir caso continua barrado', async () => {
+    const p = preview();
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      { ...gate(), casesEnabled: true },
+      () => [],
+    );
+    await execute(tools, 'send_message', { body: promessa });
+    expect(p.result.candidates).toEqual([]);
+    expect(p.result.impediments[0]?.code).toBe('case_promise_without_case');
+  });
+});

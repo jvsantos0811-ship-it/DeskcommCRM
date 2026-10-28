@@ -45,6 +45,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import {
   motivoDoAviso,
+  fraseDaFilaDaOrg,
   textoDoAviso,
   type MotivoDoAviso as MotivoDaFrase,
 } from "@/lib/escalacao/aviso-ao-lead";
@@ -210,13 +211,16 @@ export async function avisarLeadDoCrm(
     // O aviso sai no idioma da ORGANIZAÇÃO (ver `textoDoAviso`). A leitura que
     // falha não pode derrubar o aviso: sem idioma, sai em português, como antes.
     let idioma: string | null = null;
+    // PC-002b (item 7): a frase da fila da organização, quando cadastrada.
+    let fraseDaFila: string | null = null;
     try {
       const { data: org } = await admin
         .from("organizations")
-        .select("locale")
+        .select("locale, settings")
         .eq("id", input.organizationId)
         .maybeSingle();
       idioma = (org as { locale?: string | null } | null)?.locale ?? null;
+      fraseDaFila = fraseDaFilaDaOrg((org as { settings?: unknown } | null)?.settings ?? null);
     } catch {
       idioma = null;
     }
@@ -225,6 +229,7 @@ export async function avisarLeadDoCrm(
       await quemPodeAssumir(admin, input.organizationId),
       input.contactId,
       idioma,
+      fraseDaFila,
     );
     const mensagem = await sendMessageHandler(
       admin,

@@ -27,7 +27,8 @@ import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { z } from 'zod';
 import type pg from 'pg';
 
-import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { expectativaDeAtendimento, quemPodeAssumirAgora } from '@/lib/escalacao/disponibilidade';
+import { lerPrazoDeDevolucaoMinutos } from '@/lib/escalacao/devolucao-automatica';
 import {
   CHAVE_DO_HANDOFF_TECNICO,
   derivacaoPendenteDoGatilho,
@@ -208,15 +209,32 @@ export async function performHumanHandoff(
      * briefing do chamador já carrega o que o turno tem.
      */
     camposColetados?: Readonly<Record<string, string>>;
+    /**
+     * PC-002b, item 7(b): a IA SEGUE atendendo enquanto ninguém assume.
+     *
+     * Só `applyRequestHumanHandoff` o liga, e só quando a organização ligou
+     * "IA volta sozinha" (`routing.handoff_return_after_minutes`) E não há
+     * ninguém da equipe podendo assumir agora (`iaSegueNaFila`). Ligado: a
+     * passagem, o aviso da Central e a linha de fato saem iguais — a equipe é
+     * avisada —, mas o contato NÃO ganha `force_human` e a conversa NÃO é
+     * silenciada: a próxima mensagem do lead é respondida pela IA, em vez de
+     * cair no vazio até alguém chegar. Quem assume depois silencia a IA pelo
+     * caminho de sempre (atribuição). A marca `ia_na_fila` em `metadata` é o
+     * que o pedido repetido da ferramenta lê para não abrir passagem em dobro.
+     */
+    iaSegueNaFila?: boolean;
     log: Logger;
   },
 ): Promise<void> {
   // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
-  await guardServiceEffect();
-  await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
-    ids.tenantId,
-    ids.leadId,
-  ]);
+  // Exceção única: a IA segue na fila (item 7b) — aí ninguém silencia o lead.
+  if (opts.iaSegueNaFila !== true) {
+    await guardServiceEffect();
+    await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
+      ids.tenantId,
+      ids.leadId,
+    ]);
+  }
 
   // (b) Conversa: silencia o bot para sempre e devolve à fila humana. O status SÓ
   // transiciona 'ai_handling'→'pending' — conversa já claimed/closed/pending fica como
@@ -238,7 +256,19 @@ export async function performHumanHandoff(
     : "{}";
 
   await guardServiceEffect();
-  await db.query(
+  if (opts.iaSegueNaFila === true) {
+    // Item 7(b): registra a passagem na conversa sem tirá-la da IA — status,
+    // silêncio e agente ativo ficam como estão.
+    await db.query(
+      `update conversations
+          set last_handoff_at = now(),
+              last_handoff_reason = $3,
+              metadata = coalesce(metadata, '{}'::jsonb)
+                         || jsonb_build_object('ia_na_fila', jsonb_build_object('desde', now()))
+        where organization_id = $1 and id = $2`,
+      [ids.tenantId, ids.conversationId, opts.reason],
+    );
+  } else await db.query(
     `update conversations
         set status = case when status = 'ai_handling' then 'pending' else status end,
             bot_silenced_until = $3,
@@ -246,7 +276,7 @@ export async function performHumanHandoff(
             last_handoff_reason = $4,
             -- marcado_em sai do now() do BANCO, o mesmo relógio do created_at
             -- das mensagens com que a reação compara (handoff-tecnico.ts).
-            metadata = (coalesce(metadata, '{}'::jsonb) - $5::text)
+            metadata = (coalesce(metadata, '{}'::jsonb) - $5::text - 'ia_na_fila')
                        || case when $6::jsonb = '{}'::jsonb then '{}'::jsonb
                                else jsonb_set($6::jsonb, array[$5::text, 'marcado_em'], to_jsonb(now())) end,
             active_ai_agent_id = null,
@@ -525,7 +555,7 @@ const PAYLOAD_TEACHING =
   'organização e conversa vêm do runtime, nunca do payload da tool.';
 
 export type RequestHumanHandoffResult =
-  | { ok: true; status: 'handoff_solicitado'; message: string }
+  | { ok: true; status: 'handoff_solicitado' | 'ja_na_fila' | 'na_fila_com_a_ia'; message: string }
   | { ok: false; error: { code: 'invalid_payload'; message: string } };
 
 /**
@@ -602,6 +632,20 @@ export async function applyRequestHumanHandoff(
   // mesmo lote do áudio, por exemplo) o motivo pode ser ela, e não há marca.
   // `reason` e a marca saem do MESMO `opts.porQue`, e é esse par que a reação
   // compara depois para saber se o handoff atual ainda é o marcado.
+  // PC-002b, item 7(b). Pedido repetido com a conversa já na fila COM a IA:
+  // não abre outra passagem nem outro aviso — a equipe já foi avisada.
+  const filaAtual = await conversaNaFilaComIa(db, ids);
+  if (filaAtual) {
+    return {
+      ok: true,
+      status: 'ja_na_fila',
+      message:
+        'A equipe JÁ foi avisada desta conversa e ninguém assumiu ainda. Continue atendendo o lead ' +
+        'normalmente: responda o que der, sem prometer horário de contato, e não peça a passagem de novo.',
+    };
+  }
+  const iaSegueNaFila = await decidirIaSegueNaFila(db, ids.tenantId, new Date());
+
   const derivacaoPendente = turnoSemPalavraDoCliente(opts.contextoDoTurno?.pendentesDoCliente)
     ? await derivacaoPendenteDoGatilho(db, ids.tenantId, opts.gatilho?.inboundMessageId)
     : null;
@@ -612,8 +656,20 @@ export async function applyRequestHumanHandoff(
     passagem: { origem: 'ferramenta_do_modelo', motivoCodigo, briefing },
     ...(opts.avisoAoLead !== undefined ? { avisoAoLead: opts.avisoAoLead } : {}),
     ...(derivacaoPendente !== null ? { derivacaoPendente } : {}),
+    ...(iaSegueNaFila ? { iaSegueNaFila: true } : {}),
     log: opts.log,
   });
+
+  if (iaSegueNaFila) {
+    return {
+      ok: true,
+      status: 'na_fila_com_a_ia',
+      message:
+        'A equipe foi avisada, mas ninguém pode assumir agora. Esta organização escolheu que a IA ' +
+        'continua atendendo enquanto isso: o lead JÁ recebeu o aviso, e você segue respondendo as ' +
+        'próximas mensagens dele. Não prometa horário de contato e não peça a passagem de novo.',
+    };
+  }
 
   // ACH-03: a expectativa vai JUNTO com a confirmação. Antes, a mensagem afirmava
   // que "um atendente vai assumir" sem que ninguém tivesse olhado se havia
@@ -640,6 +696,47 @@ export async function applyRequestHumanHandoff(
       `Handoff humano acionado; a conversa saiu do atendimento automático. ${jaAvisado} ${frase} ` +
       'Encerre o turno AGORA — você não consegue mais enviar mensagens a este lead.',
   };
+}
+
+/**
+ * PC-002b, item 7(b): a IA segue atendendo depois da passagem?
+ *
+ * Sim só quando as DUAS condições valem: a organização ligou "IA volta
+ * sozinha" (prazo de devolução configurado) e não há NINGUÉM da equipe podendo
+ * assumir agora. Qualquer falha de leitura responde `false` — o caminho de
+ * sempre (silenciar e passar), que é o conservador.
+ */
+export async function decidirIaSegueNaFila(db: pg.Pool, tenantId: string, agora: Date): Promise<boolean> {
+  try {
+    const { rows } = await db.query<{ settings: unknown }>(
+      `select settings from organizations where id = $1`,
+      [tenantId],
+    );
+    if (lerPrazoDeDevolucaoMinutos(rows[0]?.settings ?? null) === null) return false;
+    const quem = await quemPodeAssumirAgora(db, tenantId, agora);
+    return quem.disponiveis === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** A conversa já está na fila COM a IA (passada, ninguém assumiu, IA não calada)? */
+export async function conversaNaFilaComIa(db: pg.Pool, ids: HandoffIds): Promise<boolean> {
+  try {
+    const { rows } = await db.query<{ na_fila: boolean }>(
+      `select (cv.metadata ? 'ia_na_fila')
+              and cv.assigned_to_user_id is null
+              and (cv.bot_silenced_until is null or cv.bot_silenced_until < now())
+              and not coalesce(ct.force_human, false) as na_fila
+         from conversations cv
+         join contacts ct on ct.organization_id = cv.organization_id and ct.id = $3
+        where cv.organization_id = $1 and cv.id = $2`,
+      [ids.tenantId, ids.conversationId, ids.leadId],
+    );
+    return rows[0]?.na_fila === true;
+  } catch {
+    return false;
+  }
 }
 
 /**

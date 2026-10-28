@@ -323,6 +323,15 @@ const DECISOES: Record<string, Decisao> = {
     decidida: "manter",
     razao: "Histórico de transições (de/para estágio e reason em código): é a trilha de auditoria do funil, legível sem identificar a pessoa além do próprio contato, que já está anonimizado.",
   },
+  recusas_da_ia: {
+    decidida: "manter",
+    razao:
+      "9010 (fork, PC-002b/PC-003): registro de quando o sistema barrou a IA — trava, código, " +
+      "ferramenta, etapa pedida, RÓTULOS dos campos que faltaram e o motivo escrito pela regra. " +
+      "Por desenho NUNCA guarda texto da conversa nem valor de campo (o texto barrado vai para o " +
+      "caso humano, que a cascata já redige); é a trilha de auditoria do agente na aba Execuções, " +
+      "legível sem identificar a pessoa além do próprio contato, que já está anonimizado.",
+  },
   lgpd_requests: {
     decidida: "manter",
     razao: "O PRÓPRIO pedido do titular — justificativa, escopo e desfecho. Guardá-lo é a prova de que o direito foi exercido no prazo (D+7 export, D+15 redact); apagá-lo apagaria a resposta ao titular sobre o próprio pedido.",

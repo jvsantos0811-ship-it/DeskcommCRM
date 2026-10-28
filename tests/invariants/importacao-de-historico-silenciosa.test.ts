@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GOV_ORG, GOV_SESSION, seedGov } from "./gov-helpers";
 
 /**
- * A IMPORTAÇÃO DO HISTÓRICO É SILENCIOSA (migration 9011).
+ * A IMPORTAÇÃO DO HISTÓRICO É SILENCIOSA (migration 9012).
  *
  * `fn_importar_conversa_historica` grava uma conversa antiga inteira. O que se
  * cobra aqui, no banco real (o baseline aplicado), é o contrato do PR:

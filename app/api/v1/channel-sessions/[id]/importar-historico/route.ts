@@ -5,7 +5,7 @@
  *      conversas antigas que o provedor intermediado guardou (coexistência).
  *      Corpo: `{ pipeline_id, stage_id, triagem? }`.
  *
- * Fork, migration 9011. O POST só ENFILEIRA: quem trabalha é o cron
+ * Fork, migration 9012. O POST só ENFILEIRA: quem trabalha é o cron
  * `importacao-de-historico`, em rodadas de 40 s, porque seis meses de caixa de
  * entrada não cabem num request. Nada do que a importação grava acorda IA,
  * automação ou follow-up (ver `lib/channels/zernio/importar-historico.ts`).
