@@ -1,6 +1,6 @@
 /**
  * GET/POST /api/v1/cron/importacao-de-historico — uma rodada das importações
- * do histórico do canal intermediado (migration 9010). Agendado a cada minuto
+ * do histórico do canal intermediado (migration 9011). Agendado a cada minuto
  * no `scheduler`.
  *
  * Cada rodada pega no máximo UMA importação viva e trabalha nela por até 40 s

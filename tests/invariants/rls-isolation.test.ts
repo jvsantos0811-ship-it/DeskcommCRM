@@ -609,7 +609,7 @@ beforeAll(() => {
           values (v_org, v_conv, gen_random_uuid());
         end if;
 
-        -- migration 9010 (fork): importação do histórico na sessão semeada.
+        -- migration 9011 (fork): importação do histórico na sessão semeada.
         -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
         if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
           insert into public.importacoes_de_historico (organization_id, channel_session_id, estado)
@@ -884,7 +884,7 @@ export const TABLES = [
   // contagens, mas dizem com quem o escritório conversa e quando. Leitura
   // org-scoped sem gate de papel; escrita só pelo worker.
   "tempos_de_resposta_da_ia",
-  // migration 9010 (fork) — importação do histórico do canal intermediado: só
+  // migration 9011 (fork) — importação do histórico do canal intermediado: só
   // estado e contagens, mas dizem quantos contatos o escritório tem e quando os
   // trouxe. Leitura org-scoped sem gate de papel; escrita só pelo servidor.
   "importacoes_de_historico",

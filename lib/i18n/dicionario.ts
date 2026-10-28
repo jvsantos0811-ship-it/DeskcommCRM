@@ -16748,7 +16748,7 @@ export const DICIONARIO: Traducoes = {
   "Contrato assinado": { es: "Contrato firmado" },
   "Contrato recusado": { es: "Contrato rechazado" },
   "Contrato cancelado": { es: "Contrato cancelado" },
-  // Importação do histórico do canal intermediado (migration 9010).
+  // Importação do histórico do canal intermediado (migration 9011).
   "Separar os contatos antigos importados": { es: "Separar los contactos antiguos importados" },
   "Lê as últimas mensagens de cada conversa antiga trazida do WhatsApp e marca se é cliente, se recusou, se não é contato de venda ou se parou no meio — só quem parou no meio segue para a retomada.": { es: "Lee los últimos mensajes de cada conversación antigua traída de WhatsApp y marca si es cliente, si rechazó, si no es contacto de venta o si se detuvo a mitad de camino; solo quien se detuvo a mitad de camino pasa a la reactivación." },
   "Os contatos importados ficam sem separação, com a marca \"triagem-falhou\", e a equipe precisa olhar um a um antes de qualquer retomada.": { es: "Los contactos importados quedan sin separar, con la marca \"triagem-falhou\", y el equipo necesita revisarlos uno a uno antes de cualquier reactivación." },

@@ -1,7 +1,7 @@
 "use client";
 /**
  * "Trazer as conversas antigas" — a importação do histórico do número
- * conectado pelo parceiro (migration 9010).
+ * conectado pelo parceiro (migration 9011).
  *
  * O botão só ENFILEIRA; o trabalho anda em segundo plano, um pouco por minuto,
  * e esta tela acompanha (consulta a cada 10 s enquanto há importação viva).

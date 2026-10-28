@@ -56130,8 +56130,8 @@ comment on column public.crm_contracts.provedor_assinatura is
 comment on column public.crm_contracts.message_id is
   'A mensagem do último envio. O status de entrega é LIDO dela (DIRC: calcular), nunca copiado para esta linha.';
 
--- ---- importação do histórico do canal intermediado, em silêncio (migration 9010, fork) ----
--- Espelho da 9010; o porquê inteiro está no cabeçalho da migration. ANTES da
+-- ---- importação do histórico do canal intermediado, em silêncio (migration 9011, fork) ----
+-- Espelho da 9011; o porquê inteiro está no cabeçalho da migration. ANTES da
 -- VARREDURA anon: cria e redefine funções em `public`.
 create table if not exists public.importacoes_de_historico (
   id uuid primary key default gen_random_uuid(),
@@ -56201,7 +56201,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9010) não é atendimento: a mensagem de meses atrás
+  -- HISTÓRICO IMPORTADO (9011) não é atendimento: a mensagem de meses atrás
   -- não reabre conversa, não abre demanda e não entra na fila.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -56224,7 +56224,7 @@ begin
   if new.type = 'reaction' then
     return new;
   end if;
-  -- HISTÓRICO IMPORTADO (9010): a mensagem antiga não é fato novo. Nenhum
+  -- HISTÓRICO IMPORTADO (9011): a mensagem antiga não é fato novo. Nenhum
   -- evento — senão IA, automação e follow-up acordariam para conversa de meses.
   if public.fn_importacao_historica_em_curso() then
     return new;
@@ -56267,7 +56267,7 @@ begin
   -- Sem o corte, um 👍 somava +1 e invalidava o rascunho de resposta da tela à
   -- toa, além de contar junto com a reabertura (que este bloco também acabou de
   -- desligar).
-  -- HISTÓRICO IMPORTADO (9010) também não é fala nova.
+  -- HISTÓRICO IMPORTADO (9011) também não é fala nova.
   if public.fn_importacao_historica_em_curso() then
     return new;
   end if;

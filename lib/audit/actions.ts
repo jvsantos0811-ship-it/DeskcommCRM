@@ -278,7 +278,7 @@ export const AUDIT_ACTIONS = [
   "channel.social_webhook_ressincronizado",
   "channel.ai_access_updated",
   "channel.acervo_updated",
-  // Importação do histórico do canal intermediado (migration 9010): o PEDIDO.
+  // Importação do histórico do canal intermediado (migration 9011): o PEDIDO.
   // O desfecho é `lead.imported`, uma linha com o relatório inteiro.
   "channel.history_import_started",
   "channel.reconnected",

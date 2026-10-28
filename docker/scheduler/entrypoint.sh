@@ -62,7 +62,7 @@ CRONS="
 # janela de manutenção: o horário foi escolhido por uma pessoa, e marcar 9h
 # para sair 9h04 é o defeito. Sem aspas nem crase aqui: isto está DENTRO da string.
 * * * * *|60|api/v1/cron/scheduled-messages
-# IMPORTACAO DO HISTORICO do canal intermediado (migration 9010). Rodada de 40 s
+# IMPORTACAO DO HISTORICO do canal intermediado (migration 9011). Rodada de 40 s
 # por minuto; a caixa antiga entra aos poucos e retoma se o processo cair.
 * * * * *|60|api/v1/cron/importacao-de-historico
 */5 * * * *|60|api/v1/cron/handoff-devolucao
