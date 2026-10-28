@@ -460,10 +460,16 @@ async function conversaPelaThread(
   return row?.contact_id ? { id: row.id, contact_id: row.contact_id } : null;
 }
 
-async function upsertContact(
+/**
+ * O contato desta identidade — exportado para a importação do histórico
+ * (`./importar-historico.ts`), que resolve a pessoa pela MESMA porta da
+ * ingestão: um contato criado pelo histórico e um criado pelo webhook não
+ * podem ser dois.
+ */
+export async function upsertContact(
   admin: SupabaseClient,
   organizationId: string,
-  msg: ZernioInboundMessage,
+  msg: Pick<ZernioInboundMessage, "identity" | "conversationId">,
   identity: string,
 ): Promise<string | null> {
   const kind = identity.startsWith("phone:") ? "phone" : "lid";
