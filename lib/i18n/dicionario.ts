@@ -1367,7 +1367,7 @@ export const DICIONARIO: Traducoes = {
   "Sem asteriscos nem quebra de linha.": { es: "Sin asteriscos ni saltos de línea." },
   "Salvar assinatura": { es: "Guardar firma" },
   "Assinatura salva.": { es: "Firma guardada." },
-  "O que o agente pode fazer no funil": { es: "Lo que el agente puede hacer en el embudo" },
+  "Avanço do negócio no funil": { es: "Avance del negocio en el embudo" },
   "Deixar o agente marcar o avanço do atendimento no funil": { es: "Permitir que el agente marque el avance de la atención en el embudo" },
   "Ligado, o agente avança o negócio pelas etapas conforme a conversa. Mesmo ligado, ele nunca marca o negócio como ganho: o ganho só é registrado com o contrato assinado. E ele não avança uma etapa se faltar um campo obrigatório.": { es: "Activado, el agente avanza el negocio por las etapas según la conversación. Aun activado, nunca marca el negocio como ganado: la ganancia solo se registra con el contrato firmado. Y no avanza una etapa si falta un campo obligatorio." },
   "Modo conservador": { es: "Modo conservador" },

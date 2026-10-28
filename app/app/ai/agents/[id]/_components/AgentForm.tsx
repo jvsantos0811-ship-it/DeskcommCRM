@@ -1366,7 +1366,7 @@ export function AgentForm(props: Props) {
 
           {/* PC-003: o que a IA pode fazer no funil */}
           <Card className="space-y-3 p-4" data-testid="agente-trava-do-funil">
-            <h3 className="text-sm font-medium">{t("O que o agente pode fazer no funil")}</h3>
+            <h3 className="text-sm font-medium">{t("Avanço do negócio no funil")}</h3>
             <div className="flex items-center gap-2">
               <Switch
                 id="estado_do_funil_ligado"
