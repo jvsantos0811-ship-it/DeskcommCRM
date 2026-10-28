@@ -396,6 +396,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
   },
   {
+    id: "triagem_de_historico",
+    rotulo: "Separar os contatos antigos importados",
+    oQueFaz:
+      "Lê as últimas mensagens de cada conversa antiga trazida do WhatsApp e marca se é cliente, se recusou, se não é contato de venda ou se parou no meio — só quem parou no meio segue para a retomada.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/channels/triagem-do-historico.ts",
+    sintomaDeFalha:
+      "Os contatos importados ficam sem separação, com a marca \"triagem-falhou\", e a equipe precisa olhar um a um antes de qualquer retomada.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "followup_decide_timing",
     rotulo: "Escolher a hora do follow-up",
     oQueFaz: "Decide o melhor momento para retomar uma conversa que esfriou.",
