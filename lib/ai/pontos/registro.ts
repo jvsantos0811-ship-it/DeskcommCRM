@@ -402,7 +402,7 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "Lê as últimas mensagens de cada conversa antiga trazida do WhatsApp e marca se é cliente, se recusou, se não é contato de venda ou se parou no meio — só quem parou no meio segue para a retomada.",
     papel: "entender",
     exige: {},
-    emissor: "lib/channels/zernio/triagem-do-historico.ts",
+    emissor: "lib/channels/triagem-do-historico.ts",
     sintomaDeFalha:
       "Os contatos importados ficam sem separação, com a marca \"triagem-falhou\", e a equipe precisa olhar um a um antes de qualquer retomada.",
     registraEm: "llm_calls",

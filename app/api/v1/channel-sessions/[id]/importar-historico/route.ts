@@ -8,7 +8,7 @@
  * Fork, migration 9012. O POST só ENFILEIRA: quem trabalha é o cron
  * `importacao-de-historico`, em rodadas de 40 s, porque seis meses de caixa de
  * entrada não cabem num request. Nada do que a importação grava acorda IA,
- * automação ou follow-up (ver `lib/channels/zernio/importar-historico.ts`).
+ * automação ou follow-up (ver `lib/channels/importacao-de-historico.ts`).
  *
  * Leitura: qualquer papel da organização. Pedido: `admin` (mexe no funil
  * inteiro de uma vez), e o suporte só-leitura não pede.
@@ -21,6 +21,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { conexaoParaImportar } from "@/lib/channels/importacao-de-historico";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -36,17 +37,6 @@ const corpo = z.object({
   triagem: z.boolean().optional().default(true),
 });
 
-/** A conexão é desta organização e é do canal intermediado de WhatsApp? */
-async function conexaoDoProvedor(admin: ReturnType<typeof createAdminClient>, orgId: string, id: string) {
-  const { data } = await admin
-    .from("channel_sessions")
-    .select("id, provider, zernio_account_id")
-    .eq("organization_id", orgId)
-    .eq("id", id)
-    .maybeSingle();
-  return data as { id: string; provider: string; zernio_account_id: string | null } | null;
-}
-
 export async function GET(_req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
   const auth = await requireRole("viewer", { requestId, resource: "importacoes_de_historico" });
@@ -56,8 +46,8 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
   if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
 
   const admin = createAdminClient();
-  const conexao = await conexaoDoProvedor(admin, auth.org.orgId, id);
-  if (!conexao) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
+  const conexao = await conexaoParaImportar(admin, auth.org.orgId, id);
+  if (!conexao.existe) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
 
   const { data } = await admin
     .from("importacoes_de_historico")
@@ -68,7 +58,7 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
     .limit(1)
     .maybeSingle();
   return ok(
-    { disponivel: conexao.provider === "zernio" && Boolean(conexao.zernio_account_id), importacao: data ?? null },
+    { disponivel: conexao.disponivel, importacao: data ?? null },
     { requestId },
   );
 }
@@ -89,9 +79,9 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
   }
 
   const admin = createAdminClient();
-  const conexao = await conexaoDoProvedor(admin, auth.org.orgId, id);
-  if (!conexao) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
-  if (conexao.provider !== "zernio" || !conexao.zernio_account_id) {
+  const conexao = await conexaoParaImportar(admin, auth.org.orgId, id);
+  if (!conexao.existe) return fail("not_found", t("Conexão não encontrada."), 404, { requestId });
+  if (!conexao.disponivel) {
     return fail(
       "validation_failed",
       t("Só a conexão de WhatsApp pelo parceiro guarda o histórico antigo para importar."),

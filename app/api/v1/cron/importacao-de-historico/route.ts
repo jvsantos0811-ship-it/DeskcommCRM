@@ -20,7 +20,7 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { autorizaCron } from "@/lib/auth/cron-auth";
-import { importacoesPendentes, rodarImportacao } from "@/lib/channels/zernio/importar-historico";
+import { importacoesPendentes, rodarImportacao } from "@/lib/channels/importacao-de-historico";
 import { logger } from "@/lib/logger";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";

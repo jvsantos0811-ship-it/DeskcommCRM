@@ -31,7 +31,7 @@ import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { registrarChamadaDeIa } from "@/lib/ai/usage/registrar-chamada";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 
-import { trechoParaTriagem, type MensagemDoHistorico } from "./historico";
+import { trechoParaTriagem, type MensagemDoHistorico } from "./zernio/historico";
 
 type Admin = SupabaseClient;
 

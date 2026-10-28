@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
  * lidas — um "reaproveitamento" inocente de `ingestZernioInbound` desfaria tudo.
  */
 const RAIZ = path.resolve(__dirname);
-const ARQUIVOS = ["importar-historico.ts", "triagem-do-historico.ts"];
+const ARQUIVOS = ["importar-historico.ts", "../triagem-do-historico.ts"];
 
 const PROIBIDOS = [
   "aplicarEfeitosPosEntrada",

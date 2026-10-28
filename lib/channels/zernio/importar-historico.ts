@@ -39,7 +39,7 @@ import {
   type MensagemDoHistorico,
 } from "./historico";
 import { upsertContact, waIdentityFrom } from "./ingest";
-import { triarLeadsImportados } from "./triagem-do-historico";
+import { triarLeadsImportados } from "../triagem-do-historico";
 
 type Admin = SupabaseClient;
 
