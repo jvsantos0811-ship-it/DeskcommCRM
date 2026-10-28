@@ -103,7 +103,7 @@ describe("a linha canônica do job é lida como o histórico lê", () => {
 });
 
 describe("a abertura não anuncia mensagem vazia quando ela tem texto", () => {
-  it("com o texto canônico do áudio, a fonte prioritária entra e o 'não há texto' sai", async () => {
+  it("com o texto canônico do áudio, o bloco das mensagens do cliente entra e o 'não há texto' sai", async () => {
     const texto = (await textoDoJob([LINHA_DO_AUDIO])) ?? "";
     const abertura = buildOpeningMessage(
       null,
@@ -116,7 +116,7 @@ describe("a abertura não anuncia mensagem vazia quando ela tem texto", () => {
       texto,
     );
 
-    expect(abertura).toContain("## Mensagem atual do cliente — fonte prioritária");
+    expect(abertura).toContain("## Mensagens do cliente desde a sua última resposta (todas, em ordem)");
     expect(abertura).not.toContain("Não há texto utilizável");
     expect(abertura).toContain(TRANSCRICAO);
   });

@@ -145,7 +145,16 @@ const envSchema = z.object({
   EVENT_LOG_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
-  INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(8_000),
+  // PC-002 (27/10/2026): a janela agora DESLIZA — cada mensagem nova reinicia o
+  // relógio —, então o padrão de texto caiu de 8 s (âncora) para 5 s.
+  INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(5_000),
+  // Teto da espera deslizante, contado da 1ª mensagem do lote: cliente que
+  // escreve sem parar recebe resposta aqui, nunca silêncio. 0 = volta à janela
+  // ancorada de antes (sem deslizar).
+  INBOUND_DEBOUNCE_TETO_MS: z.coerce.number().int().min(0).max(120_000).default(30_000),
+  // Espera de foto, vídeo e documento (quem manda foto costuma escrever a
+  // pergunta logo depois). O áudio usa a de texto, contada do fim da transcrição.
+  INBOUND_DEBOUNCE_MIDIA_MS: z.coerce.number().int().min(0).max(60_000).default(20_000),
   // Resposta obsoleta: o cliente escreveu de novo enquanto o turno pensava → a
   // resposta desatualizada não sai e o turno seguinte responde a tudo junto,
   // enquanto a mensagem mais antiga sem resposta tiver menos que isto. 0 = desliga.
@@ -248,6 +257,10 @@ const envSchema = z.object({
   TOOL_BREAKER_SAME_TOOL_HALT: z.coerce.number().int().positive().default(8),
   TOOL_BREAKER_NO_PROGRESS_WARN: z.coerce.number().int().positive().default(3),
   TOOL_BREAKER_NO_PROGRESS_BLOCK: z.coerce.number().int().positive().default(5),
+  // PC-002, Fase 1, item 4: teto de cada chamada de ferramenta do agente. A que
+  // falha (erro, exceção ou este teto) não roda de novo no turno, e o turno
+  // segue sem ela. 0 = sem teto (a regra de uma tentativa continua).
+  AGENT_TOOL_TIMEOUT_MS: z.coerce.number().int().min(0).default(20_000),
   // Observabilidade — janela do /metrics e do alerta de cache hit.
   METRICS_WINDOW_MS: z.coerce.number().int().positive().default(86_400_000),
   CACHE_HIT_ALERT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),

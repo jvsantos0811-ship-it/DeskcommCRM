@@ -161,3 +161,92 @@ export async function respostaFicouObsoleta(
   );
   return rows[0]?.obsoleta === true;
 }
+
+/**
+ * O cliente escreveu DEPOIS que este turno leu a conversa? (PC-002, Fase 1,
+ * item 3 — parar no meio.)
+ *
+ * É a mesma régua de `respostaFicouObsoleta`, SEM o teto: aquela decide se a
+ * PRIMEIRA bolha sai (e, passado o teto, sai mesmo desatualizada, porque
+ * silêncio é pior). Esta decide se as SEGUINTES saem — e aí a primeira já saiu,
+ * o cliente não está sem resposta, então não há silêncio a evitar: o resto da
+ * resposta fica retido e o turno da mensagem nova decide o que ainda cabe dizer.
+ */
+export async function clienteEscreveuDepoisDaLeitura(
+  db: Queryable,
+  alvo: Pick<AlvoDoTurno, 'organizationId' | 'conversationId' | 'jobId'>,
+): Promise<boolean> {
+  const { rows } = await db.query<{ escreveu: boolean }>(
+    `with vista as (
+       select (payload->>'ultima_inbound_vista_em')::timestamptz as em
+         from job_queue where organization_id = $1 and id = $3
+     ),
+     mais_nova as (
+       select created_at as em from messages
+        where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+        order by coalesce(sent_at, created_at) desc, created_at desc, id desc
+        limit 1
+     )
+     select coalesce((select m.em > v.em from mais_nova m cross join vista v), false) as escreveu`,
+    [alvo.organizationId, alvo.conversationId, alvo.jobId],
+  );
+  return rows[0]?.escreveu === true;
+}
+
+/**
+ * Guarda no job o que ficou retido (PC-002, item 3). Acrescenta — um turno pode
+ * reter mais de uma vez (bolhas de um envio + um segundo send_message). Um
+ * statement com `||`, como `anotarUltimaInboundVista`: não pisa em chave alheia.
+ *
+ * Só TEXTO da resposta da IA vai para cá, nunca fala do cliente; o payload do job
+ * já é onde o turno guarda o próprio estado, e a linha some com a poda da fila.
+ */
+export async function guardarBolhasRetidas(
+  db: Queryable,
+  alvo: Pick<AlvoDoTurno, 'organizationId' | 'jobId'>,
+  retidas: readonly string[],
+): Promise<void> {
+  if (retidas.length === 0) return;
+  await db.query(
+    `update job_queue
+        set payload = payload || jsonb_build_object(
+          'bolhas_retidas', coalesce(payload->'bolhas_retidas', '[]'::jsonb) || $3::jsonb,
+          'bolhas_retidas_em', now())
+      where organization_id = $1 and id = $2`,
+    [alvo.organizationId, alvo.jobId, JSON.stringify(retidas)],
+  );
+}
+
+/**
+ * O que o turno ANTERIOR desta conversa reteve e ninguém disse depois.
+ *
+ * Vale só enquanto nenhuma resposta nossa saiu depois da retenção: a última
+ * outbound da conversa é a bolha que saiu ANTES do corte, então qualquer
+ * outbound posterior significa que outro turno já falou — e aí o trecho retido
+ * é passado, não pendência.
+ */
+export async function lerBolhasRetidas(
+  db: Queryable,
+  alvo: AlvoDoTurno,
+): Promise<string[]> {
+  const { rows } = await db.query<{ retidas: unknown }>(
+    `select j.payload->'bolhas_retidas' as retidas
+       from job_queue j
+      where j.organization_id = $1
+        and j.contact_id = $3
+        and j.id <> $4
+        and j.kind = 'inbound_turn'
+        and j.created_at > now() - interval '1 day'
+        and j.payload->>'conversation_id' = $2::uuid::text
+        and j.payload ? 'bolhas_retidas'
+        and (j.payload->>'bolhas_retidas_em')::timestamptz >= coalesce(
+              (select max(o.created_at) from messages o
+                where o.organization_id = $1 and o.conversation_id = $2::uuid and o.direction = 'outbound'),
+              '-infinity'::timestamptz)
+      order by j.created_at desc
+      limit 1`,
+    [alvo.organizationId, alvo.conversationId, alvo.contactId, alvo.jobId],
+  );
+  const v = rows[0]?.retidas;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}

@@ -59255,3 +59255,47 @@ end $$;
 -- 'etapa_do_funil'. O valor novo está no bloco ÚNICO daquele CHECK, mais acima
 -- (o do apêndice das passagens de atendimento), e não é reconstruído aqui:
 -- `tests/unit/baseline-constraint-reconstruida.test.ts` — uma constraint, um bloco.
+
+
+-- ---- tempo de resposta da IA por turno (migration 9009) ----
+create table if not exists public.tempos_de_resposta_da_ia (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  agent_id uuid references public.ai_agents(id) on delete set null,
+  -- O job do turno. Sem FK: a fila é podada, a medida fica.
+  job_id uuid not null,
+  -- A última mensagem do cliente que o turno respondeu (chegada ao CRM).
+  ultima_msg_cliente_em timestamptz,
+  -- Quando a 1ª bolha saiu. Nulo = o turno não respondeu (descartado, passou
+  -- para a equipe, erro).
+  primeira_bolha_em timestamptz,
+  espera_ms integer,
+  mensagens_respondidas smallint not null default 0,
+  bolhas_retidas smallint not null default 0,
+  ferramentas_falharam smallint not null default 0,
+  created_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'tempos_de_resposta_da_ia_job_unico'
+  ) then
+    alter table public.tempos_de_resposta_da_ia
+      add constraint tempos_de_resposta_da_ia_job_unico unique (organization_id, job_id);
+  end if;
+end $$;
+
+create index if not exists tempos_de_resposta_da_ia_conversa_idx
+  on public.tempos_de_resposta_da_ia (organization_id, conversation_id, created_at desc);
+create index if not exists tempos_de_resposta_da_ia_agente_idx
+  on public.tempos_de_resposta_da_ia (organization_id, agent_id, created_at desc);
+
+alter table public.tempos_de_resposta_da_ia enable row level security;
+drop policy if exists tenant_isolation_tempos_de_resposta_da_ia_select on public.tempos_de_resposta_da_ia;
+create policy tenant_isolation_tempos_de_resposta_da_ia_select on public.tempos_de_resposta_da_ia
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.tempos_de_resposta_da_ia from public, anon, authenticated;
+grant select on public.tempos_de_resposta_da_ia to authenticated;
+grant all on public.tempos_de_resposta_da_ia to service_role;

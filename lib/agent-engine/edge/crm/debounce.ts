@@ -13,10 +13,24 @@
  *   - mensagem que chega fora da janela abre janela nova;
  *   - `debounceMs = 0` desliga a coalescência: job imediato, zero consulta.
  *
- * A janela é ANCORADA no primeiro job, não deslizante: mensagens que chegam
- * dentro dela não empurram o `run_after` para frente (nada aqui faz update de
- * `run_after`). Quem mede o pior caso com contato falante é
- * `debounce.medicao.test.ts`.
+ * ## Âncora ou deslizante (PC-002, Fase 1, item 2)
+ *
+ * Sem `deslizante`, a janela é ANCORADA no primeiro job: mensagens que chegam
+ * dentro dela não empurram o `run_after` (o comportamento histórico, que
+ * `debounce.medicao.test.ts` mede).
+ *
+ * Com `deslizante` (o que o drain usa), CADA mensagem nova do mesmo contato
+ * reinicia o relógio: o `run_after` do job pendente vai para `agora + espera
+ * desta mensagem`, nunca além de `criação do job + teto`. O defeito que isto
+ * conserta foi medido em 27/10/2026: "Meu neto sofreu o acidente de moto" +
+ * "e ficou machucado" — com a janela ancorada, a segunda mensagem caía fora da
+ * janela da primeira, ganhava turno próprio, e a IA respondeu só a ela. O teto
+ * garante que um cliente que escreve sem parar recebe resposta (nunca
+ * silêncio); a espera por tipo dá à foto e ao documento o tempo de o cliente
+ * escrever a legenda ou a pergunta que costuma vir depois deles. O áudio não
+ * precisa de regra própria aqui: o drain só chega a esta decisão depois que a
+ * transcrição terminou (`'adiar'` em drain.ts), então "fim da transcrição +
+ * espera de texto" sai sozinho.
  */
 import type pg from 'pg';
 
@@ -92,13 +106,81 @@ export function debounceEfetivo(
   return Math.min(Math.max(0, configurado), TETO_DEBOUNCE_MS);
 }
 
+/** Tipos de mensagem que pedem a espera longa (foto, vídeo, documento). */
+const TIPOS_DE_ESPERA_LONGA = new Set(['image', 'video', 'document', 'sticker']);
+
+/** Espera deslizante por tipo de mensagem (PC-002, Fase 1, item 2). */
+export interface EsperaDeslizante {
+  /** Teto desde a 1ª mensagem do lote (criação do job). Padrão 30 s. */
+  tetoMs: number;
+  /** Espera de foto, vídeo e documento. Padrão 20 s. */
+  esperaMidiaMs: number;
+  /** Tipo da mensagem que acabou de chegar (`messages.type`). */
+  tipo: string | null;
+}
+
+/**
+ * Quanto ESTA mensagem pede de espera: o valor de texto do agente, ou o de
+ * mídia quando ela é foto/vídeo/documento (o maior dos dois — um agente que
+ * configurou texto acima do de mídia não ganha resposta MAIS rápida por causa
+ * de uma foto). Nunca passa do teto: esperar além dele seria silêncio.
+ */
+export function esperaDaMensagem(debounceMs: number, d: EsperaDeslizante): number {
+  const base =
+    d.tipo !== null && TIPOS_DE_ESPERA_LONGA.has(d.tipo)
+      ? Math.max(debounceMs, d.esperaMidiaMs)
+      : debounceMs;
+  return d.tetoMs > 0 ? Math.min(base, d.tetoMs) : base;
+}
+
+/**
+ * Empurra o relógio do job pendente do contato: `run_after` vai para
+ * `now() + espera`, limitado a `created_at + teto`, e NUNCA volta para trás
+ * (`greatest`) — uma mensagem de texto depois de uma foto não encurta a espera
+ * que a foto pediu.
+ *
+ * UM statement: a re-checagem de `status = 'pending' and run_after > now()` no
+ * próprio UPDATE é o que impede empurrar um job que o worker acabou de
+ * claimar entre a busca e a escrita (o row lock serializa com o claim). Sem
+ * linha devolvida, a mensagem abre janela nova — o turno em andamento a
+ * descarta como obsoleta e o novo responde às duas.
+ */
+const SQL_DESLIZAR = `update job_queue j
+    set run_after = greatest(
+          j.run_after,
+          least(now() + ($3 * interval '1 millisecond'),
+                j.created_at + ($4 * interval '1 millisecond')))
+  where j.id = (
+          select id from job_queue
+           where organization_id = $1 and contact_id = $2
+             and kind = 'inbound_turn' and status = 'pending' and run_after > now()
+             and not (payload ? 'held_run_after')
+           order by created_at
+           limit 1)
+    and j.status = 'pending' and j.run_after > now()
+  returning j.id`;
+
 /** Decide entre carona em job existente e janela nova. */
 export async function decidirRajada(
   pool: pg.Pool,
   alvo: { organizationId: string; contactId: string },
   debounceMs: number,
   agora: number = Date.now(),
+  deslizante?: EsperaDeslizante,
 ): Promise<DecisaoDeRajada> {
+  if (debounceMs > 0 && deslizante !== undefined) {
+    const espera = esperaDaMensagem(debounceMs, deslizante);
+    const teto = deslizante.tetoMs > 0 ? deslizante.tetoMs : espera;
+    const { rows } = await pool.query<{ id: string }>(SQL_DESLIZAR, [
+      alvo.organizationId,
+      alvo.contactId,
+      espera,
+      teto,
+    ]);
+    const jobId = rows[0]?.id;
+    if (jobId !== undefined) return { tipo: 'coalescido', jobId };
+    return { tipo: 'enfileirar', runAfter: janelaDeRajada(espera, agora) };
+  }
   if (debounceMs > 0) {
     const jobId = await buscarJobParaCoalescer(pool, alvo);
     if (jobId !== undefined) return { tipo: 'coalescido', jobId };

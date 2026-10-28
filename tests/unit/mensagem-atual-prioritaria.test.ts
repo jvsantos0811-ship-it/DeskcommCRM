@@ -43,15 +43,18 @@ describe("mensagem atual do cliente", () => {
       "sem notas",
     );
 
-    expect(abertura).toContain("## Mensagem atual do cliente — fonte prioritária");
+    expect(abertura).toContain("## Mensagens do cliente desde a sua última resposta (todas, em ordem)");
     expect(abertura).toContain('"texto":"Quero marcar um horário com a Drª Mara."');
-    expect(abertura).toContain("NUNCA diga que veio vazia, em branco ou que não foi recebida.");
+    expect(abertura).toContain("NUNCA diga que a mensagem veio vazia, em branco ou que não foi recebida.");
     expect(abertura.indexOf("A última mensagem do cliente veio em branco.")).toBeLessThan(
-      abertura.indexOf("## Mensagem atual do cliente — fonte prioritária"),
+      abertura.indexOf("## Mensagens do cliente desde a sua última resposta (todas, em ordem)"),
     );
   });
 
-  it("prefere a mensagem apontada pelo job a outra inbound no histórico", () => {
+  // PC-002 (27/10/2026): a abertura deixou de escolher UMA mensagem. Ela traz
+  // todas as do cliente desde a nossa última resposta, e a mensagem do job
+  // entra mesmo quando a leitura do histórico ainda não a alcançou.
+  it("a mensagem apontada pelo job entra mesmo quando o histórico lido ainda não a tem", () => {
     const contexto: LeadContext = {
       lead_id: "11111111-1111-4111-8111-111111111111",
       contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false },
@@ -65,7 +68,8 @@ describe("mensagem atual do cliente", () => {
     const abertura = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", "Quero agendar com a Drª Mara.");
 
     expect(abertura).toContain('"texto":"Quero agendar com a Drª Mara."');
-    expect(abertura).not.toContain('"texto":"registro concorrente sem conteúdo"');
+    expect(abertura).toContain('"texto":"registro concorrente sem conteúdo"');
+    expect(abertura.indexOf("registro concorrente")).toBeLessThan(abertura.indexOf("Quero agendar com a Drª Mara."));
   });
 });
 
