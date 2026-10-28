@@ -421,7 +421,6 @@ export function ConversationHeader({
             variant="outline"
             disabled={retomar.isPending}
             data-testid="devolver-ao-automatico"
-            aria-label={retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
             title={
               motivo === "contato_travado"
                 ? t("Religa o atendimento automático para este cliente — vale para todas as conversas dele.")
@@ -429,10 +428,13 @@ export function ConversationHeader({
             }
             onClick={() => retomar.mutate({ conversation_id: conversation.id })}
           >
+            {/* O rótulo completo aparece UMA vez: é o nome do botão para quem
+                usa leitor de tela, e a frase que a Central e o resumo da
+                passagem citam (`handoff-por-orcamento.test.ts` confere). */}
             <span className="2xl:hidden" aria-hidden>
               {retomar.isPending ? t("Devolvendo...") : t("Devolver")}
             </span>
-            <span className="hidden 2xl:inline" aria-hidden>
+            <span className="sr-only 2xl:not-sr-only">
               {retomar.isPending ? t("Devolvendo...") : t("Devolver ao automático")}
             </span>
           </Button>
@@ -443,14 +445,13 @@ export function ConversationHeader({
             variant="outline"
             disabled={pausar.isPending}
             data-testid="pausar-o-automatico"
-            aria-label={pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
             title={t("O atendimento automático para nesta conversa. O dono não muda.")}
             onClick={() => pausar.mutate({ conversation_id: conversation.id })}
           >
             <span className="2xl:hidden" aria-hidden>
               {pausar.isPending ? t("Pausando...") : t("Pausar")}
             </span>
-            <span className="hidden 2xl:inline" aria-hidden>
+            <span className="sr-only 2xl:not-sr-only">
               {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
             </span>
           </Button>

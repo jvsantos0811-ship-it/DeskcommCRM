@@ -384,11 +384,14 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     // Os três rótulos de `statuses` cobertos por esse conjunto (`sent`, `stale`,
     // `dismissed`) são hoje código inalcançável no componente. Está anotado; o
     // teste não é o lugar de decidir se eles voltam a aparecer.
-    await expect(panel(page).getByText("Assistência do agente", { exact: true })).toBeVisible();
-    await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
-    await expect(panel(page).getByText("Resposta aprovada. Acompanhe o envio aqui.", { exact: true })).toHaveCount(0);
+    // PC-011: no neutro a caixa NÃO fica na tela — sobra só o ícone "Sugerir
+    // resposta" na barra de escrever, e a conversa ganha a altura que ela comia.
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
+    await expect(page.getByText("Resposta aprovada. Acompanhe o envio aqui.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sugerir resposta", exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    await capture(page, panel(page), info, "obsoleta-mobile");
+    await capture(page, page.getByTestId("area-de-mensagens"), info, "obsoleta-mobile");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`/app/ai/agents/${f.agent}`);
     await page.getByLabel("Modo de operação").selectOption("automatic");
