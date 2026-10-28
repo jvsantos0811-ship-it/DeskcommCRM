@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Trazer as conversas antigas do número conectado pelo parceiro, sem acordar a IA
+---
+Na conexão de WhatsApp pelo parceiro (Conexões › Parceiro) há um cartão novo, "Trazer as conversas antigas". O provedor guarda até seis meses de conversas do número em coexistência; a importação traz essas conversas para o CRM com as datas originais, cria ou reaproveita os contatos e abre um card para cada contato antigo no funil e na etapa escolhidos (por exemplo, uma etapa "Leads antigos"), com a etiqueta `lead-antigo` e a data da última mensagem na linha do tempo. Contato que já tem negócio aberto não ganha outro, e quem pediu para não receber mensagens não vira card. Nada é enviado a ninguém: as mensagens antigas não acionam a IA, as automações, os follow-ups, a fila nem o contador de não lidas, e as conversas importadas entram encerradas. Opcionalmente, a IA separa os cards em `ja-cliente`, `recusou`, `nao-e-lead` e `parou-no-meio` (na dúvida, a opção mais cuidadosa), lendo as últimas 7 mensagens de cada conversa; o motivo fica na linha do tempo e o custo aparece em Uso de IA. A importação anda em segundo plano, um pouco por minuto, retoma sozinha se o servidor reiniciar, e repetir é seguro. A atualização cria uma tabela e uma função no banco; nada a fazer à mão.

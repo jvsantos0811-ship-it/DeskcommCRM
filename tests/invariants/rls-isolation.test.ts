@@ -626,6 +626,13 @@ beforeAll(() => {
             from public.crm_leads where organization_id = v_org limit 1;
         end if;
 
+        -- migration 9012 (fork): importação do histórico na sessão semeada.
+        -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
+        if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
+          insert into public.importacoes_de_historico (organization_id, channel_session_id, estado)
+          values (v_org, v_sess, 'concluida');
+        end if;
+
         -- migration 9008 (fork): contrato do negócio, preso ao lead e ao
         -- contato semeados. Leitura org-scoped sem gate de papel; a escrita só o
         -- servidor faz (authenticated só tem SELECT).
@@ -904,6 +911,10 @@ export const TABLES = [
   // quem fechou contrato com o escritório e quando. Leitura org-scoped sem gate
   // de papel; escrita só pelo servidor.
   "crm_assinaturas_confirmadas",
+  // migration 9012 (fork) — importação do histórico do canal intermediado: só
+  // estado e contagens, mas dizem quantos contatos o escritório tem e quando os
+  // trouxe. Leitura org-scoped sem gate de papel; escrita só pelo servidor.
+  "importacoes_de_historico",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

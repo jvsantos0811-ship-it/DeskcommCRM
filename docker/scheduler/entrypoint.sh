@@ -62,6 +62,9 @@ CRONS="
 # janela de manutenção: o horário foi escolhido por uma pessoa, e marcar 9h
 # para sair 9h04 é o defeito. Sem aspas nem crase aqui: isto está DENTRO da string.
 * * * * *|60|api/v1/cron/scheduled-messages
+# IMPORTACAO DO HISTORICO do canal intermediado (migration 9012). Rodada de 40 s
+# por minuto; a caixa antiga entra aos poucos e retoma se o processo cair.
+* * * * *|60|api/v1/cron/importacao-de-historico
 */5 * * * *|60|api/v1/cron/handoff-devolucao
 # A CAMPANHA. Minuto a minuto, e a rodada manda no máximo uma mensagem por
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal
