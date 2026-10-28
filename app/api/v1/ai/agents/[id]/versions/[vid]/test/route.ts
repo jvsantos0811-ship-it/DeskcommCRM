@@ -175,6 +175,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       sampleMessage: parsed.data.sample_message,
       sampleContact: parsed.data.sample_contact,
       channelId: version.channel_session_id,
+      historico: parsed.data.historico,
+      agora: parsed.data.agora ? new Date(parsed.data.agora) : undefined,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
     // #2490 — mídia pendente é teste REPROVADO, mesmo com candidato na mão: o

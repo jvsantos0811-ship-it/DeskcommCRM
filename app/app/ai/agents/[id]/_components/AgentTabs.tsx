@@ -11,6 +11,7 @@ import type { MaterialDoAcervo } from "./BasesDoAgente";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { TestPanel } from "./TestPanel";
 import { RunsTable } from "./RunsTable";
+import { RecusasDoAgente } from "./RecusasDoAgente";
 import { UsoDasCapacidades } from "./UsoDasCapacidades";
 import { VersionHistory } from "./VersionHistory";
 import { ProposalsPanel } from "./ProposalsPanel";
@@ -103,6 +104,7 @@ export function AgentTabs(props: Props) {
 
       <TabsContent value="runs" className="m-0">
         <RunsTable agentId={props.agent.id} active={tab === "runs"} />
+        <RecusasDoAgente agentId={props.agent.id} active={tab === "runs"} />
       </TabsContent>
 
       <TabsContent value="proposals" className="m-0">

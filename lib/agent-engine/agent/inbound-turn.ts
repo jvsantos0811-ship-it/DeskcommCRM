@@ -238,6 +238,13 @@ import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
+import {
+  fraseSeguraDaOrg,
+  fraseSeguraDeveSair,
+  resumoDoBloqueio,
+  type VetoDoTurno,
+} from '@/lib/messaging/frase-segura';
+import { registrarRecusaDaIa } from './recusas';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
   anotarUltimaInboundVista,
@@ -2998,6 +3005,19 @@ async function executarTurnoDoAgente(
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
   let openedCaseThisTurn = false;
+  // PC-002b (AUD-002, AD4) — a abertura de caso EM CURSO neste turno. O modelo
+  // costuma chamar `open_human_case` e `send_message` na MESMA etapa, e o SDK as
+  // executa em paralelo: o `send_message` lia "nenhum caso" enquanto o caso
+  // ainda estava sendo gravado, e a trava de promessa de humano derrubava a
+  // mensagem inteira. O `send_message` espera esta promessa antes de decidir.
+  let aberturaDeCasoEmCurso: Promise<void> | null = null;
+  // PC-002b — cada veto da cadeia neste turno (trava, código, motivo e o texto
+  // barrado). Lido no fim do turno pela rede da frase segura: se nada saiu e uma
+  // trava de conteúdo barrou, o cliente recebe a frase segura em vez de silêncio.
+  const vetosDoTurno: VetoDoTurno[] = [];
+  const anotarVeto = (c: { gate: string; code: string; message: string }, texto: string): void => {
+    vetosDoTurno.push({ trava: c.gate, codigo: c.code, motivo: c.message, texto });
+  };
   // Wave 4 — contador do fail-safe do guardrail anti-alucinação (case_promise_without_case):
   // 1º veto no turno é erro-de-ensino (o modelo re-tenta); persistir uma 2ª vez aciona o
   // auto-abre-caso (ver send_message.execute). Por turno (closure), nunca cross-turno.
@@ -3637,6 +3657,10 @@ async function executarTurnoDoAgente(
           // (pode ter mudado dentro deste MESMO turno via open_human_case, chamado antes
           // deste send_message). casesEnabled false (tela não habilita) → sempre false,
           // sem query — o casePromiseGate já é no-op nesse caso de qualquer forma.
+          // PC-002b: um `open_human_case` da MESMA etapa pode estar gravando o
+          // caso agora mesmo (o SDK roda as ferramentas da etapa em paralelo).
+          // Esperar por ele custa milissegundos; não esperar derrubava a mensagem.
+          if (aberturaDeCasoEmCurso !== null) await aberturaDeCasoEmCurso;
           const hasOpenCase =
             agentConfig?.casesEnabled === true
               ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
@@ -3854,6 +3878,29 @@ async function executarTurnoDoAgente(
             },
           };
           let chain = await runBeforeSend(beforeSendArgs);
+          if (
+            chain.status === 'vetoed' &&
+            chain.code === 'case_promise_without_case' &&
+            agentConfig?.casesEnabled === true
+          ) {
+            // PC-002b (F1-j): a cadeia leva tempo (classificador semântico,
+            // conferência de fato) — um caso aberto em paralelo por um
+            // `open_human_case` da mesma etapa pode ter sido gravado DURANTE ela.
+            // Reconfere ANTES de ensinar: caso aberto no mesmo turno é humano
+            // que existe, e a mensagem sai.
+            if (aberturaDeCasoEmCurso !== null) await aberturaDeCasoEmCurso;
+            const casoAgora =
+              openedCaseThisTurn ||
+              (await hasOpenCaseForContact(pool, tenantId, input.conversationId));
+            if (casoAgora) {
+              chain = await runBeforeSend({
+                ...beforeSendArgs,
+                hasOpenCase: true,
+                openedCaseThisTurn: true,
+              });
+            }
+          }
+          if (chain.status === 'vetoed') anotarVeto(chain, body);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
             // Wave 4 — fail-safe da invariante sagrada: o lead NUNCA recebe promessa-de-
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
@@ -3879,13 +3926,18 @@ async function executarTurnoDoAgente(
                 contextSnapshot: buildCaseContextSnapshot(),
               },
             );
-            if (!auto.ok) {
-              // openCase falhou (ex.: já existe outro caso aberto por corrida) — NÃO envie
-              // prometendo humano sem caso; mantém a invariante com o erro de ensino original.
+            if (!auto.ok && auto.error.code !== 'case_already_open') {
+              // openCase falhou de verdade — NÃO envie prometendo humano sem caso.
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
-            openedCaseThisTurn = true;
-            moverParaHandoffBestEffort('case_promise_autofallback');
+            if (auto.ok) {
+              openedCaseThisTurn = true;
+              moverParaHandoffBestEffort('case_promise_autofallback');
+            } else {
+              // PC-002b: `case_already_open` = HÁ caso (aberto em paralelo ou antes).
+              // Antes isto devolvia o erro e o cliente ficava sem resposta.
+              openedCaseThisTurn = true;
+            }
             // Re-roda a cadeia INTEIRA agora que há caso aberto — o send real acontece
             // DENTRO do runBeforeSend (via args.send); nunca chamamos o canal por fora
             // (perderia pacing/lgpd/stop). ponytail: re-roda a cadeia inteira no fail-safe
@@ -3896,6 +3948,7 @@ async function executarTurnoDoAgente(
               hasOpenCase: true,
               openedCaseThisTurn: true,
             });
+            if (chain.status === 'vetoed') anotarVeto(chain, body);
           }
           if (chain.status === 'vetoed' && chain.code === 'clinical_claim') {
             // Fail-safe do gate de afirmação clínica. Ao contrário do vocabulário interno,
@@ -3977,6 +4030,7 @@ async function executarTurnoDoAgente(
               hasOpenCase: hasOpenCase || openedCaseThisTurn,
               enforceInternalVocabulary: false,
             });
+            if (chain.status === 'vetoed') anotarVeto(chain, body);
           }
           if (chain.status === 'vetoed') {
             // Cap de warm-up/diário: reescrever o texto não resolve (é rate limit, não
@@ -4426,12 +4480,21 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // PC-002b: marca a abertura como EM CURSO antes do primeiro `await` — um
+        // `send_message` da mesma etapa, rodando em paralelo, espera por ela.
+        let terminouAbertura: () => void = () => {};
+        const emCurso = new Promise<void>((resolve) => {
+          terminouAbertura = resolve;
+        });
+        aberturaDeCasoEmCurso = emCurso;
         try {
           const res = await openCase(
             pool,
             { tenantId, conversationId: input.conversationId, agentId: agentConfig.agentId },
             { ...parsed.data, contextSnapshot: buildCaseContextSnapshot() },
           );
+          // Já existe caso aberto nesta conversa: para a trava de promessa de
+          // humano, é o mesmo que ter aberto agora — há gente a caminho.
           if (!res.ok) return res;
           openedCaseThisTurn = true;
           moverParaHandoffBestEffort('open_human_case');
@@ -4456,6 +4519,8 @@ async function executarTurnoDoAgente(
               message: 'erro interno ao abrir o caso — encerre o turno.',
             },
           };
+        } finally {
+          terminouAbertura();
         }
       },
     });
@@ -5258,6 +5323,7 @@ async function executarTurnoDoAgente(
     // a manda — pela MESMA cadeia de guardrails, dentro do teto de envios. Roda
     // mesmo com o teto cheio: registrar que o MODELO fez a pergunta é o que a
     // torna "a pergunta atual" no turno seguinte.
+    let perguntaDoRoteiroSaiu = false;
     if (roteiro !== null) {
       await garantirPerguntaDoRoteiro(
         { pool, log: runLog },
@@ -5310,9 +5376,165 @@ async function executarTurnoDoAgente(
                 });
               },
             });
-            return chain.status !== 'vetoed' && (chain.outcome.kind === 'sent' || chain.outcome.kind === 'already_sent');
+            const saiu =
+              chain.status !== 'vetoed' &&
+              (chain.outcome.kind === 'sent' || chain.outcome.kind === 'already_sent');
+            if (saiu) perguntaDoRoteiroSaiu = true;
+            return saiu;
           },
         },
+      );
+    }
+
+    // FRASE SEGURA (PC-002b, item 2): o modelo tentou responder, uma trava de
+    // CONTEÚDO barrou e nada saiu — nem depois do ensino, nem do fail-safe. O
+    // cliente NUNCA fica em silêncio por causa de uma trava: abre-se um caso (ou
+    // aviso na Central) com o texto barrado e o motivo, e o cliente recebe a
+    // frase segura da organização, pela MESMA cadeia (opt-out, LGPD e janela
+    // continuam valendo). Travas "que calam" (stop, lgpd, pacing, janela) ficam
+    // de fora — ali o silêncio é a decisão da própria trava.
+    if (
+      !preview &&
+      fraseSeguraDeveSair({
+        turnoDeResposta: eTurnoDeResposta(liveJob()),
+        // A pergunta do roteiro que saiu também é resposta ao cliente.
+        enviadas: outcomes.length + (perguntaDoRoteiroSaiu ? 1 : 0),
+        vetos: vetosDoTurno,
+        turnoDescartado: turnoDescartado || respostaCortada,
+        passouParaAEquipe,
+        capDeEnvio: capDeEnvioAtingido(),
+        optedOut: optedOutThisTurn,
+      })
+    ) {
+      const { resumo, motivo } = resumoDoBloqueio(vetosDoTurno);
+      const ultimoVeto = vetosDoTurno[vetosDoTurno.length - 1]!;
+      runLog.warn('trava barrou a resposta inteira — enviando a frase segura', {
+        job_id: liveJob().id,
+        trava: ultimoVeto.trava,
+        codigo: ultimoVeto.codigo,
+        vetos: vetosDoTurno.length,
+      });
+      // 1) A pessoa da equipe fica sabendo — com o texto barrado e o motivo.
+      let haCasoParaAFrase = openedCaseThisTurn;
+      try {
+        if (agentConfig?.casesEnabled === true) {
+          const caso = await openCase(
+            pool,
+            { tenantId, conversationId: input.conversationId, agentId: agentConfig.agentId },
+            {
+              title: 'A IA foi barrada por uma trava — o cliente recebeu a frase segura',
+              summary: resumo,
+              blocker: motivo,
+              kind: 'problema',
+              source: 'guardrail_autofallback',
+              contextSnapshot: buildCaseContextSnapshot(),
+            },
+          );
+          if (caso.ok) {
+            openedCaseThisTurn = true;
+            haCasoParaAFrase = true;
+            moverParaHandoffBestEffort('frase_segura');
+          } else if (caso.error.code === 'case_already_open') {
+            haCasoParaAFrase = true;
+          }
+        } else {
+          await insertInboxItem(
+            pool,
+            tenantId,
+            {
+              kind: 'other',
+              title: 'A IA foi barrada por uma trava — o cliente recebeu a frase segura',
+              body: `${resumo}\n\n${motivo}`,
+              refKind: 'conversation',
+              refId: input.conversationId,
+            },
+            'kind_ref_e_titulo',
+          );
+        }
+      } catch (err) {
+        runLog.error('frase segura: não consegui abrir o caso/aviso para a equipe', {
+          job_id: liveJob().id,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
+      // 2) O cliente recebe a frase — pela cadeia inteira, nunca pelo canal direto.
+      let fraseSaiu = false;
+      try {
+        const { rows: orgRows } = await pool.query<{ settings: unknown; locale: string | null }>(
+          'select settings, locale from organizations where id = $1',
+          [tenantId],
+        );
+        const frase = fraseSeguraDaOrg(orgRows[0]?.settings ?? null, orgRows[0]?.locale ?? null);
+        const chain = await runBeforeSend({
+          pool,
+          log: runLog,
+          agentOperation,
+          tenantId,
+          leadId,
+          jobId: liveJob().id,
+          channelSessionId: input.channelSessionId,
+          body: frase,
+          optedOutThisTurn,
+          resposta: eTurnoDeResposta(liveJob()),
+          crmDailyLimit: null,
+          // A frase é fixa e pode repetir entre turnos; o anti-repetição vetaria
+          // justamente a rede. Mesmo motivo do aviso de escalação e do roteiro.
+          enforceSpinning: false,
+          now: clock(),
+          sleep: deps.sleep,
+          lgpd,
+          casesEnabled: agentConfig?.casesEnabled ?? false,
+          hasOpenCase: haCasoParaAFrase,
+          openedCaseThisTurn: haCasoParaAFrase,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          send: (finalBody: string) => {
+            pararDigitando();
+            seq += 1;
+            if (primeiraBolhaEm === null) primeiraBolhaEm = new Date();
+            return liveChannel().send({
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              jobClaim: claimOfJob(liveJob()),
+              agentOperation,
+              seq,
+              conversationId: input.conversationId,
+              body: finalBody,
+            });
+          },
+        });
+        if (chain.status !== 'vetoed') {
+          outcomes.push(chain.outcome);
+          fraseSaiu = chain.outcome.kind === 'sent' || chain.outcome.kind === 'already_sent' || chain.outcome.kind === 'queued';
+        } else {
+          runLog.warn('frase segura também foi barrada', { trava: chain.gate, codigo: chain.code });
+        }
+      } catch (err) {
+        runLog.error('frase segura: o envio lançou', {
+          job_id: liveJob().id,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
+      // 3) O registro que a aba Execuções do agente mostra.
+      await registrarRecusaDaIa(
+        pool,
+        {
+          organizationId: tenantId,
+          tipo: 'envio_bloqueado',
+          agentId: agentConfig?.agentId ?? null,
+          agentVersionId: agentConfig?.versionId ?? null,
+          contactId: leadId,
+          conversationId: input.conversationId,
+          ferramenta: 'send_message',
+          trava: ultimoVeto.trava,
+          codigo: ultimoVeto.codigo,
+          motivo: fraseSaiu
+            ? `${ultimoVeto.motivo} — o cliente recebeu a frase segura e a equipe foi avisada.`
+            : `${ultimoVeto.motivo} — a frase segura não saiu; a equipe foi avisada.`,
+        },
+        runLog,
       );
     }
 

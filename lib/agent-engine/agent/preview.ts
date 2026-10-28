@@ -370,6 +370,14 @@ export function applyPreviewPolicy(
                 {
                   ...ctx,
                   ...liveContext?.(),
+                  // PC-002b (F1-j no Testar): `open_human_case` aqui vira PROPOSTA
+                  // (não grava caso), e a cadeia lia sempre "nenhum caso aberto"
+                  // — toda resposta que abria o caso e avisava a pessoa aparecia
+                  // como barrada no Testar, ao contrário da produção. Proposta de
+                  // abrir caso no MESMO turno conta como caso aberto, como lá.
+                  ...(p.result.proposals.some((x) => x.tool === 'open_human_case')
+                    ? { hasOpenCase: true, openedCaseThisTurn: true }
+                    : {}),
                   body,
                   semanticPromise,
                   factualClaim,

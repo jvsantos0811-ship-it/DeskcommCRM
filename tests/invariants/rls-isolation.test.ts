@@ -609,6 +609,14 @@ beforeAll(() => {
           values (v_org, v_conv, gen_random_uuid());
         end if;
 
+        -- migration 9010 (fork): recusa/bloqueio da IA. So ids e motivo,
+        -- nunca texto de conversa. Leitura org-scoped sem gate de papel; a
+        -- escrita so o servidor/worker faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.recusas_da_ia where organization_id = v_org) then
+          insert into public.recusas_da_ia (organization_id, tipo, trava, codigo, motivo)
+          values (v_org, 'envio_bloqueado', 'case_promise', 'case_promise_without_case', 'rls invariant');
+        end if;
+
         -- migration 9008 (fork): contrato do negócio, preso ao lead e ao
         -- contato semeados. Leitura org-scoped sem gate de papel; a escrita só o
         -- servidor faz (authenticated só tem SELECT).
@@ -877,6 +885,11 @@ export const TABLES = [
   // contagens, mas dizem com quem o escritório conversa e quando. Leitura
   // org-scoped sem gate de papel; escrita só pelo worker.
   "tempos_de_resposta_da_ia",
+  // migration 9010 (fork) — recusas e bloqueios da IA: quando uma trava barrou
+  // a mensagem ou uma etapa/ganho foi recusado. Vazar entrega ao vizinho com quem
+  // o escritório conversa e onde a IA travou. Leitura org-scoped sem gate de
+  // papel; escrita só pelo servidor/worker.
+  "recusas_da_ia",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
