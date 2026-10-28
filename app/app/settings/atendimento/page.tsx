@@ -25,6 +25,14 @@ import { createClient } from "@/lib/supabase/server";
 import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { configAssinatura } from "@/lib/messaging/assinatura";
 import { AssinaturaForm } from "./_assinatura-form";
+import { fraseDaFilaDaOrg } from "@/lib/escalacao/aviso-ao-lead";
+import { acaoDaIrritacao } from "@/lib/escalacao/irritacao";
+
+import { FraseSeguraForm } from "./_frase-segura-form";
+import { FilaEIrritacaoForm } from "./_fila-e-irritacao-form";
+import { HorarioDaEquipeForm } from "./_horario-da-equipe-form";
+import { horarioDaEquipeDaOrg } from "@/lib/escalacao/horario-da-equipe";
+import { fraseSeguraConfigurada, fraseSeguraPadrao } from "@/lib/messaging/frase-segura";
 import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -42,7 +50,7 @@ export default async function AtendimentoSettingsPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("settings")
+    .select("settings, locale")
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
@@ -56,6 +64,8 @@ export default async function AtendimentoSettingsPage() {
   const idioma = user.idioma;
   const channels = await loadChannelRoutingSettings(supabase, activeOrg.orgId);
   const assinatura = configAssinatura(settings);
+  const frasePadrao = fraseSeguraPadrao((data as { locale?: string | null } | null)?.locale ?? null);
+  const fraseInicial = fraseSeguraConfigurada(settings) ?? "";
   const assinaturaInicial = { humanos: assinatura.humanos, ia: assinatura.ia, nome_ia: assinatura.nomeIa };
 
   return (
@@ -77,6 +87,11 @@ export default async function AtendimentoSettingsPage() {
       />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
+      <FraseSeguraForm inicial={fraseInicial} padrao={frasePadrao} />
+      <HorarioDaEquipeForm inicial={horarioDaEquipeDaOrg(settings)} />
+      <FilaEIrritacaoForm
+        inicial={{ frase_da_fila: fraseDaFilaDaOrg(settings) ?? "", irritacao: acaoDaIrritacao(settings) }}
+      />
     </div>
   );
 }

@@ -308,6 +308,29 @@ export const testRunSchema = z
         phone: z.string().trim().min(3).max(40).optional(),
       })
       .optional(),
+    /**
+     * PC-002b (F1-l): a conversa da sessão de teste ATÉ AQUI, da mais antiga à
+     * mais nova — o que a pessoa (`cliente`) e o agente (`agente`) já disseram.
+     * Sem isto cada clique em Testar era uma conversa nova de uma mensagem só, e
+     * não dava para testar o terceiro turno de uma qualificação.
+     */
+    historico: z
+      .array(
+        z
+          .object({
+            direcao: z.enum(["cliente", "agente"]),
+            texto: z.string().trim().min(1).max(4000),
+          })
+          .strict(),
+      )
+      .max(40)
+      .optional(),
+    /**
+     * PC-002b (F1-l): "que dia e hora é agora" no teste (ISO 8601 com fuso).
+     * Vira o relógio do turno — o bloco "## Agora" que o modelo lê —, para
+     * testar a resposta de domingo às 15h numa terça de manhã.
+     */
+    agora: z.string().datetime({ offset: true }).optional(),
   })
   .strict();
 

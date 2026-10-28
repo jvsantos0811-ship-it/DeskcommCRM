@@ -79,6 +79,11 @@ import type { ChannelProvider } from '@/lib/channels/capabilities';
 import { aplicarAjustesDeEstilo, lerAjustesDeEstiloDaOrg } from './ajustes-de-estilo-da-org';
 import type { AjusteDeEstilo, LeituraDosAjustes } from './ajustes-de-estilo-da-org';
 import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
+import {
+  promessaDeHorarioConfere,
+  temPalavraComercial,
+  type HorarioDaEquipe,
+} from '@/lib/escalacao/horario-da-equipe';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -206,6 +211,12 @@ export interface GateContext {
    */
   humanPromiseExtraTargets?: readonly string[];
   /**
+   * PC-002b (item 4): o horário da equipe cadastrado na organização
+   * (`settings.horario_da_equipe`). Presente, a trava semântica de promessa deixa
+   * passar a frase de QUANDO a equipe assume que bate com ele. Ausente = como antes.
+   */
+  horarioDaEquipe?: HorarioDaEquipe | null;
+  /**
    * Arma o `internalVocabularyGate` (vazamento de vocabulário interno ao cliente).
    *
    * **OPCIONAL, e ausente = DESARMADO — a direção segura AQUI é o oposto da do
@@ -326,7 +337,9 @@ export type GateVerdict =
       pass: true;
       waitMs?: number;
       amendBody?: string;
-      skipped?: 'not_applicable' | 'sandbox_send_embargo' | 'nao_conferido';
+      // `horario_da_equipe` (PC-002b, item 4): a trava semântica de promessa viu uma frase
+      // de QUANDO a equipe assume que bate com o horário cadastrado da organização.
+      skipped?: 'not_applicable' | 'sandbox_send_embargo' | 'nao_conferido' | 'horario_da_equipe';
     }
   | {
       pass: false;
@@ -428,6 +441,17 @@ export const semanticPromiseGate: Gate = {
   name: 'semantic_promise',
   evaluate: (ctx) => {
     if (ctx.semanticPromise === null || !ctx.semanticPromise.isPromise) return { pass: true };
+    // PC-002b (item 4): dizer QUANDO a equipe assume ("ainda hoje", "a partir
+    // das 8h de amanhã") não é promessa comercial quando bate com o horário da
+    // equipe cadastrado na organização. Só a frase de horário passa: mensagem
+    // com palavra comercial (garantia, grátis, valor…) segue vetada.
+    if (
+      ctx.horarioDaEquipe &&
+      !temPalavraComercial(ctx.body) &&
+      promessaDeHorarioConfere(ctx.semanticPromise.suspectPhrase ?? ctx.body, ctx.horarioDaEquipe, ctx.now)
+    ) {
+      return { pass: true, skipped: 'horario_da_equipe' as const };
+    }
     return {
       pass: false,
       code: 'promise_semantic',
@@ -1097,6 +1121,8 @@ export interface RunBeforeSendArgs {
   openedCaseThisTurn?: boolean;
   /** Ver `GateContext.humanPromiseExtraTargets`. Ausente = só cargos genéricos. */
   humanPromiseExtraTargets?: readonly string[];
+  /** Ver `GateContext.horarioDaEquipe` (PC-002b, item 4). */
+  horarioDaEquipe?: HorarioDaEquipe | null;
   /**
    * Arma o `internalVocabularyGate`. Ausente (default) = gate no-op — ver a justificativa
    * do default em `GateContext.internalVocabularyEnforced`: um veto no caminho
@@ -1443,6 +1469,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       ...(args.humanPromiseExtraTargets !== undefined
         ? { humanPromiseExtraTargets: args.humanPromiseExtraTargets }
         : {}),
+      ...(args.horarioDaEquipe ? { horarioDaEquipe: args.horarioDaEquipe } : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       clinicalClaimEnforced: args.enforceClinicalClaim ?? false,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
