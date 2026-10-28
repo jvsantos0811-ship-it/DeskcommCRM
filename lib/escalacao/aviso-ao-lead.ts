@@ -265,6 +265,13 @@ export function textoDoAviso(
   quem: QuemPodeAssumir | null,
   leadId: string,
   idioma: string | null = null,
+  /**
+   * PC-002b (item 7, F1-p): a FRASE DA FILA da organização
+   * (`settings.frase_da_fila`). Presente, ela substitui o fecho genérico quando
+   * não há ninguém disponível agora ("não há atendente disponível… sua conversa
+   * entrou na fila"). Com alguém disponível, o fecho é o de sempre.
+   */
+  fraseDaFila: string | null = null,
 ): string {
   const textos = textosDoIdioma(idioma);
   const abertura = variante(leadId, textos.aberturas[motivo]);
@@ -276,6 +283,8 @@ export function textoDoAviso(
     return `${abertura} ${textos.fechoDoOptOut}`;
   }
 
+  const ninguemAgora = quem === null || quem.total === 0 || quem.disponiveis === 0;
+  if (ninguemAgora && fraseDaFila) return `${abertura} ${fraseDaFila}`;
   const fecho =
     quem === null || quem.total === 0
       ? variante(leadId, textos.fechos.sem_equipe)
@@ -284,4 +293,17 @@ export function textoDoAviso(
         : variante(leadId, textos.fechos.com_equipe);
 
   return `${abertura} ${fecho}`;
+}
+
+/**
+ * A frase da fila configurada pela organização (`settings.frase_da_fila`), ou
+ * `null` quando não há (vale o fecho padrão do idioma). PC-002b, item 7.
+ */
+export const FRASE_DA_FILA_MAX = 300;
+export function fraseDaFilaDaOrg(settings: unknown): string | null {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+  const v = (settings as Record<string, unknown>).frase_da_fila;
+  if (typeof v !== "string") return null;
+  const limpa = v.replace(/\s+/g, " ").trim().slice(0, FRASE_DA_FILA_MAX);
+  return limpa === "" ? null : limpa;
 }

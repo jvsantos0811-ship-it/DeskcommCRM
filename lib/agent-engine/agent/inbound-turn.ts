@@ -119,6 +119,7 @@ import {
 import {
   applyRequestHumanHandoff,
   buildHandoffSummary,
+  conversaNaFilaComIa,
   detectAmbiguousOptOut,
   detectHumanHandoffRequest,
   isLeadInHandoff,
@@ -245,6 +246,7 @@ import {
   type VetoDoTurno,
 } from '@/lib/messaging/frase-segura';
 import { registrarRecusaDaIa } from './recusas';
+import { horarioDaEquipeDaOrg, type HorarioDaEquipe } from '@/lib/escalacao/horario-da-equipe';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
   anotarUltimaInboundVista,
@@ -2008,6 +2010,12 @@ async function executarTurnoDoAgente(
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
   const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
+  // PC-002b (item 4): o horário da equipe da organização, lido UMA vez por
+  // turno. Falha de leitura = sem horário (a trava age como antes).
+  const horarioDaEquipe: HorarioDaEquipe | null = await pool
+    .query<{ settings: unknown }>('select settings from organizations where id = $1', [tenantId])
+    .then((r) => horarioDaEquipeDaOrg(r.rows[0]?.settings ?? null))
+    .catch(() => null);
 
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
@@ -3696,6 +3704,7 @@ async function executarTurnoDoAgente(
             // do CLIENTE, agora somado ao alvo genérico do `casePromiseGate` do lado do
             // que o MODELO promete. Ver `GateContext.humanPromiseExtraTargets`.
             humanPromiseExtraTargets: agentConfig?.handoffKeywords ?? [],
+            horarioDaEquipe,
             // A rede contra vazamento de vocabulário interno arma AQUI e só aqui: este é
             // o único corpo escrito pelo MODELO, e o único caminho em que o veto vira
             // erro instrutivo que ele pode consertar no turno seguinte. O `send_template`
@@ -4293,6 +4302,18 @@ async function executarTurnoDoAgente(
     request_human_handoff: tool({
       ...AGENT_TOOL_DEFS.request_human_handoff,
       execute: async (raw) => {
+        // PC-002b, item 7(b): a conversa já está na fila COM a IA (a equipe foi
+        // avisada e ninguém assumiu). Pedir de novo não abre outra passagem nem
+        // manda outro aviso — e o turno segue sendo da IA, que responde o lead.
+        if (await conversaNaFilaComIa(pool, { tenantId, leadId, conversationId: input.conversationId })) {
+          return {
+            ok: true,
+            status: 'ja_na_fila',
+            message:
+              'A equipe JÁ foi avisada desta conversa e ninguém assumiu ainda. Continue atendendo o lead ' +
+              'normalmente: responda o que der, sem prometer horário de contato, e não peça a passagem de novo.',
+          };
+        }
         passouParaAEquipe = true;
         // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
         // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a

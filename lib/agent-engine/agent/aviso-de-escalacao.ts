@@ -40,7 +40,7 @@ import type pg from 'pg';
 
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import { deriveLgpdFromContact } from '../guardrails/lgpd/legal-basis';
-import { textoDoAviso, type MotivoDoAviso } from '@/lib/escalacao/aviso-ao-lead';
+import { fraseDaFilaDaOrg, textoDoAviso, type MotivoDoAviso } from '@/lib/escalacao/aviso-ao-lead';
 // Dois `MotivoDoAviso` no repositório, e eles respondem perguntas DIFERENTES: o
 // de cima é "que frase o cliente lê"; este é "por que o cliente NÃO leu nada".
 // O apelido existe para que ninguém os confunda numa leitura rápida.
@@ -135,25 +135,28 @@ export async function avisarLeadDaEscalacao(
   // O aviso sai no idioma da ORGANIZAÇÃO (ver `textoDoAviso`). Leitura que
   // falha não impede o aviso: cai no português, como antes.
   let idioma: string | null = null;
+  // PC-002b (item 7): a frase da fila da organização, quando cadastrada.
+  let fraseDaFila: string | null = null;
   try {
-    const { rows } = await pool.query<{ locale: string | null }>(
-      'select locale from organizations where id = $1',
+    const { rows } = await pool.query<{ locale: string | null; settings: unknown }>(
+      'select locale, settings from organizations where id = $1',
       [ids.tenantId],
     );
     idioma = rows[0]?.locale ?? null;
+    fraseDaFila = fraseDaFilaDaOrg(rows[0]?.settings ?? null);
   } catch {
     idioma = null;
   }
   try {
     const { quem } = await expectativaDeAtendimento(pool, ids.tenantId, opts.now);
-    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma, fraseDaFila);
   } catch (err) {
     // `expectativaDeAtendimento` já tem rede própria; se ainda assim quebrar,
     // a frase conservadora (sem prazo) é a certa — nunca a ausência de frase.
     opts.log.warn('aviso de escalação: disponibilidade não lida, usando a frase conservadora', {
       error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
     });
-    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma, fraseDaFila);
   }
 
   try {
