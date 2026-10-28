@@ -18,6 +18,7 @@ import {
   STATUS_ENCERRADOS,
 } from "@/lib/inbox/comando-da-conversa";
 import { cn } from "@/lib/utils";
+import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -105,7 +106,8 @@ interface Props {
  */
 const COR_DO_COMANDO: Record<string, string> = {
   humano: "bg-blue-500",
-  automatico: "bg-purple-500",
+  // Verde que respira (PC-012): é a cor de "a IA está atendendo agora".
+  automatico: "bg-emerald-500 text-emerald-500 pulso-vivo",
   aguardando: "bg-amber-500",
   ninguem: "bg-muted-foreground/60",
   encerrada: "bg-muted-foreground/30",
@@ -339,7 +341,10 @@ export function ConversationListItem({
               className="object-cover"
             />
           ) : null}
-          <AvatarFallback className="bg-surface-elevated text-xs font-medium text-text-muted">
+          <AvatarFallback
+            className="text-xs font-semibold"
+            style={estiloDasIniciais(c?.id ?? conversation.id)}
+          >
             {initials(displayName, phoneFallback)}
           </AvatarFallback>
         </Avatar>
@@ -395,7 +400,10 @@ export function ConversationListItem({
             )}
           </span>
           <span
-            className="shrink-0 text-[11px] tabular-nums text-text-subtle"
+            className={cn(
+              "shrink-0 text-[11px] tabular-nums",
+              unread > 0 ? "font-semibold text-accent" : "text-text-subtle",
+            )}
             // O mesmo lugar da tela mostra duas coisas diferentes conforme a aba:
             // na Fila é "desde quando o cliente ESPERA" (a mensagem mais antiga sem
             // resposta — #990), nas outras é "há quanto tempo a conversa mexeu". O

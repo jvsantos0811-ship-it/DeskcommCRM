@@ -494,8 +494,12 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // número, mas vindo de `--duration-base`. A Lei de movimento fecha a
         // tabela de durações, e número solto é o que a faz apodrecer.
         "sticky top-0 z-30 flex h-dvh shrink-0 flex-col border-r bg-card transition-[width] duration-base",
+        // Marinho nos dois temas (PC-012): o atributo traz os papéis do tema
+        // escuro e `lateral-marinho` (globals.css) troca as superfícies.
+        "lateral-marinho text-foreground",
         collapsed ? "w-16" : "w-60",
       )}
+      data-theme="dark"
     >
       <SidebarContent collapsed={collapsed} />
     </aside>

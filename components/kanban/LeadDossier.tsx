@@ -20,7 +20,8 @@ import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
-import { OwnerBadge } from "./OwnerBadge";
+import { OwnerBadge, ownerInitials } from "./OwnerBadge";
+import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -139,7 +140,21 @@ export function LeadDossier({
         data-refetch-divergencias={timeline.seguranca.divergencias}
       >
         {/* ── topo: UMA linha — nome, etapa atual, responsável, valor, score ── */}
-        <div className="flex min-h-11 items-center gap-x-3 gap-y-1 border-b border-border py-1.5 pr-12 pl-4" data-testid="cabecalho-do-negocio">
+        {/* Marinho (PC-012): o cabeçalho do negócio é a faixa escura do card,
+            a mesma da barra lateral — `data-theme="dark"` traz os papéis de
+            texto e `lateral-marinho` (globals.css) as superfícies. */}
+        <div
+          className="lateral-marinho flex min-h-11 items-center gap-x-3 gap-y-1 border-b border-border bg-surface py-1.5 pr-12 pl-4 text-text"
+          data-testid="cabecalho-do-negocio"
+          data-theme="dark"
+        >
+          <span
+            aria-hidden
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            style={estiloDasIniciais(lead.contact_id ?? lead.id)}
+          >
+            {ownerInitials(lead.title)}
+          </span>
           <DialogTitle className="min-w-[5rem] shrink truncate text-base leading-6" title={lead.title}>
             {lead.title}
           </DialogTitle>

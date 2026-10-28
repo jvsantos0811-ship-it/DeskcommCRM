@@ -9,6 +9,8 @@ import { buildCardInput } from "@/lib/kanban/card-state";
 import { intervaloDaColuna } from "@/lib/kanban/selecao";
 import { formatSomaPorMoeda, formatValorDoNegocio, MOEDA_PADRAO, somaPorMoeda } from "@/lib/money";
 import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
+import { corDaTrilha } from "@/components/agenda/paleta";
+import { trilhaDoContato } from "@/components/ui/cor-do-contato";
 
 interface StageColumnProps {
   stage: Stage;
@@ -129,9 +131,11 @@ export function StageColumn({
     ancora.current = null;
     onSelectMany?.(idsVisiveis, !todosSelecionados);
   };
-  const accentStyle: CSSProperties | undefined = stage.color
-    ? { backgroundColor: stage.color }
-    : undefined;
+  // Toda etapa tem cor (PC-012): a que o escritório escolheu, ou uma das oito
+  // trilhas, fixa pelo id da etapa. Uma faixa colorida no alto da coluna é o que
+  // faz o quadro deixar de ser seis colunas cinza iguais.
+  const corDaEtapa = stage.color ?? corDaTrilha(trilhaDoContato(stage.id));
+  const accentStyle: CSSProperties = { backgroundColor: corDaEtapa };
 
   return (
     <div
@@ -158,7 +162,8 @@ export function StageColumn({
           opaco (`bg-background`) é o que impede os cards de aparecerem por baixo;
           por dentro, a mesma camada translúcida da coluna, para o tom não mudar. */}
       <div className="sticky top-0 z-10 rounded-t-lg bg-background" data-cabecalho-da-etapa>
-        <div className="bg-surface-muted/40 rounded-t-lg">
+        <div className="bg-surface-muted/40 overflow-hidden rounded-t-lg">
+          <div aria-hidden className="h-1" style={accentStyle} data-faixa-da-etapa />
           <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
             {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
             pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
@@ -194,7 +199,7 @@ export function StageColumn({
               )}
             />
             <span
-              className={cn("h-2 w-2 rounded-full", !stage.color && "bg-text-muted/40")}
+              className="h-2 w-2 rounded-full"
               style={accentStyle}
               aria-hidden
             />

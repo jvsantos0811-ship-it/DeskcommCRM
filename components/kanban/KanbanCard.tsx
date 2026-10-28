@@ -11,7 +11,8 @@ import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
-import { OwnerBadge } from "./OwnerBadge";
+import { OwnerBadge, ownerInitials } from "./OwnerBadge";
+import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { ContatoNoCard } from "./ContatoNoCard";
 import { TarefasNoCard } from "./TarefasNoCard";
 
@@ -138,9 +139,9 @@ export function KanbanCard({
           // Tags saem do card (Lei A): ficam a um hover, sem ocupar altura.
           title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
           className={cn(
-            "group relative overflow-hidden rounded-md border border-border bg-surface",
-            "py-2.5 pl-3 pr-3 shadow-xs transition-colors",
-            "hover:border-border-strong",
+            "group relative overflow-hidden rounded-lg border border-border bg-surface",
+            "py-2.5 pl-3 pr-3 shadow-sm transition-[box-shadow,border-color] duration-base",
+            "hover:border-border-strong hover:shadow-md",
             snapshot.isDragging && "rotate-1 shadow-md ring-1 ring-accent/40",
             isSelected && "ring-2 ring-accent",
           )}
@@ -218,6 +219,16 @@ export function KanbanCard({
                   acessibilidade; deixar só onKeyDown daria uma ação que existe
                   e NÃO É DESCOBERTA por leitor de tela. O título como button
                   atende mouse, teclado e leitor sem desfazer a decisão antiga. */}
+              {/* Iniciais coloridas (PC-012): a mesma cor do contato na lista
+                  de conversas e no card do negócio. Cabe na altura de 2 linhas
+                  do título, então o orçamento de altura do card não muda. */}
+              <span
+                aria-hidden
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                style={estiloDasIniciais(lead.contact_id ?? lead.id)}
+              >
+                {ownerInitials(card.title)}
+              </span>
               <h3 className="line-clamp-2 h-10 text-sm font-medium leading-5 text-text">
                 <button
                   type="button"
