@@ -1,6 +1,6 @@
 ---
 impacto: capacidade_nova
-secao: melhorado
+secao: alterado
 titulo: A IA lê todas as mensagens novas do cliente antes de responder, espera o cliente terminar de escrever e para no meio quando ele escreve de novo
 ---
 Quando o cliente manda várias mensagens seguidas ("Meu neto sofreu o acidente de moto" e, logo depois, "e ficou machucado"), o turno da IA agora recebe todas elas, em ordem, com hora e tipo (texto, áudio transcrito, imagem, documento), e é instruído a responder ao conjunto — antes recebia só uma e podia responder à metade da conversa.

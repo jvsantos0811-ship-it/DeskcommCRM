@@ -2882,8 +2882,9 @@ async function executarTurnoDoAgente(
   let mensagensRespondidas = 0;
   let ferramentasQueFalharam = 0;
   const reter = async (trechos: readonly string[]): Promise<void> => {
+    // Não liga `turnoDescartado` (a cerca do #1943 quer UMA atribuição, a da
+    // guarda de obsoleta): o corte é lido à parte, junto dele, pelo roteiro.
     respostaCortada = true;
-    turnoDescartado = true;
     bolhasRetidas.push(...trechos);
     runLog.info('resposta cortada no meio — o cliente escreveu de novo; o resto ficou retido', {
       job_id: job?.id ?? null,
@@ -3550,7 +3551,7 @@ async function executarTurnoDoAgente(
             return {
               ok: false,
               error: {
-                code: 'resposta_obsoleta',
+                code: 'resposta_cortada',
                 message:
                   'O cliente mandou mensagem nova enquanto você respondia; o que já saiu conta como dito, e ESTA parte NÃO foi enviada. ' +
                   'NÃO chame send_message de novo neste turno — encerre agora. O próximo turno lê a conversa inteira e responde a tudo de uma vez.',
@@ -5268,7 +5269,7 @@ async function executarTurnoDoAgente(
             // #1943: turno descartado como obsoleto → a pergunta do roteiro NÃO
             // sai (segue pendente para o turno seguinte). Também vigia o teto
             // de mensagens físicas do turno (F2-15b).
-            if (!perguntaDoRoteiroPodeSair({ turnoDescartado, seq, maxSendsPerTurn })) return false;
+            if (!perguntaDoRoteiroPodeSair({ turnoDescartado: turnoDescartado || respostaCortada, seq, maxSendsPerTurn })) return false;
             const chain = await runBeforeSend({
               pool,
               log: runLog,
