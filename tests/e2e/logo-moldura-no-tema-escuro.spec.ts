@@ -51,6 +51,7 @@
  * duas. As três são medidas aqui:
  *
  *   1. a barra lateral do app   (`components/shell/Sidebar.tsx`)   — casos 1,2,5,6
+ *      (desde o PC-012 a barra é marinho nos dois temas: a moldura aparece nos dois)
  *   2. a tela de entrada        (`app/(public)/layout.tsx`)        — caso 3
  *   3. a PRÉVIA da tela de marca(`components/branding/CampoDeLogo.tsx`) — caso 4
  *
@@ -428,9 +429,15 @@ test.describe("a moldura do logo no tema escuro", () => {
     expect(m.caixaDoPai.y).toBeLessThanOrEqual(m.caixaDoLogo.y);
   });
 
-  test("(2) tema CLARO + logo ENVIADO: NÃO há moldura — as classes são `dark:`", async ({
+  test("(2) tema CLARO + logo ENVIADO: a barra é marinho, então a moldura também aparece", async ({
     page,
   }) => {
+    // PC-012: a barra lateral é MARINHO nos dois temas (`data-theme="dark"` +
+    // `.lateral-marinho` no `<aside>`). O fundo por trás do logo é escuro também
+    // no tema claro, e a doença que o #659 trata — arte escura sumindo em fundo
+    // escuro — passa a existir aqui. A moldura é o remédio certo nos dois temas.
+    // A fronteira "claro sem moldura" continua valendo onde o fundo É claro: a
+    // tela de entrada (caso 3) e a caixa clara da prévia (caso 4).
     await loginComTotp(page, creds.users.dono!.email, secret());
     await page.goto("/app/inbox");
     await escolherTemaPelaTela(page, "light");
@@ -441,11 +448,11 @@ test.describe("a moldura do logo no tema escuro", () => {
     await page.screenshot({ path: evidencia("2-barra-claro.png") });
 
     expect(
-      fundoETransparente(m.fundo),
-      `no tema claro o logo ganhou fundo pintado (${m.fundo}) — as classes deveriam ser só \`dark:\``,
+      fundoEClaro(m.fundo),
+      `no tema claro a barra marinho mostrou o logo CRU (fundo=${m.fundo})`,
     ).toBe(true);
-    expect(m.padding, "no tema claro a moldura não pode ter folga").toEqual([0, 0, 0, 0]);
-    expect(m.sombra, "no tema claro a moldura não pode ter sombra").toBe("none");
+    expect(m.padding.every((p) => p > 0), `a moldura não tem folga: padding=${m.padding}`).toBe(true);
+    expect(m.sombra, "a moldura não tem sombra").not.toBe("none");
   });
 
   test("(3) a TELA DE ENTRADA repete as duas medidas, sem sessão nenhuma", async ({ browser }) => {
