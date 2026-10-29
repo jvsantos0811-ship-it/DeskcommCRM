@@ -46,6 +46,8 @@ export {
   Dot,
   // actions
   ArrowBendUpLeft,
+  // "Transferir" no menu "⋯" do cabeçalho da conversa (PC-011)
+  ArrowsLeftRight,
   // videochamada (#2440): ícone de câmera, não Video (que no Phosphor é a
   // janela de player) — junto do Phone do DialButton, a família é a mesma.
   VideoCamera,
@@ -151,6 +153,8 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // sair do modo foco das telas de conversa (PC-011)
+  ArrowsInSimple,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
 } from "@phosphor-icons/react/dist/ssr";

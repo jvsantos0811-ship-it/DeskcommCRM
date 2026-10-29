@@ -16856,6 +16856,22 @@ export const DICIONARIO: Traducoes = {
   "Só a conexão de WhatsApp pelo parceiro guarda o histórico antigo para importar.": { es: "Solo la conexión de WhatsApp por el socio guarda el historial antiguo para importar." },
   "Essa etapa não é do funil escolhido.": { es: "Esa etapa no es del embudo elegido." },
   "Já tem uma importação em andamento nesta conexão.": { es: "Ya hay una importación en curso en esta conexión." },
+  // PC-011 — telas de conversa compactas
+  "Sair do modo foco (Esc)": { es: "Salir del modo foco (Esc)" },
+  "Modo foco: só a conversa na tela": { es: "Modo foco: solo la conversación en pantalla" },
+  "Sair do modo foco": { es: "Salir del modo foco" },
+  "Modo foco": { es: "Modo foco" },
+  Devolver: { es: "Devolver" },
+  "Janela de resposta": { es: "Ventana de respuesta" },
+  "Mais detalhes": { es: "Más detalles" },
+  "Mostrar o aviso": { es: "Mostrar el aviso" },
+  "Recolher o aviso": { es: "Contraer el aviso" },
+  "Sugerir resposta (não envia nada)": { es: "Sugerir respuesta (no envía nada)" },
+  "Mudar etapa": { es: "Cambiar etapa" },
+  "Partes do negócio": { es: "Partes del negocio" },
+  "Contato e dados": { es: "Contacto y datos" },
+  "Tarefas e linha do tempo": { es: "Tareas y línea de tiempo" },
+  Mostrar: { es: "Mostrar" },
 };
 
 /**

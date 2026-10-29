@@ -153,10 +153,12 @@ test.describe("jornada WAHA — baseline do seam de canais", () => {
     await page.getByText(/Cliente Radar E2E/i).first().click();
     await expect(page.getByLabel("Mensagem")).toBeVisible({ timeout: 30_000 });
 
-    const lembrar = page.getByRole("button", { name: /Lembrar|Lembrete ativo/ });
+    // PC-011: o Lembrar mora no "⋯" do cabeçalho, como submenu.
+    await page.getByRole("button", { name: "Mais ações" }).click();
+    const lembrar = page.getByRole("menuitem", { name: /Lembrar|Lembrete ativo/ });
     await expect(lembrar).toBeVisible({ timeout: 30_000 });
     await lembrar.click();
-    const opcao = page.getByRole("menuitem").first();
+    const opcao = page.getByRole("menuitem", { name: /Em 1 hora|Cancelar lembrete/ });
     await expect(opcao).toBeVisible({ timeout: 15_000 });
     await opcao.click();
     await page.waitForTimeout(3_000);

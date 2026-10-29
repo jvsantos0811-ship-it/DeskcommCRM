@@ -1,0 +1,6 @@
+---
+impacto: nada_mudou
+secao: alterado
+titulo: Inbox e card do negócio mais compactos, com mais espaço para a conversa
+---
+As duas telas onde a equipe lê a conversa ficaram mais compactas, para a área de mensagens ganhar altura e largura no notebook. No Inbox, o cabeçalho virou uma linha só: nome, estado da conversa e quem está atendendo (pessoa ou automático) à vista; a janela de 24 horas e o canal aparecem num "+N" quando não cabem; o telefone virou um ícone. Assumir, Liberar, Devolver ou Pausar o automático e Fechar continuam à vista; Transferir, Lembrar, Arquivar, Marcar como pessoal e Ver contato passaram para o menu "⋯", com o mesmo efeito e as mesmas confirmações. O aviso de resposta bloqueada virou uma faixa de uma linha que pode ser recolhida, e reabre sozinha quando chega um aviso novo. No card do negócio, a janela ocupa quase a tela toda, o cabeçalho tem nome, etapa e responsável numa linha, a régua de etapas mostra números sem barra de rolagem (no celular e em funil comprido, a etapa atual e um seletor), e as colunas de contato e de tarefas recolhem, com a escolha guardada por pessoa. Nas duas telas, "Agendar mensagem" e "Sugerir resposta" viraram ícones na barra de escrever, e o botão "Modo foco" deixa só a conversa na tela (sai com o mesmo botão ou com Esc). Nenhuma regra, permissão, envio ou dado mudou.

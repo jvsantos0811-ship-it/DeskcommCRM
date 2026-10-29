@@ -87,7 +87,8 @@ function renderHeader(conv = conversation) {
 // A barra é quem segura os botões, não um índice fixo: desde o #1625 o
 // `children[1]` do header é a coluna que empilha a barra e o selo do automático.
 function barraDeAcoes() {
-  const barra = screen.getByText("Transferir").closest("button")?.parentElement;
+  // Âncora "Fechar": desde o PC-011 "Transferir" mora no "⋯" e só monta ao abrir.
+  const barra = screen.getByText("Fechar").closest("button")?.parentElement;
   expect(barra, "a barra de ações não renderizou").toBeTruthy();
   return barra as HTMLElement;
 }
@@ -123,19 +124,20 @@ describe("header do inbox — não trava a largura da tela", () => {
     expect(acoes.className).toContain("min-w-0");
   });
 
-  it("as ações continuam TODAS no header — reorganizar não é esconder", () => {
+  it("Assumir e Fechar à vista; o resto alcançável pelo ⋯ (PC-011)", () => {
     renderHeader();
-    // Se um dia alguém "resolver" o aperto colapsando ações num menu, este caso
-    // reprova. Esconder ação de quem atende é pior que uma segunda linha.
-    for (const rotulo of ["Assumir", "Transferir", "Fechar"]) {
-      expect(screen.getByText(rotulo), `a ação "${rotulo}" sumiu do header`).toBeTruthy();
+    // O PC-011 (decisão do dono, 28/10/2026) levou Transferir, Lembrar,
+    // Arquivar e Marcar como pessoal para o "⋯". Reorganizar continua não sendo
+    // esconder: a ação existe, num clique; o que este caso cobra é que as duas
+    // do dia a dia fiquem à vista e o menu esteja NA barra.
+    for (const rotulo of ["Assumir", "Fechar"]) {
+      expect(screen.getByRole("button", { name: rotulo }), `a ação "${rotulo}" sumiu do header`).toBeTruthy();
     }
+    const mais = screen.getByRole("button", { name: "Mais ações" });
+    expect(barraDeAcoes().contains(mais), "o ⋯ saiu da barra de ações").toBe(true);
   });
 
-  it("com o selo do automático, nenhuma ação some e o selo não divide linha com nome nem ações (#1625)", () => {
-    // O defeito do #1625: o selo morava na linha do nome, alargava a identidade
-    // e jogava a barra inteira para baixo. O conserto recusado escondia ações
-    // num menu "Mais ações"; o aceito tira o selo das duas linhas.
+  it("com o selo do automático, os gestos de quem manda ficam à vista e o selo fica na linha do nome (#1625, PC-011)", () => {
     renderHeader({
       ...conversation,
       assigned_to_user_id: "u-1",
@@ -149,14 +151,16 @@ describe("header do inbox — não trava a largura da tela", () => {
 
     const barra = barraDeAcoes();
     expect(barra.contains(selo), "o selo voltou para a linha das ações").toBe(false);
-    const linhaDoNome = screen.getByRole("heading", { name: "Fulana" }).parentElement as HTMLElement;
-    expect(linhaDoNome.contains(selo), "o selo voltou para a linha do nome").toBe(false);
+    // PC-011: o selo mora na linha da identidade, que TRUNCA — ele não alarga a
+    // barra nem empurra os botões para baixo (o defeito do #1625).
+    const identidade = screen.getByTestId("identidade-da-conversa");
+    expect(identidade.contains(selo)).toBe(true);
+    expect(identidade.className).toContain("overflow-hidden");
 
-    for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Lembrar", "Fechar", "Arquivar"]) {
+    for (const rotulo of ["Liberar", "Devolver ao automático", "Fechar", "Mais ações"]) {
       const botao = screen.getByRole("button", { name: rotulo });
       expect(barra.contains(botao), `a ação "${rotulo}" saiu da barra`).toBe(true);
     }
-    expect(screen.queryByRole("button", { name: "Mais ações" }), "ação de quem atende escondida num menu").toBeNull();
   });
 
   it("no celular a barra é UMA fileira que rola, não três ou quatro que comem a conversa", () => {
@@ -170,18 +174,11 @@ describe("header do inbox — não trava a largura da tela", () => {
     }
   });
 
-  it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {
+  it('"Ver contato" não duplica a porta do painel na barra — mora no ⋯ (PC-011)', () => {
     renderHeader();
-    // Ele NÃO sai do markup: some por CSS a partir de `xl`, exatamente a largura
-    // em que o painel lateral entra na tela com um "Ver contato" próprio. A
-    // distinção importa — remover do DOM tiraria a ação de quem usa 1024px, que
-    // é onde o painel não existe e esta é a única porta para o contato.
-    const link = screen.getByText("Ver contato").closest("a, button") as HTMLElement;
-    expect(link, "o link para o contato sumiu do markup").toBeTruthy();
-    const classes = `${link.className} ${link.parentElement?.className ?? ""}`;
-    expect(
-      classes,
-      "sem `xl:hidden`, a duplicata volta e o header ganha uma segunda linha em 1280px",
-    ).toContain("xl:hidden");
+    // O link continua existindo (no menu, que só monta ao abrir); na barra à
+    // vista não há mais uma segunda porta para o mesmo contato.
+    expect(screen.queryByText("Ver contato")).toBeNull();
+    expect(screen.getByRole("button", { name: "Mais ações" })).toBeTruthy();
   });
 });

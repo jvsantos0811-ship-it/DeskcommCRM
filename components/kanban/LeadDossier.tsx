@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -23,6 +24,11 @@ import { OwnerBadge } from "./OwnerBadge";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { BotaoModoFoco } from "@/components/inbox/BotaoModoFoco";
+import { useModoFoco } from "@/hooks/inbox/useModoFoco";
+import { useLateraisDoDossie } from "@/hooks/leads/useLateraisDoDossie";
+import { CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -93,45 +99,85 @@ export function LeadDossier({
   // Mover etapa é a mesma régua do arrasto: quem arrasta no quadro move aqui.
   const podeMover = !!onMoverParaEtapa && podeEditarTarefas;
 
+  // PC-011: colunas laterais recolhíveis (estado por usuário), abas no
+  // celular e modo foco. Nada disso muda o que cada coluna faz.
+  const laterais = useLateraisDoDossie(user.id);
+  const { modoFoco, alternarFoco, sairDoFoco } = useModoFoco(open);
+  const [abaNoCelular, setAbaNoCelular] = useState<AbaDoDossie>("conversa");
+  const aba: AbaDoDossie = modoFoco ? "conversa" : abaNoCelular;
+  const dadosRecolhidos = modoFoco || laterais.dadosRecolhidos;
+  const detalhesRecolhidos = modoFoco || laterais.detalhesRecolhidos;
+  const abasDoDossie: Array<{ id: AbaDoDossie; rotulo: string }> = [
+    { id: "conversa", rotulo: t("Conversa") },
+    { id: "dados", rotulo: t("Contato") },
+    { id: "detalhes", rotulo: t("Tarefas") },
+  ];
+  const tituloDaProbabilidade = score?.at
+    ? `${t("Probabilidade recalculada automaticamente")} · ${new Date(score.at).toLocaleString(tagDoIdioma)}`
+    : undefined;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 lg:h-[min(860px,calc(100dvh-4rem))]"
+        // PC-011: a janela ocupa quase a tela toda (margem de 0,5rem), em vez de
+        // parar em 1280×860 — no notebook de 1366×768 cada pixel a mais vai para
+        // a conversa. Escolhido no lugar de um botão "tela cheia": é só tamanho,
+        // sem estado novo, e a conversa já ganha a largura sem um clique a mais.
+        className="flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[1800px] flex-col gap-0 overflow-hidden p-0"
         data-popup-do-negocio
+        data-modo-foco={modoFoco ? "true" : "false"}
+        // O Esc do modo foco sai do foco, e NÃO fecha o card.
+        onEscapeKeyDown={(evento) => {
+          if (modoFoco) {
+            evento.preventDefault();
+            sairDoFoco();
+          }
+        }}
         // Observável pelo mesmo motivo do board: "a assinatura morreu" e "nada
         // aconteceu" têm a mesma aparência, que é silêncio.
         data-realtime-status={timeline.realtimeStatus.toLowerCase()}
         data-refetch-divergencias={timeline.seguranca.divergencias}
       >
-        {/* ── topo: título, valor, dono, score ── */}
-        <div className="flex flex-col gap-2 border-b border-border px-5 pt-4 pb-3 pr-14">
-          <DialogTitle className="text-base leading-6">{lead.title}</DialogTitle>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-            <span className="font-medium tabular-nums text-text">
-              {formatValor(lead.value_cents, lead.currency)}
-            </span>
-            <span className="text-text-muted">{stageName}</span>
+        {/* ── topo: UMA linha — nome, etapa atual, responsável, valor, score ── */}
+        <div className="flex min-h-11 items-center gap-x-3 gap-y-1 border-b border-border py-1.5 pr-12 pl-4" data-testid="cabecalho-do-negocio">
+          <DialogTitle className="min-w-[5rem] shrink truncate text-base leading-6" title={lead.title}>
+            {lead.title}
+          </DialogTitle>
+          <span
+            className="min-w-0 max-w-[12rem] shrink-0 truncate rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-text"
+            title={`${t("Etapa atual")}: ${stageName}`}
+            data-testid="etapa-atual-do-negocio"
+          >
+            {stageName}
+          </span>
+          <div className="min-w-0 shrink-0 text-xs">
             <OwnerBadge
+              compacto
               ownerKind={owner.kind}
               ownerName={owner.name}
               agentVersion={owner.agentVersion}
             />
-            {score && (
+          </div>
+          <span className="hidden shrink-0 text-xs font-medium tabular-nums text-text sm:inline">
+            {formatValor(lead.value_cents, lead.currency)}
+          </span>
+          {score && (
+            <div className="hidden min-w-0 shrink text-xs md:block" title={tituloDaProbabilidade}>
               <ScoreSlot
                 probability={score.probability}
                 band={score.band}
                 reason={score.reason}
                 factors={score.factors.slice(0, 3)}
               />
-            )}
-            {score?.at && (
-              <span className="text-[11px] text-text-muted">
-                {t("Probabilidade recalculada automaticamente")} ·{" "}
-                {new Date(score.at).toLocaleString(tagDoIdioma)}
-              </span>
-            )}
-          </div>
-          {etapas && etapas.length > 0 && (
+            </div>
+          )}
+          <span className="flex-1" />
+          {lead.conversa && (
+            <BotaoModoFoco ligado={modoFoco} onAlternar={alternarFoco} className="shrink-0" />
+          )}
+        </div>
+        {etapas && etapas.length > 0 && !modoFoco && (
+          <div className="border-b border-border px-4 py-1.5">
             <EtapasDoNegocio
               etapas={etapas}
               etapaAtualId={lead.stage_id}
@@ -139,14 +185,38 @@ export function LeadDossier({
               movendo={movendo}
               onMover={(id) => onMoverParaEtapa?.(id)}
             />
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* ── corpo: três colunas no desktop, empilhadas no celular ── */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        {/* ── no celular: uma coluna por vez, por abas ── */}
+        {!modoFoco && (
+          <div role="tablist" aria-label={t("Partes do negócio")} className="flex border-b border-border lg:hidden">
+            {abasDoDossie.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="tab"
+                aria-selected={aba === a.id}
+                onClick={() => setAbaNoCelular(a.id)}
+                className={cn(
+                  "h-9 flex-1 border-b-2 text-xs font-medium",
+                  aba === a.id ? "border-primary text-text" : "border-transparent text-text-muted",
+                )}
+              >
+                {a.rotulo}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── corpo: três colunas no desktop; abas no celular ── */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
           {/* conversa — primeiro no DOM para vir primeiro no celular */}
           <section
-            className="flex h-[70dvh] min-h-0 flex-col border-b border-border lg:order-2 lg:h-auto lg:flex-1 lg:border-b-0 lg:border-x"
+            className={cn(
+              "min-h-0 flex-1 flex-col lg:order-2 lg:flex lg:border-x lg:border-border",
+              aba === "conversa" ? "flex" : "hidden",
+            )}
             aria-label={t("Conversa")}
           >
             {lead.conversa ? (
@@ -168,70 +238,165 @@ export function LeadDossier({
           </section>
 
           {/* dados — contato e campos */}
-          <aside className="flex flex-col gap-0 px-5 lg:order-1 lg:w-80 lg:shrink-0 lg:overflow-y-auto">
-            <section className="border-b border-border py-3">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
-                {t("Contato")}
-              </h3>
-              <ContatoDoNegocio contactId={lead.contact_id} pipelineId={pipelineId} leadId={lead.id} />
-            </section>
-            <section className="py-3">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
-                {t("Dados do negócio")}
-              </h3>
-              <LeadFieldsForm lead={lead} pipelineId={pipelineId} fieldDefs={fieldDefs} />
-            </section>
-          </aside>
+          <ColunaLateral
+            lado="esquerda"
+            rotulo={t("Contato e dados")}
+            recolhida={dadosRecolhidos}
+            podeAlternar={!modoFoco}
+            onAlternar={laterais.alternarDados}
+            visivelNoCelular={aba === "dados"}
+            className="lg:order-1 lg:w-64 xl:w-72"
+            testid="coluna-dados-do-negocio"
+          >
+            <div className="px-4">
+              <section className="border-b border-border py-3">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+                  {t("Contato")}
+                </h3>
+                <ContatoDoNegocio contactId={lead.contact_id} pipelineId={pipelineId} leadId={lead.id} />
+              </section>
+              <section className="py-3">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+                  {t("Dados do negócio")}
+                </h3>
+                <LeadFieldsForm lead={lead} pipelineId={pipelineId} fieldDefs={fieldDefs} />
+              </section>
+            </div>
+          </ColunaLateral>
 
           {/* o que acontece — tarefas, linha do tempo, propostas, tudo à vista */}
-          <aside
-            className="flex min-h-0 flex-col px-4 lg:order-3 lg:w-96 lg:shrink-0 lg:overflow-y-auto"
-            aria-label={t("Detalhes do negócio")}
+          <ColunaLateral
+            lado="direita"
+            rotulo={t("Tarefas e linha do tempo")}
+            recolhida={detalhesRecolhidos}
+            podeAlternar={!modoFoco}
+            onAlternar={laterais.alternarDetalhes}
+            visivelNoCelular={aba === "detalhes"}
+            className="lg:order-3 lg:w-72 xl:w-80"
+            ariaLabel={t("Detalhes do negócio")}
+            testid="coluna-detalhes-do-negocio"
           >
-            {/* As tarefas ANTES da linha do tempo: a timeline conta o que já
-                aconteceu, a tarefa é o que ainda falta fazer — e quem abre o card
-                para agir procura o próximo passo primeiro. */}
-            <TarefasDoNegocio
-              leadId={lead.id}
-              contactId={lead.contact_id}
-              podeEditar={podeEditarTarefas}
-              aberto={open}
-            />
-            {/* Contrato esperando assinatura também é próximo passo: logo depois
-                das tarefas, e não debaixo da linha do tempo inteira. Mesma régua
-                de quem pode agir (`agent`+, "qualquer atendente"). */}
-            <ContratosDoNegocio leadId={lead.id} podeEditar={podeEditarTarefas} aberto={open} />
-            {/* PC-003: o ganho por assinatura — só gerente (a rota confere). */}
-            <AssinaturaConfirmada
-              leadId={lead.id}
-              pipelineId={pipelineId}
-              status={lead.status}
-              tags={lead.tags ?? []}
-              podeConfirmar={podeCriarProposta && !user.support}
-            />
-            {/* A linha do tempo fica À VISTA, sem aba: é ela que responde "de onde
-                veio este card?" (entrou no funil, primeira mensagem, troca de
-                funil). Escondida numa aba, o pop-up abriria mudo justamente para
-                quem desconfia de um card que apareceu sozinho. */}
-            <section className="flex-1 py-3">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
-                {t("Linha do tempo")}
-              </h3>
-              <LeadTimeline
-                itens={timeline.itens}
-                chegouAoVivo={timeline.chegouAoVivo}
-                isLoading={timeline.isLoading}
-                isError={timeline.isError}
+            <div className="flex min-h-full flex-col px-4">
+              {/* As tarefas ANTES da linha do tempo: a timeline conta o que já
+                  aconteceu, a tarefa é o que ainda falta fazer — e quem abre o card
+                  para agir procura o próximo passo primeiro. */}
+              <TarefasDoNegocio
+                leadId={lead.id}
+                contactId={lead.contact_id}
+                podeEditar={podeEditarTarefas}
+                aberto={open}
               />
-            </section>
-            <PropostasDoNegocio
-              leadId={lead.id}
-              pipelineId={pipelineId}
-              podeCriar={podeCriarProposta}
-            />
-          </aside>
+              {/* Contrato esperando assinatura também é próximo passo: logo depois
+                  das tarefas, e não debaixo da linha do tempo inteira. Mesma régua
+                  de quem pode agir (`agent`+, "qualquer atendente"). */}
+              <ContratosDoNegocio leadId={lead.id} podeEditar={podeEditarTarefas} aberto={open} />
+              {/* PC-003: o ganho por assinatura — só gerente (a rota confere). */}
+              <AssinaturaConfirmada
+                leadId={lead.id}
+                pipelineId={pipelineId}
+                status={lead.status}
+                tags={lead.tags ?? []}
+                podeConfirmar={podeCriarProposta && !user.support}
+              />
+              {/* A linha do tempo fica À VISTA, sem aba: é ela que responde "de onde
+                  veio este card?" (entrou no funil, primeira mensagem, troca de
+                  funil). */}
+              <section className="flex-1 py-3">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+                  {t("Linha do tempo")}
+                </h3>
+                <LeadTimeline
+                  itens={timeline.itens}
+                  chegouAoVivo={timeline.chegouAoVivo}
+                  isLoading={timeline.isLoading}
+                  isError={timeline.isError}
+                />
+              </section>
+              <PropostasDoNegocio
+                leadId={lead.id}
+                pipelineId={pipelineId}
+                podeCriar={podeCriarProposta}
+              />
+            </div>
+          </ColunaLateral>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type AbaDoDossie = "conversa" | "dados" | "detalhes";
+
+/**
+ * Uma coluna lateral do card (PC-011). No desktop ela recolhe numa faixa fina
+ * com o botão de abrir, e a conversa fica com a largura; o conteúdo continua
+ * MONTADO quando recolhida, para nenhum campo em edição perder o que se
+ * digitou. No celular ela é uma aba.
+ */
+function ColunaLateral({
+  lado,
+  rotulo,
+  recolhida,
+  podeAlternar,
+  onAlternar,
+  visivelNoCelular,
+  className,
+  ariaLabel,
+  testid,
+  children,
+}: {
+  lado: "esquerda" | "direita";
+  rotulo: string;
+  recolhida: boolean;
+  podeAlternar: boolean;
+  onAlternar: () => void;
+  visivelNoCelular: boolean;
+  className?: string;
+  ariaLabel?: string;
+  testid: string;
+  children: ReactNode;
+}) {
+  const t = useT();
+  const IconeAbrir = lado === "esquerda" ? CaretDoubleRight : CaretDoubleLeft;
+  const IconeFechar = lado === "esquerda" ? CaretDoubleLeft : CaretDoubleRight;
+  return (
+    <aside
+      aria-label={ariaLabel ?? rotulo}
+      data-testid={testid}
+      data-recolhida={recolhida ? "true" : "false"}
+      className={cn(
+        "min-h-0 flex-1 flex-col overflow-y-auto lg:flex lg:flex-none lg:shrink-0",
+        visivelNoCelular ? "flex" : "hidden",
+        recolhida ? "lg:w-9 lg:overflow-hidden" : className,
+      )}
+    >
+      {podeAlternar && (
+        <div
+          className={cn(
+            "hidden shrink-0 items-center lg:flex",
+            recolhida ? "h-full flex-col gap-2 pt-1.5" : "h-8 px-1 pt-1",
+            !recolhida && lado === "esquerda" && "justify-end",
+            !recolhida && lado === "direita" && "justify-start",
+          )}
+        >
+          <button
+            type="button"
+            onClick={onAlternar}
+            aria-expanded={!recolhida}
+            aria-label={recolhida ? `${t("Mostrar")}: ${rotulo}` : `${t("Recolher")}: ${rotulo}`}
+            title={recolhida ? `${t("Mostrar")}: ${rotulo}` : `${t("Recolher")}: ${rotulo}`}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-muted hover:text-text"
+          >
+            {recolhida ? <IconeAbrir size={14} aria-hidden /> : <IconeFechar size={14} aria-hidden />}
+          </button>
+          {recolhida && (
+            <span className="text-[11px] font-medium text-text-muted [writing-mode:vertical-rl]" aria-hidden>
+              {rotulo}
+            </span>
+          )}
+        </div>
+      )}
+      <div className={cn("min-h-0", recolhida && "lg:hidden")}>{children}</div>
+    </aside>
   );
 }

@@ -101,13 +101,13 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-chat-do-negocio>
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1">
         <span className="truncate text-sm font-medium text-text">
           {rotuloParaAEquipe(c.contacts, t)}
         </span>
         {linkDoInbox}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden" data-testid="area-de-mensagens">
         <ChatThread
           conversationId={c.id}
           provider={provider}
@@ -137,6 +137,7 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
         respondendo={respondendo}
         onCancelarResposta={() => setRespondendo(null)}
         currentContactId={c.contact_id}
+        podeAgendar={!bloqueio && c.status !== "closed"}
       />
     </div>
   );
