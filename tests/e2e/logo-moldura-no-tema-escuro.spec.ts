@@ -631,7 +631,9 @@ test.describe("a moldura do logo no tema escuro", () => {
     for (const tema of ["dark", "light"] as const) {
       await escolherTemaPelaTela(page, tema);
       const logo = page.locator("aside img:visible").first();
-      await expect(logo).toHaveAttribute("src", (tema === "dark" ? urlEscura : urlClara)!);
+      // PC-012: a barra é marinho nos dois temas, então ela mostra SEMPRE a arte
+      // feita para fundo escuro. Quem troca de arte com o tema é a fachada, abaixo.
+      await expect(logo).toHaveAttribute("src", urlEscura!);
       expect(fundoETransparente((await medirMoldura(logo)).fundo)).toBe(true);
       await page.screenshot({ path: evidencia(`7-barra-${tema}.png`) });
       const contexto = await browser.newContext();
