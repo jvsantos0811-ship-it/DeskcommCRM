@@ -32,19 +32,19 @@
 
 :root {
   /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  --color-bg: #f4f6f9;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #eef1f5;
+  --color-overlay: rgba(14, 34, 56, 0.45);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #13233a;
+  --color-text-muted: #4f5b6c;
+  --color-text-subtle: #6b7686;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #dde3eb;
+  --color-border-strong: #c8d0dc;
 
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
@@ -263,15 +263,15 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
+  --color-bg: #f4f6f9;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-surface-elevated: #eef1f5;
+  --color-overlay: rgba(14, 34, 56, 0.45);
+  --color-text: #13233a;
+  --color-text-muted: #4f5b6c;
+  --color-text-subtle: #6b7686;
+  --color-border: #dde3eb;
+  --color-border-strong: #c8d0dc;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -1502,4 +1502,41 @@
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Barra lateral marinho (visual de advocacia, PC-012).
+
+   A barra vive sob `data-theme="dark"` (os papéis de texto, borda e accent do
+   tema escuro, que já passam na régua) e esta classe só troca as SUPERFÍCIES
+   e os neutros de texto por um azul-marinho. Fica no MESMO elemento do
+   atributo, depois do bloco escuro: os apelidos (`--card`, `--muted`…) que o
+   bloco escuro redeclara se resolvem com estes valores, e o `@theme inline`
+   entrega aos utilitários o que vale naquele ponto da árvore.
+
+   A accent NÃO entra aqui: ela é da marca (`<style id="marca-instalacao">`).
+   Contrastes medidos (WCAG): texto #f1f5f9 sobre #0e2238 = 14,7:1; muted
+   #a9b8ca = 8,0:1; subtle #8fa3bc = 6,2:1 (5,2:1 sobre o elevado #16304d).
+   ───────────────────────────────────────────────────────────────────────── */
+.lateral-marinho {
+  --color-bg: #0e2238;
+  --color-surface: #0e2238;
+  --color-surface-elevated: #16304d;
+  --color-text: #f1f5f9;
+  --color-text-muted: #a9b8ca;
+  --color-text-subtle: #8fa3bc;
+  --color-border: #22405f;
+  --color-border-strong: #2e5072;
+}
+
+/* A bolinha de "quem manda" respira quando o automático está atendendo.
+   Quem pediu menos movimento recebe a bolinha parada pela regra global de
+   `prefers-reduced-motion` acima (duração 0,01ms, uma volta). */
+@keyframes pulso-vivo {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px color-mix(in oklab, currentColor 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 0%, transparent); }
+}
+.pulso-vivo {
+  animation: pulso-vivo 1.8s var(--ease-in-out) infinite;
 }

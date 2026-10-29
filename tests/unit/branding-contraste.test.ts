@@ -119,9 +119,10 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     const razao = (papel: string, superficie: string) =>
       pares.find((p) => p.papel === papel && p.superficie === superficie)?.razao ?? 0;
 
-    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.51, 2);
-    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(3.79, 2);
-    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.6, 2);
+    // Fundo frio do visual de advocacia (#f4f6f9): 5,51 → 5,36; 3,79 → 3,69; 3,60 → 3,53.
+    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.36, 2);
+    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(3.69, 2);
+    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.53, 2);
   });
 
   it("a Sage inteira, como está no CSS, cabe nos pisos", () => {

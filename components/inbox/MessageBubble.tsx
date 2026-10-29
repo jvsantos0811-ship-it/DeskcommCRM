@@ -247,7 +247,8 @@ export function MessageBubble({
                 temMenu && "pr-8",
                 isOutbound
                   ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "rounded-bl-sm bg-muted text-foreground",
+                  // Recebida: branca sobre o fundo da conversa (PC-012).
+                  : "rounded-bl-sm bg-surface text-foreground ring-1 ring-border/70",
               ),
           isFailed && "border border-destructive",
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
