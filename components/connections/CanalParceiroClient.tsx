@@ -11,6 +11,7 @@ import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ImportarHistorico } from "./ImportarHistorico";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { RenomearConexao } from "./RenomearConexao";
 
@@ -212,6 +213,8 @@ export function CanalParceiroClient() {
           </div>
         </div>
       </Card>
+
+      {conectado && estado?.channel_session_id && <ImportarHistorico channelId={estado.channel_session_id} />}
 
       {/* Só depois de conectar: antes disso não há URL nem segredo a mostrar, e
           um passo 2 vazio faz parecer que falta algo que ainda não podia existir. */}
