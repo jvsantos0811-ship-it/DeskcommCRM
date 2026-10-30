@@ -52,6 +52,20 @@ interface AuditMcpToolCallInput {
    * veio por `/api/mcp/agencia*` (migration 9014). Ausente = rota de sempre.
    */
   portaDaAgencia?: "leitura" | "admin";
+  /**
+   * Foto do alvo ANTES e DEPOIS de uma escrita pela porta Admin da agência
+   * (só metadados — ver `lib/mcp/agencia/porta-admin.ts`). Foto grande demais
+   * vira um aviso de tamanho, para a linha de auditoria não pesar.
+   */
+  antesEDepois?: { antes: unknown; depois: unknown };
+}
+
+const TETO_DA_FOTO = 20_000;
+
+function fotoParaAuditoria(foto: unknown): unknown {
+  if (foto === undefined) return null;
+  const texto = JSON.stringify(foto) ?? "null";
+  return texto.length > TETO_DA_FOTO ? { truncado: true, tamanho: texto.length } : foto;
 }
 
 const ARGS_REDACT_KEYS = new Set([
@@ -90,6 +104,7 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
     motivo,
     termo,
     portaDaAgencia,
+    antesEDepois,
   } = input;
 
   const metadata: Record<string, unknown> = {
@@ -115,6 +130,10 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   // de servidor MCP externo em turno de atendimento, #2147).
   if (ctx.contatoDoTurno) metadata.contact_id = ctx.contatoDoTurno;
   if (portaDaAgencia) metadata.porta_da_agencia = portaDaAgencia;
+  if (antesEDepois) {
+    metadata.antes = fotoParaAuditoria(antesEDepois.antes);
+    metadata.depois = fotoParaAuditoria(antesEDepois.depois);
+  }
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }

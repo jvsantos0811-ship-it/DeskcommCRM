@@ -2,8 +2,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Chaves da agência (migration 9014) — só o dono da instalação.
  *
- * GET  /api/v1/admin/chaves-da-agencia — as chaves (vivas e revogadas) e as
- *      organizações onde uma chave pode ficar guardada.
+ * GET  /api/v1/admin/chaves-da-agencia — as chaves (vivas e revogadas), as
+ *      últimas alterações pela porta Admin e as organizações.
  * POST /api/v1/admin/chaves-da-agencia — cria a chave de uma porta. O texto da
  *      chave volta UMA vez; depois só o prefixo.
  */
@@ -20,7 +20,12 @@ import {
   requirePlatformAdminEscrita,
   type PlatformAdminContext,
 } from "@/lib/auth/requirePlatformAdmin";
-import { ChaveDaAgenciaErro, criarChaveDaAgencia, listarChavesDaAgencia } from "@/lib/mcp/agencia/chaves";
+import {
+  ChaveDaAgenciaErro,
+  criarChaveDaAgencia,
+  listarAlteracoesDaPortaAdmin,
+  listarChavesDaAgencia,
+} from "@/lib/mcp/agencia/chaves";
 import { normalizarListaDeIps } from "@/lib/mcp/agencia/ip-permitido";
 import { IPS_DE_SAIDA_DA_ANTHROPIC, PORTAS_DA_AGENCIA } from "@/lib/mcp/agencia/portas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,8 +46,9 @@ export async function GET(_req: NextRequest) {
 
   const admin = createAdminClient();
   try {
-    const [chaves, orgs] = await Promise.all([
+    const [chaves, alteracoes, orgs] = await Promise.all([
       listarChavesDaAgencia(admin),
+      listarAlteracoesDaPortaAdmin(admin),
       admin
         .from("organizations")
         .select("id, display_name")
@@ -53,6 +59,7 @@ export async function GET(_req: NextRequest) {
     return ok(
       {
         chaves,
+        alteracoes,
         organizacoes: (orgs.data ?? []).map((o) => ({ id: o.id as string, nome: o.display_name as string })),
         portas: Object.values(PORTAS_DA_AGENCIA).map((p) => ({ porta: p.porta, nome: p.nome, caminho: p.caminho })),
         ips_padrao: IPS_DE_SAIDA_DA_ANTHROPIC,

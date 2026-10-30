@@ -11,6 +11,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { ESCRITAS_DA_PORTA_ADMIN } from "./porta-admin";
 import { PORTAS_DA_AGENCIA, type PortaDaAgencia } from "./portas";
 
 export const COLUNAS_DA_CHAVE =
@@ -148,4 +149,39 @@ export async function revogarChaveDaAgencia(
   const revogada = paraTela(data as Record<string, unknown>);
   if (!revogada) throw new ChaveDaAgenciaErro("banco", "Revoked row lost the port scope.");
   return { chave: revogada, jaEstavaRevogada: false };
+}
+
+export interface AlteracaoPelaPortaAdmin {
+  quando: string;
+  organization_id: string | null;
+  ferramenta: string;
+  sucesso: boolean;
+  request_id: string | null;
+}
+
+/**
+ * As últimas alterações feitas pela porta Admin, lidas da auditoria: é o aviso
+ * no CRM que não depende de e-mail (PM das duas portas, item 4.2). Só o que
+ * foi feito, onde e quando — o antes e depois fica na tela de Audit.
+ */
+export async function listarAlteracoesDaPortaAdmin(db: SupabaseClient, limite = 30): Promise<AlteracaoPelaPortaAdmin[]> {
+  const { data, error } = await db
+    .from("api_audit_log")
+    .select("created_at, organization_id, request_id, metadata")
+    .eq("action", "mcp.tool_called")
+    .eq("metadata->>porta_da_agencia", "admin")
+    .in("metadata->>tool_name", Object.keys(ESCRITAS_DA_PORTA_ADMIN))
+    .order("created_at", { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((l) => {
+    const m = (l.metadata ?? {}) as Record<string, unknown>;
+    return {
+      quando: l.created_at as string,
+      organization_id: (l.organization_id as string | null) ?? null,
+      ferramenta: String(m.tool_name ?? ""),
+      sucesso: m.success === true,
+      request_id: (l.request_id as string | null) ?? null,
+    };
+  });
 }

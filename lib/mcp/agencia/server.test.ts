@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { allTools } from "../tools";
+import { ESCRITAS_DA_PORTA_ADMIN, LEITURAS_DA_PORTA_ADMIN, NUNCA_NA_PORTA_ADMIN } from "./porta-admin";
 import { ferramentasDaPorta } from "./server";
 
 /**
@@ -53,8 +54,42 @@ describe("ferramentasDaPorta('leitura')", () => {
   });
 });
 
-describe("ferramentasDaPorta('admin')", () => {
-  it("vazia até a entrega da porta Admin", () => {
-    expect(ferramentasDaPorta("admin")).toEqual([]);
+describe("ferramentasDaPorta('admin') — a fronteira da porta Admin", () => {
+  const admin = ferramentasDaPorta("admin");
+  const nomes = new Set(admin.map((t) => t.name));
+
+  it("é exatamente a lista fechada de porta-admin.ts (nada entra por omissão)", () => {
+    const declaradas = [...Object.keys(LEITURAS_DA_PORTA_ADMIN), ...Object.keys(ESCRITAS_DA_PORTA_ADMIN)].sort();
+    expect([...nomes].sort()).toEqual(declaradas);
+  });
+
+  it("toda ferramenta citada na lista existe no CRM, com a categoria certa", () => {
+    const porNome = new Map(allTools.map((t) => [t.name, t]));
+    for (const nome of Object.keys(LEITURAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("read");
+    for (const nome of Object.keys(ESCRITAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("write");
+  });
+
+  it("nunca: enviar, iniciar conversa, rascunho, histórico, conversa, contato, caso", () => {
+    for (const nome of NUNCA_NA_PORTA_ADMIN) expect(nomes.has(nome), nome).toBe(false);
+    for (const nome of [
+      "crm_request_human_handoff",
+      "crm_resume_ai_attendance",
+      "crm_schedule_followup",
+      "crm_enroll_followup_flow",
+      "crm_propose_reactivation",
+      "crm_book_appointment",
+      "crm_list_followups",
+      "crm_list_automation_runs",
+      "crm_list_webhook_source_events",
+      "crm_list_improvement_proposals",
+      "crm_render_message_template",
+    ]) {
+      expect(nomes.has(nome), nome).toBe(false);
+    }
+  });
+
+  it("o papel da porta alcança todas as ferramentas dela", () => {
+    const rank = { viewer: 1, agent: 2, ai_operator: 3, manager: 4, admin: 5 } as const;
+    for (const t of admin) expect(rank[t.requiresRole] <= rank.manager, t.name).toBe(true);
   });
 });
