@@ -18,11 +18,23 @@ import { arquivosDeCodigo, caminhoRelativo } from "./helpers/varrer-codigo";
  *  3. o `/api/mcp` a passa ao validar o token, e a ferramenta de privacidade a
  *     declara (decisão do dono, 30/09: a privacidade do MCP fica liberada para a
  *     empresa suspensa). Quem recusa as DEMAIS ferramentas é `lib/mcp/server.ts`,
- *     provado em `tests/unit/mcp-org-suspensa-so-a-lgpd.test.ts`.
+ *     provado em `tests/unit/mcp-org-suspensa-so-a-lgpd.test.ts`;
+ *  4. as portas da agência (migration 9014) validam a chave com a chave ligada:
+ *     a chave mora numa organização e alcança TODAS, então a suspensão de onde
+ *     ela mora não diz nada sobre as outras. A suspensão vale por organização
+ *     PEDIDA, a cada chamada, em `lib/mcp/agencia/server.ts` (só a privacidade
+ *     responde para a suspensa, igual ao `/api/mcp`).
  */
 const MCP_ROTA = "app/api/mcp/route.ts";
 const MCP_PRIVACIDADE = "lib/mcp/tools/privacidade.ts";
-const PREFIXOS_PERMITIDOS = ["app/api/v1/lgpd/", "app/api/v1/cobranca/", MCP_ROTA, MCP_PRIVACIDADE] as const;
+const MCP_AGENCIA = "lib/mcp/agencia/auth.ts";
+const PREFIXOS_PERMITIDOS = [
+  "app/api/v1/lgpd/",
+  "app/api/v1/cobranca/",
+  MCP_ROTA,
+  MCP_PRIVACIDADE,
+  MCP_AGENCIA,
+] as const;
 const DEFINICAO = "lib/auth/require-role.ts";
 
 function arvore(fonte: string, arquivo: string): ts.SourceFile {

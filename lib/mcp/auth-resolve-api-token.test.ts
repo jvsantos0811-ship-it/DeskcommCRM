@@ -433,3 +433,22 @@ describe("validateBearerToken — a tradução para MCP não mudou", () => {
     ).not.toBeInstanceOf(McpAuthError);
   });
 });
+
+describe("resolveApiToken — a chave da AGÊNCIA (migration 9014) só abre a porta dela", () => {
+  it("fora das portas da agência, a chave `agencia:*` é desconhecida e não registra uso", async () => {
+    const reg = armar(achou(linhaViva({ scopes: ["agencia:leitura"] })));
+    expect(await reasonDe(PLAINTEXT)).toBe("not_found");
+    expect(reg.updates).toEqual([]);
+  });
+
+  it("com `aceitaChaveDaAgencia` (só as rotas /api/mcp/agencia*) ela resolve", async () => {
+    armar(achou(linhaViva({ scopes: ["agencia:leitura"] })));
+    const r = await resolveApiToken(PLAINTEXT, { aceitaChaveDaAgencia: true });
+    expect(r.scopes).toEqual(["agencia:leitura"]);
+  });
+
+  it("a chave comum segue igual com ou sem a opção", async () => {
+    armar(achou(linhaViva()));
+    expect((await resolveApiToken(PLAINTEXT)).scopes).toEqual(["mcp:read", "mcp:write"]);
+  });
+});

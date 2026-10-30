@@ -13,6 +13,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { ehEscopoDaAgencia } from "@/lib/mcp/agencia/portas";
 import { createApiTokenSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -59,6 +60,18 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     throw err;
+  }
+
+  // Chave da agência (alcança todas as organizações) nasce só em Administração
+  // da plataforma. O banco recusa de qualquer jeito (migration 9014); aqui a
+  // recusa ganha uma frase que a pessoa entende, em vez de um 500.
+  if (input.scopes.some(ehEscopoDaAgencia)) {
+    return fail(
+      "invalid_request",
+      t("Chave da agência só é criada pelo dono da instalação, em Administração › Chaves da agência."),
+      400,
+      { requestId },
+    );
   }
 
   const prefix = `dsk_${randomBytes(4).toString("hex")}`;

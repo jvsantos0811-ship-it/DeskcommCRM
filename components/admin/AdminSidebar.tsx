@@ -23,6 +23,7 @@ import {
   PuzzlePiece,
   Stack,
   Receipt,
+  PlugsConnected,
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,9 @@ const NAV_ITEMS: NavItem[] = [
   // chave `cobranca` ligada — desligada, `/admin/cobranca` responde 404 e o
   // menu do dono segue igual.
   { href: "/admin/cobranca", label: "Cobrança", icon: Receipt, modulo: "cobranca" },
+  // A porta das chaves da agência (migration 9014): a chave que alcança todas
+  // as empresas pelo MCP é da INSTALAÇÃO, e só o dono a cria, troca e revoga.
+  { href: "/admin/chaves-da-agencia", label: "Chaves da agência", icon: PlugsConnected },
 ];
 
 interface AdminSidebarProps {
