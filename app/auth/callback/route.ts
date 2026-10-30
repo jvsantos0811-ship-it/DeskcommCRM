@@ -6,6 +6,8 @@ import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { temConvitePendente } from "@/lib/auth/convites-pelo-email";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
 import { audit } from "@/lib/audit";
@@ -238,6 +240,20 @@ export async function GET(request: NextRequest) {
     // Convite revogado, ou banco fora: a tela de aceite continua existindo e
     // sabe explicar cada caso.
     return redirectTo(`/team/accept-invite/${decisao.token}`);
+  }
+
+  // CONVITE ACHADO PELO E-MAIL — o caso medido em produção: o convidado não
+  // usou o link e clicou em "Entrar com Google". O Google comprovou o e-mail;
+  // se há convite pendente para ele, a saída é a tela "Você tem um convite", e
+  // não a recusa abaixo. Mesma posição e mesmas razões do `/auth/confirm`.
+  if (await temConvitePendente(createAdminClient(), usuario)) {
+    await audit({
+      action: "auth.convite_achado_pelo_email",
+      actorUserId: usuario.id,
+      metadata: { provider: "google" },
+      requestId,
+    });
+    return await paraTelaAutenticada("/convites");
   }
 
   // A trava da política de cadastro, depois de `decidirConviteDoSignup` de

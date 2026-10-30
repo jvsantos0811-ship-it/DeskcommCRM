@@ -10,6 +10,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { lerCadastroNaTela, planoInicialDoSeletor } from "@/lib/cobranca/cadastro";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { temConvitePendente } from "@/lib/auth/convites-pelo-email";
 
 /**
  * A saída do beco: quem confirmou o e-mail e ficou sem organização termina o
@@ -41,6 +42,11 @@ export default async function GetStartedPage() {
     data: { user: authUser },
   } = await supabase.auth.getUser();
   const nomeSugerido = (authUser?.user_metadata?.org_name as string | undefined) ?? undefined;
+
+  // Quem tem convite pendente para o e-mail comprovado não abre empresa nova:
+  // vai aceitar o convite. É a porta de quem já tinha conta (criada por fora,
+  // ou pelo Google numa entrada anterior) e entrou pela senha.
+  if (await temConvitePendente(createAdminClient(), authUser)) redirect("/convites");
 
   // Fora da árvore de `app/app/layout.tsx`, como as telas públicas: o idioma
   // vem do próprio usuário, e o formulário precisa do provider para o `useT()`.

@@ -586,6 +586,11 @@ export const AUDIT_ACTIONS = [
   // recusa deliberada de abrir organização nova.
   "auth.signup_provision_recusado",
 
+  // Quem entrou SEM o link do convite (Google, ou conta criada por fora) e tinha
+  // convite pendente para o e-mail que o provedor comprovou: em vez da recusa,
+  // foi levado à tela `/convites`. O aceite em si continua sendo `member.accepted`.
+  "auth.convite_achado_pelo_email",
+
   // ── O teto de gasto de IA (migration 0159) ──────────────────────────────
   // Até aqui `PATCH /api/v1/ai/budget` não emitia NENHUMA linha de auditoria —
   // `grep -c "lib/audit" app/api/v1/ai/budget/route.ts` devolvia 0, e nenhum
