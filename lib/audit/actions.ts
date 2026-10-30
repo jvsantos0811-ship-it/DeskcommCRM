@@ -1218,6 +1218,13 @@ export const AUDIT_ACTIONS = [
   // interruptores, a antecedência e o opt-in de WhatsApp). O número NÃO entra:
   // é dado de contato, e o audit é trilha legível por quem administra.
   "user.task_reminder_prefs_updated",
+  // Chaves da agência (migration 9014): a chave que alcança TODAS as
+  // organizações pelas portas MCP Leitura e Admin. Criar, revogar e trocar são
+  // atos do dono da instalação, em Administração › Chaves da agência. O
+  // metadata leva a porta, o prefixo e os IPs; nunca o texto da chave.
+  "agencia.chave_criada",
+  "agencia.chave_revogada",
+  "agencia.chave_trocada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Chave da agência e porta MCP de Leitura para todas as empresas da instalação
+---
+O dono da instalação ganhou a tela Administração › Chaves da agência. Ali ele cria uma chave que alcança, pelo MCP, todas as empresas da instalação de uma vez, pela nova porta de Leitura (`/api/mcp/agencia`). Essa porta lê tudo o que as ferramentas de leitura já liam (conversas, negócios, funil, follow-ups, casos, regras), não altera nada (nenhuma ferramenta de escrita é sequer oferecida) e exige, em cada chamada, o `organization_id` da empresa; a lista de empresas sai da ferramenta nova `crm_list_organizations`, e toda resposta traz o nome da empresa. A chave só funciona vinda dos IPs da lista dela (o padrão é a faixa de saída da Anthropic, `160.79.104.0/21`), pode ser trocada ou revogada em um clique e deixa de valer se quem a criou deixar de administrar a instalação. Toda chamada fica na auditoria com a porta marcada. A chave da agência não funciona em nenhuma outra rota, e nenhuma empresa consegue criar uma: o banco só a aceita vinda do dono da instalação. As chaves de API das empresas continuam iguais. A atualização acrescenta uma coluna e uma regra no banco; nada a fazer à mão.

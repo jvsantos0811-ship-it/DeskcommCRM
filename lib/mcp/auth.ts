@@ -40,6 +40,13 @@ export interface McpAuthResult {
 /** Opção de quem valida o token: aceitar o da empresa suspensa, marcado. */
 export interface OpcoesDoToken {
   permiteOrgSuspensa?: boolean;
+  /**
+   * Aceita a chave da AGÊNCIA (escopo `agencia:*`, migration 9014). Só as rotas
+   * `/api/mcp/agencia*` pedem. Em qualquer outra porta — `/api/mcp`, REST com
+   * Bearer — a chave da agência é desconhecida: ela não pode agir como token
+   * comum da organização onde está guardada.
+   */
+  aceitaChaveDaAgencia?: boolean;
 }
 
 export class McpAuthError extends Error {
@@ -176,6 +183,9 @@ export async function resolveApiToken(
   }
   if (data.expires_at && new Date(data.expires_at) < new Date()) {
     throw new ApiTokenError("expired", "Token expired.");
+  }
+  if (!opcoes.aceitaChaveDaAgencia && parseScopes(data.scopes).some((s) => s.startsWith("agencia:"))) {
+    throw new ApiTokenError("not_found", "Token not recognized.");
   }
   // Token vivo de empresa parada: a integração não opera enquanto a conta está
   // suspensa (spec da cobrança §4 item 6). Antes do `last_used_at`: recusa não é uso.

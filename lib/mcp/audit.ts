@@ -47,6 +47,11 @@ interface AuditMcpToolCallInput {
    * a uma tool que redija os próprios args (`redigirParaAuditoria`).
    */
   termo?: string;
+  /**
+   * Porta da agência por onde a chamada entrou (`leitura` | `admin`), quando
+   * veio por `/api/mcp/agencia*` (migration 9014). Ausente = rota de sempre.
+   */
+  portaDaAgencia?: "leitura" | "admin";
 }
 
 const ARGS_REDACT_KEYS = new Set([
@@ -72,8 +77,20 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo } =
-    input;
+  const {
+    ctx,
+    toolName,
+    args,
+    durationMs,
+    success,
+    errorMessage,
+    resultSummary,
+    resultBytes,
+    desfecho,
+    motivo,
+    termo,
+    portaDaAgencia,
+  } = input;
 
   const metadata: Record<string, unknown> = {
     actor_type: ctx.actor.type,
@@ -97,6 +114,7 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   // O contato da conversa, quando o turno o injetou no ctx (hoje: ferramenta
   // de servidor MCP externo em turno de atendimento, #2147).
   if (ctx.contatoDoTurno) metadata.contact_id = ctx.contatoDoTurno;
+  if (portaDaAgencia) metadata.porta_da_agencia = portaDaAgencia;
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }
