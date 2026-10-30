@@ -62,8 +62,10 @@ export async function login(page: Page, email: string, senha: string): Promise<v
   if (/\/app(\/|$|\?)/.test(page.url())) return;
 
   /**
-   * O login é repetido até 4 vezes DE PROPÓSITO, e isso não relaxa asserção
-   * nenhuma — nenhuma medição do lote passa por aqui.
+   * O login é repetido até 3 vezes DE PROPÓSITO, e isso não relaxa asserção
+   * nenhuma — nenhuma medição do lote passa por aqui. Três, e não mais: a
+   * 3ª falha na mesma conta tranca o login por 5 min (`AUTH_LIMITS.login.id`),
+   * então uma 4ª tentativa só mediria o bloqueio.
    *
    * Nesta máquina (load 80-120, 33 contêineres de outras sessões) o GoTrue
    * perde a resolução de nome do Postgres por alguns segundos e devolve
@@ -73,7 +75,7 @@ export async function login(page: Page, email: string, senha: string): Promise<v
    * do lote — que é o modo de falha que esta rodada precisa evitar.
    */
   let ultimo = "";
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 3; i++) {
     await page.goto("/login");
     await page.locator("#email").fill(email);
     await page.locator("#password").fill(senha);
@@ -92,7 +94,7 @@ export async function login(page: Page, email: string, senha: string): Promise<v
       await page.waitForTimeout(5_000);
     }
   }
-  throw new Error(`login de ${email} falhou em 4 tentativas: ${ultimo}`);
+  throw new Error(`login de ${email} falhou em 3 tentativas: ${ultimo}`);
 }
 
 export async function captura(page: Page, nome: string): Promise<void> {

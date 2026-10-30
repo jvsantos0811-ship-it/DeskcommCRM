@@ -88,8 +88,10 @@ export async function authRateLimited(
 /**
  * Limites por superfície. Números escolhidos para não estorvar uso humano
  * normal e ainda assim tirar o custo-zero do ataque:
- *  - login: quem erra a senha 5 vezes na mesma conta em 5 min quase sempre é
- *    script; o teto por IP é mais folgado por causa de NAT corporativo.
+ *  - login: 3 senhas erradas na mesma conta em 5 min trancam a conta até a
+ *    mais antiga sair da janela (decisão do dono da instalação em 30/10/2026,
+ *    depois da auditoria de segurança; antes eram 5). Acerto não conta. O teto
+ *    por IP é mais folgado por causa de NAT corporativo.
  *  - signup e convite: fluxos raros por pessoa, teto baixo.
  */
 /** Teto de produção por IP no login. Congelado por teste — ver `LOGIN_IP_DEFAULT` abaixo. */
@@ -102,7 +104,7 @@ const LOGIN_IP_DEFAULT = 60;
  * com "Muitas tentativas" — foi o que derrubou `risk-radar` (13ª de 15 na parte 1).
  *
  * Por que afrouxar ISTO é seguro, e afrouxar o resto não seria: o limite que
- * barra brute force é `id` (5 falhas na MESMA conta em 5 min), e ele NÃO é
+ * barra brute force é `id` (3 falhas na MESMA conta em 5 min), e ele NÃO é
  * configurável — continua valendo inclusive para quem distribui as tentativas
  * por muitos IPs. O teto por IP é anti-flood genérico, já folgado de propósito
  * por causa de NAT corporativo; no CI o "NAT" é o runner inteiro.
@@ -117,7 +119,7 @@ function loginIpLimit(): number {
 }
 
 export const AUTH_LIMITS = {
-  login: { ip: loginIpLimit(), id: 5, windowSec: 300 },
+  login: { ip: loginIpLimit(), id: 3, windowSec: 300 },
   signup: { ip: 20, windowSec: 3600 },
   reset: { ip: 30, id: 3, windowSec: 3600 },
   invite_accept: { ip: 60, windowSec: 3600 },

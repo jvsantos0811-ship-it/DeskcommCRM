@@ -64,10 +64,10 @@ describe("teto por IP do login", () => {
     // O de conta vale mesmo contra ataque distribuído por muitos IPs — afrouxá-lo por
     // env transformaria uma variável de ambiente em desligar-proteção-de-senha.
     const comEnv = await carregaLimites("500");
-    expect(comEnv.AUTH_LIMITS.login.id, "o teto por conta reagiu ao env de IP").toBe(5);
+    expect(comEnv.AUTH_LIMITS.login.id, "o teto por conta reagiu ao env de IP").toBe(3);
 
     const semEnv = await carregaLimites(undefined);
-    expect(semEnv.AUTH_LIMITS.login.id).toBe(5);
+    expect(semEnv.AUTH_LIMITS.login.id, "3 senhas erradas por conta — decisão do dono em 30/10/2026").toBe(3);
     expect(semEnv.AUTH_LIMITS.login.windowSec).toBe(300);
   });
 });
