@@ -72,6 +72,28 @@ export function textoDoAviso(
   };
 }
 
+/** Manda um aviso pronto a quem criou a chave. Nunca lança. */
+export async function enviarAvisoAoDono(
+  db: SupabaseClient,
+  criadaPor: string,
+  aviso: { assunto: string; texto: string },
+): Promise<void> {
+  try {
+    if (!(await emailConfigurado())) return;
+    const { data } = await db.auth.admin.getUserById(criadaPor);
+    const para = data?.user?.email;
+    if (!para) return;
+    const html = `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">${aviso.texto
+      .split("\n")
+      .map((l) => (l ? `<p style="margin:0 0 4px">${escapar(l)}</p>` : "<br>"))
+      .join("")}</div>`;
+    const marca = await marcaDaSaida(null);
+    await sendEmail({ to: para, subject: aviso.assunto, text: aviso.texto, html, fromName: marca.nome });
+  } catch {
+    // O aviso por e-mail é um extra: a auditoria já gravou a alteração.
+  }
+}
+
 export async function avisarDonoDaAlteracao(
   db: SupabaseClient,
   opcoes: {
@@ -81,15 +103,6 @@ export async function avisarDonoDaAlteracao(
     requestId: string;
   },
 ): Promise<void> {
-  try {
-    if (!(await emailConfigurado())) return;
-    const { data } = await db.auth.admin.getUserById(opcoes.criadaPor);
-    const para = data?.user?.email;
-    if (!para) return;
-    const aviso = textoDoAviso(opcoes.organizacao, opcoes.resumo, new Date(), opcoes.requestId);
-    const marca = await marcaDaSaida(null);
-    await sendEmail({ to: para, subject: aviso.assunto, text: aviso.texto, html: aviso.html, fromName: marca.nome });
-  } catch {
-    // O aviso por e-mail é um extra: a auditoria já gravou a alteração.
-  }
+  const aviso = textoDoAviso(opcoes.organizacao, opcoes.resumo, new Date(), opcoes.requestId);
+  await enviarAvisoAoDono(db, opcoes.criadaPor, { assunto: aviso.assunto, texto: aviso.texto });
 }

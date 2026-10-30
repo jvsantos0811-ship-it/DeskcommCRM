@@ -1230,6 +1230,10 @@ export const AUDIT_ACTIONS = [
   "agencia.chave_criada",
   "agencia.chave_revogada",
   "agencia.chave_trocada",
+  // O Operador pediu, pela porta Admin da agência, que o dono publique o
+  // rascunho do prompt de um agente. NÃO é publicação: é o pedido, com o
+  // motivo; quem publica é uma pessoa, na tela do agente (`ai_agent.published`).
+  "ai_agent.publicacao_pedida",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

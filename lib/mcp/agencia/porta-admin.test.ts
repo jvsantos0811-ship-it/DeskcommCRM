@@ -121,3 +121,23 @@ describe("aviso ao dono — nunca leva valor de argumento que não seja id", () 
     expect(aviso.html).toContain("Bórbora &lt;Advogados&gt;");
   });
 });
+
+describe("aviso do pedido de publicação", () => {
+  it("leva empresa, agente, rascunho, versão no ar, motivo e o link; não publica nada", () => {
+    const aviso = ESCRITAS_DA_PORTA_ADMIN.crm_request_ai_agent_publish!.aviso!(
+      { id: "o1", nome: "Bórbora" },
+      {
+        pedido: "registrado",
+        agente: { id: "a1", nome: "Raquel" },
+        rascunho: { id: "v3", numero: 3 },
+        versao_no_ar: 2,
+        link_para_publicar: "https://crm.exemplo/app/ai/agents/a1",
+        motivo: "Responde ao conjunto de mensagens do cliente",
+      },
+    );
+    expect(aviso.assunto).toBe("[Porta Admin] Pedido de publicação: Raquel v3 em Bórbora");
+    expect(aviso.texto).toContain("https://crm.exemplo/app/ai/agents/a1");
+    expect(aviso.texto).toContain("no ar hoje: v2");
+    expect(aviso.texto).toContain("Nada vai ao ar sem o seu clique em Publicar.");
+  });
+});
