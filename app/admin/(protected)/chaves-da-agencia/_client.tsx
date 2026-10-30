@@ -13,11 +13,12 @@ import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
-import type { ChaveDaAgenciaNaTela } from "@/lib/mcp/agencia/chaves";
+import type { AlteracaoPelaPortaAdmin, ChaveDaAgenciaNaTela } from "@/lib/mcp/agencia/chaves";
 import type { PortaDaAgencia } from "@/lib/mcp/agencia/portas";
 
 interface Estado {
   chaves: ChaveDaAgenciaNaTela[];
+  alteracoes: AlteracaoPelaPortaAdmin[];
   organizacoes: { id: string; nome: string }[];
   portas: { porta: PortaDaAgencia; nome: string; caminho: string }[];
   ips_padrao: string[];
@@ -145,12 +146,9 @@ export function ChavesDaAgenciaClient() {
             </p>
           </div>
         </div>
-        <Button onClick={criar} disabled={ocupado || !organizacao || porta === "admin"}>
+        <Button onClick={criar} disabled={ocupado || !organizacao}>
           {t("Criar chave")}
         </Button>
-        {porta === "admin" && (
-          <p className="text-xs text-muted-foreground">{t("A porta Admin chega na próxima versão.")}</p>
-        )}
       </Card>
 
       {erroAoCarregar ? (
@@ -207,6 +205,28 @@ export function ChavesDaAgenciaClient() {
           ))}
         </div>
       )}
+
+      <div className="space-y-2">
+        <h2 className="text-base font-semibold">{t("Últimas alterações pela porta Admin")}</h2>
+        <p className="text-xs text-muted-foreground">
+          {t("Cada alteração numa empresa cliente também vai por e-mail para quem criou a chave, quando o e-mail da instalação está configurado. O antes e o depois ficam em Audit.")}
+        </p>
+        {estado && estado.alteracoes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("Nenhuma alteração ainda.")}</p>
+        ) : (
+          <ul className="divide-y rounded-lg border text-sm" data-testid="alteracoes-da-porta-admin">
+            {estado?.alteracoes.map((a) => (
+              <li key={`${a.quando}-${a.request_id}`} className="flex flex-wrap justify-between gap-2 px-3 py-2">
+                <span className="font-mono text-xs">{a.ferramenta}</span>
+                <span className="text-xs text-muted-foreground">
+                  {a.organization_id ? nomeDaOrg(a.organization_id) : "—"} · {new Date(a.quando).toLocaleString()} ·{" "}
+                  {a.sucesso ? t("feita") : t("recusada")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

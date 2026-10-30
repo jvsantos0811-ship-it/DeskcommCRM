@@ -16,7 +16,10 @@
  * o que isola uma organização da outra também aqui.
  *
  * Quais ferramentas cada porta vê sai de `ferramentasDaPorta` — a Leitura só
- * recebe as de categoria `read`; nenhuma de escrita é sequer registrada.
+ * recebe as de categoria `read` (nenhuma de escrita é sequer registrada); a
+ * Admin recebe a lista fechada de `porta-admin.ts`, com máscara na saída, foto
+ * de antes e depois na auditoria e aviso ao dono a cada alteração em empresa
+ * cliente.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -35,7 +38,9 @@ import { deCapacidadeDesligada, deModuloDesligado } from "../tools/catalog";
 import type { McpContext, McpToolDefinition } from "../types";
 import { higienizarUuidsDeAterro } from "../uuid-de-aterro";
 
+import { avisarDonoDaAlteracao, resumirAlteracao } from "./alerta";
 import { PAPEL_DA_PORTA, type ChaveDaAgenciaValidada } from "./auth";
+import { NUNCA_NA_PORTA_ADMIN, aplicarMascara, regraDaPortaAdmin } from "./porta-admin";
 import type { PortaDaAgencia } from "./portas";
 
 const SERVER_NAME = "crm-agencia";
@@ -53,8 +58,9 @@ export function ferramentasDaPorta(
   ferramentas: readonly McpToolDefinition[] = allTools,
 ): McpToolDefinition[] {
   if (porta === "leitura") return ferramentas.filter((t) => t.category === "read");
-  // A porta Admin chega na próxima entrega, com a sua própria fronteira.
-  return [];
+  // Admin: lista fechada (`porta-admin.ts`) e, por cima, a lista do nunca.
+  const nunca = new Set<string>(NUNCA_NA_PORTA_ADMIN);
+  return ferramentas.filter((t) => regraDaPortaAdmin(t.name) !== null && !nunca.has(t.name));
 }
 
 interface OrganizacaoAlvo {
@@ -201,9 +207,16 @@ export function createServidorDaAgencia(
           ensureScope(auth.scopes, tool.requiresScope);
           ensureRole(auth.role, tool.requiresRole);
 
-          const result = await tool.handler(args as never, ctx);
-          const motivoDoVazio = tool.motivoDoVazio?.(result) ?? null;
+          // Porta Admin: foto do alvo antes, máscara na saída, foto depois.
+          const regra = chave.porta === "admin" ? regraDaPortaAdmin(tool.name) : null;
+          const ehEscrita = tool.category !== "read";
+          const antes = regra?.foto && ehEscrita ? await regra.foto(supabase, org.id, args) : undefined;
+
+          const bruto = await tool.handler(args as never, ctx);
+          const motivoDoVazio = tool.motivoDoVazio?.(bruto) ?? null;
+          const result = regra?.projetar ? aplicarMascara(bruto, regra.projetar) : bruto;
           const resposta = { organizacao: { id: org.id, nome: org.nome }, resultado: result };
+          const depois = regra?.foto && ehEscrita ? await regra.foto(supabase, org.id, args) : undefined;
 
           await auditMcpToolCall({
             ctx,
@@ -213,8 +226,19 @@ export function createServidorDaAgencia(
             success: motivoDoVazio === null,
             resultBytes: tamanhoDoResultado(resposta),
             portaDaAgencia: chave.porta,
+            ...(regra && ehEscrita ? { antesEDepois: { antes, depois } } : {}),
             ...(motivoDoVazio === null ? {} : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           });
+
+          // Alteração em empresa CLIENTE (não a da própria agência): avisa o dono.
+          if (chave.porta === "admin" && ehEscrita && org.id !== chave.organizacaoDaChave) {
+            void avisarDonoDaAlteracao(supabase, {
+              criadaPor: chave.criadaPor,
+              organizacao: { id: org.id, nome: org.nome },
+              resumo: resumirAlteracao(tool.name, args),
+              requestId,
+            });
+          }
 
           return {
             content: [{ type: "text" as const, text: JSON.stringify(resposta) }],
