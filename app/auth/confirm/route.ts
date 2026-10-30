@@ -6,6 +6,8 @@ import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { temConvitePendente } from "@/lib/auth/convites-pelo-email";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -247,6 +249,23 @@ async function confirmar({
     // sabe explicar cada caso. Degradar para ela preserva exatamente o
     // comportamento anterior, em vez de deixar a pessoa sem saída.
     return redirectTo(`/team/accept-invite/${decisao.token}`);
+  }
+
+  // CONVITE ACHADO PELO E-MAIL. Quem chegou SEM o link (criou a conta por
+  // fora) e tem convite pendente para o e-mail que o provedor acabou de
+  // comprovar não ganha empresa nem recusa: ganha a tela "Você tem um convite",
+  // com um clique para aceitar. Depois do caminho do token de propósito — ele
+  // continua aceitando sozinho — e ANTES da política de cadastro, senão a
+  // instalação `so_convite` mostraria erro a quem foi, de fato, convidado.
+  // Ver `lib/auth/convites-pelo-email.ts`.
+  if (await temConvitePendente(createAdminClient(), usuario)) {
+    await audit({
+      action: "auth.convite_achado_pelo_email",
+      actorUserId: usuario.id,
+      metadata: {},
+      requestId,
+    });
+    return redirectTo("/convites");
   }
 
   // A TRAVA QUE MAIS IMPORTA. Aqui é onde a organização nasce, e este ponto

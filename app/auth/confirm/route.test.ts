@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { temConvitePendente } from "@/lib/auth/convites-pelo-email";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
@@ -38,6 +39,8 @@ import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/aplicar-convite", () => ({ aplicarConvite: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+vi.mock("@/lib/auth/convites-pelo-email", () => ({ temConvitePendente: vi.fn(async () => false) }));
 vi.mock("@/lib/auth/convite-no-signup", () => ({ decidirConviteDoSignup: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn(async () => undefined) }));
 vi.mock("@/lib/auth/politica-de-cadastro", () => ({ modoDeCadastro: vi.fn(async () => "aberto") }));
@@ -239,6 +242,21 @@ describe("GET /auth/confirm", () => {
     expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO);
     expect(vi.mocked(aplicarConvite)).not.toHaveBeenCalled();
     expect(destino(res)).toBe("/onboarding/welcome");
+  });
+
+  it("sem link, mas com convite pendente para o e-mail comprovado: vai para /convites, mesmo em so_convite", async () => {
+    comSupabase({ verifyOtp: { data: { user: USUARIO }, error: null }, getUser: { data: { user: null } } });
+    vi.mocked(decidirConviteDoSignup).mockReturnValue({ tipo: "provisionar" });
+    vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
+    vi.mocked(temConvitePendente).mockResolvedValueOnce(true);
+
+    const { POST } = await import("./route");
+    const res = await POST(envio("type=signup&token_hash=abc"));
+
+    expect(destino(res)).toBe("/convites");
+    expect(vi.mocked(temConvitePendente)).toHaveBeenCalledWith(expect.anything(), USUARIO);
+    expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+    expect(vi.mocked(aplicarConvite)).not.toHaveBeenCalled();
   });
 
   it("sem convite em instalação com_aprovacao: e-mail confirmado, mas a empresa espera o pedido", async () => {

@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { temConvitePendente } from "@/lib/auth/convites-pelo-email";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { ensureTenantForUser, vinculoAtivo } from "@/lib/auth/provision";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
@@ -33,6 +34,8 @@ import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/aplicar-convite", () => ({ aplicarConvite: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+vi.mock("@/lib/auth/convites-pelo-email", () => ({ temConvitePendente: vi.fn(async () => false) }));
 vi.mock("@/lib/auth/convite-no-signup", () => ({ decidirConviteDoSignup: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({
   ensureTenantForUser: vi.fn(async () => ({ provisioned: true })),
@@ -157,6 +160,20 @@ describe("GET /auth/callback", () => {
 
     expect(await destino(res)).toBe("/login?error=cadastro_por_convite");
     expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+  });
+
+  it("entrou com Google SEM o link, mas tem convite pendente: vai para /convites em vez da recusa", async () => {
+    // O caso medido em produção: instalação so_convite, o convidado não usou o
+    // link e clicou em "Entrar com Google". Antes caía em cadastro_por_convite.
+    const { GET } = await comSupabase({ troca: { data: { user: USUARIO }, error: null } });
+    vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
+    vi.mocked(temConvitePendente).mockResolvedValueOnce(true);
+
+    const res = await GET(requisicao("code=abc"));
+
+    expect(await destino(res)).toBe("/convites");
+    expect(vi.mocked(ensureTenantForUser)).not.toHaveBeenCalled();
+    expect(vi.mocked(aplicarConvite)).not.toHaveBeenCalled();
   });
 
   it("conta nova sem convite em instalação com_aprovacao: vai pedir a empresa, sem provisionar", async () => {
