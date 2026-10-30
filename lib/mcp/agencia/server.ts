@@ -38,8 +38,9 @@ import { deCapacidadeDesligada, deModuloDesligado } from "../tools/catalog";
 import type { McpContext, McpToolDefinition } from "../types";
 import { higienizarUuidsDeAterro } from "../uuid-de-aterro";
 
-import { avisarDonoDaAlteracao, resumirAlteracao } from "./alerta";
+import { avisarDonoDaAlteracao, enviarAvisoAoDono, resumirAlteracao } from "./alerta";
 import { PAPEL_DA_PORTA, type ChaveDaAgenciaValidada } from "./auth";
+import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { NUNCA_NA_PORTA_ADMIN, aplicarMascara, regraDaPortaAdmin } from "./porta-admin";
 import type { PortaDaAgencia } from "./portas";
 
@@ -56,11 +57,15 @@ export const ORGANIZATION_ID_DESCRICAO =
 export function ferramentasDaPorta(
   porta: PortaDaAgencia,
   ferramentas: readonly McpToolDefinition[] = allTools,
+  exclusivasDaAdmin: readonly McpToolDefinition[] = FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN,
 ): McpToolDefinition[] {
   if (porta === "leitura") return ferramentas.filter((t) => t.category === "read");
-  // Admin: lista fechada (`porta-admin.ts`) e, por cima, a lista do nunca.
+  // Admin: lista fechada (`porta-admin.ts`) e, por cima, a lista do nunca. As
+  // exclusivas (prompt do agente) só existem aqui — não estão em `allTools`.
   const nunca = new Set<string>(NUNCA_NA_PORTA_ADMIN);
-  return ferramentas.filter((t) => regraDaPortaAdmin(t.name) !== null && !nunca.has(t.name));
+  return [...ferramentas, ...exclusivasDaAdmin].filter(
+    (t) => regraDaPortaAdmin(t.name) !== null && !nunca.has(t.name),
+  );
 }
 
 interface OrganizacaoAlvo {
@@ -230,8 +235,11 @@ export function createServidorDaAgencia(
             ...(motivoDoVazio === null ? {} : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           });
 
-          // Alteração em empresa CLIENTE (não a da própria agência): avisa o dono.
-          if (chave.porta === "admin" && ehEscrita && org.id !== chave.organizacaoDaChave) {
+          // Aviso próprio da ferramenta (pedido de publicação): sempre.
+          // Senão, alteração em empresa CLIENTE (não a da agência): aviso genérico.
+          if (regra?.aviso) {
+            void enviarAvisoAoDono(supabase, chave.criadaPor, regra.aviso({ id: org.id, nome: org.nome }, bruto));
+          } else if (chave.porta === "admin" && ehEscrita && org.id !== chave.organizacaoDaChave) {
             void avisarDonoDaAlteracao(supabase, {
               criadaPor: chave.criadaPor,
               organizacao: { id: org.id, nome: org.nome },

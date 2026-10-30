@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { allTools } from "../tools";
+import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { ESCRITAS_DA_PORTA_ADMIN, LEITURAS_DA_PORTA_ADMIN, NUNCA_NA_PORTA_ADMIN } from "./porta-admin";
 import { ferramentasDaPorta } from "./server";
 
@@ -64,7 +65,7 @@ describe("ferramentasDaPorta('admin') — a fronteira da porta Admin", () => {
   });
 
   it("toda ferramenta citada na lista existe no CRM, com a categoria certa", () => {
-    const porNome = new Map(allTools.map((t) => [t.name, t]));
+    const porNome = new Map([...allTools, ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN].map((t) => [t.name, t]));
     for (const nome of Object.keys(LEITURAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("read");
     for (const nome of Object.keys(ESCRITAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("write");
   });
@@ -91,5 +92,35 @@ describe("ferramentasDaPorta('admin') — a fronteira da porta Admin", () => {
   it("o papel da porta alcança todas as ferramentas dela", () => {
     const rank = { viewer: 1, agent: 2, ai_operator: 3, manager: 4, admin: 5 } as const;
     for (const t of admin) expect(rank[t.requiresRole] <= rank.manager, t.name).toBe(true);
+  });
+});
+
+describe("ferramentas do prompt do agente — só na porta Admin", () => {
+  const exclusivas = FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN.map((t) => t.name);
+
+  it("não estão em allTools (nem no /api/mcp comum, nem na lista dos agentes de atendimento)", () => {
+    const deTodos = new Set(allTools.map((t) => t.name));
+    for (const nome of exclusivas) expect(deTodos.has(nome), nome).toBe(false);
+  });
+
+  it("estão na porta Admin e não na Leitura", () => {
+    const admin = new Set(ferramentasDaPorta("admin").map((t) => t.name));
+    const leitura = new Set(ferramentasDaPorta("leitura").map((t) => t.name));
+    for (const nome of exclusivas) {
+      expect(admin.has(nome), nome).toBe(true);
+      expect(leitura.has(nome), nome).toBe(false);
+    }
+  });
+
+  it("nenhuma delas publica rascunho: a única que publica é a de voltar a uma versão que já esteve no ar", () => {
+    expect(exclusivas.sort()).toEqual(
+      [
+        "crm_get_ai_agent_prompt",
+        "crm_list_ai_agents",
+        "crm_request_ai_agent_publish",
+        "crm_revert_ai_agent_version",
+        "crm_save_ai_agent_draft",
+      ].sort(),
+    );
   });
 });

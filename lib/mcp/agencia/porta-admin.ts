@@ -102,11 +102,23 @@ const PAGINA = { cursor: true, has_more: true } as const;
 /** A foto de um alvo, para o antes e depois da auditoria. Nunca lança: falha vira `null`. */
 type Foto = (db: SupabaseClient, organizationId: string, args: Record<string, unknown>) => Promise<unknown>;
 
+/** Um aviso ao dono escrito pela própria ferramenta (sem dado de cliente). */
+export interface AvisoAoDono {
+  assunto: string;
+  texto: string;
+}
+
 export interface FerramentaDaPortaAdmin {
   /** Máscara da resposta. Ausente = a resposta da ferramenta já é só configuração. */
   projetar?: Mascara;
   /** Foto do alvo antes e depois (só nas escritas). */
   foto?: Foto;
+  /**
+   * Aviso PRÓPRIO ao dono, mandado em TODA chamada bem-sucedida (inclusive na
+   * empresa da própria agência), no lugar do aviso genérico. É o caso do pedido
+   * de publicação: o dono precisa do link para publicar.
+   */
+  aviso?: (organizacao: { id: string; nome: string }, resultado: unknown) => AvisoAoDono;
 }
 
 async function tentar<T>(f: () => PromiseLike<{ data: T | null; error: unknown }>): Promise<T | null> {
@@ -167,6 +179,44 @@ const fotoDaMemoria: Foto = (db, org) =>
       .limit(50),
   );
 
+const fotoDoAgente: Foto = async (db, org, args) => {
+  const agente = await tentar(() =>
+    db.from("ai_agents").select("id, published_version_id").eq("organization_id", org).eq("id", String(args.agent_id)).maybeSingle(),
+  );
+  const versoes = await tentar(() =>
+    db
+      .from("ai_agent_versions")
+      .select("id, version_number, status, published_at")
+      .eq("organization_id", org)
+      .eq("agent_id", String(args.agent_id))
+      .order("version_number", { ascending: false })
+      .limit(20),
+  );
+  return { agente, versoes };
+};
+
+function avisoDoPedidoDePublicacao(organizacao: { id: string; nome: string }, resultado: unknown): AvisoAoDono {
+  const r = (resultado ?? {}) as {
+    agente?: { nome?: string };
+    rascunho?: { numero?: number };
+    versao_no_ar?: number | null;
+    link_para_publicar?: string;
+    motivo?: string;
+  };
+  return {
+    assunto: `[Porta Admin] Pedido de publicação: ${r.agente?.nome ?? "agente"} v${r.rascunho?.numero ?? "?"} em ${organizacao.nome}`,
+    texto: [
+      `Empresa: ${organizacao.nome}`,
+      `Agente: ${r.agente?.nome ?? "?"}`,
+      `Rascunho: v${r.rascunho?.numero ?? "?"} (no ar hoje: ${r.versao_no_ar ? `v${r.versao_no_ar}` : "nenhuma"})`,
+      `O que muda e por quê: ${r.motivo ?? ""}`,
+      "",
+      `Para conferir e publicar: ${r.link_para_publicar ?? ""}`,
+      "Teste no botão Testar antes. Nada vai ao ar sem o seu clique em Publicar.",
+    ].join("\n"),
+  };
+}
+
 /**
  * LEITURA na porta Admin: só configuração e contagens. De fora, de propósito:
  * conversas/mensagens/histórico, contato, caso humano, follow-up agendado
@@ -188,6 +238,9 @@ export const LEITURAS_DA_PORTA_ADMIN: Record<string, FerramentaDaPortaAdmin> = {
   crm_search_knowledge: {},
   crm_get_org_memory: {},
   crm_get_queue_status: {},
+  // Exclusivas da porta Admin (`ferramentas-do-agente.ts`, fora de `allTools`).
+  crm_list_ai_agents: {},
+  crm_get_ai_agent_prompt: {},
   // Para achar o id do que mexer — com máscara: ids, etapa, status, datas, valores.
   crm_list_leads: { projetar: { leads: MASCARA_DO_NEGOCIO, ...PAGINA } },
   crm_list_conversations: { projetar: { conversations: MASCARA_DA_CONVERSA, ...PAGINA } },
@@ -219,6 +272,10 @@ export const ESCRITAS_DA_PORTA_ADMIN: Record<string, FerramentaDaPortaAdmin> = {
     projetar: { lead: MASCARA_DO_NEGOCIO },
   },
   crm_manage_tags: { foto: fotoDasEtiquetas },
+  // Exclusivas da porta Admin (`ferramentas-do-agente.ts`, fora de `allTools`).
+  crm_save_ai_agent_draft: { foto: fotoDoAgente },
+  crm_request_ai_agent_publish: { foto: fotoDoAgente, aviso: avisoDoPedidoDePublicacao },
+  crm_revert_ai_agent_version: { foto: fotoDoAgente },
 };
 
 export function regraDaPortaAdmin(nome: string): FerramentaDaPortaAdmin | null {
