@@ -43,22 +43,22 @@ describe("signInWithPassword — teto de tentativas", () => {
     } as never);
   });
 
-  it("recusa a 6ª tentativa contra a mesma conta sem chamar o provedor", async () => {
+  it("recusa a 4ª tentativa contra a mesma conta sem chamar o provedor", async () => {
     const { signInWithPassword } = await import("./signInWithPassword");
     const input = { email: "alvo@example.com", password: "senha-errada-123" };
 
     const resultados = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 4; i++) {
       resultados.push(await signInWithPassword(input));
     }
 
-    // AUTH_LIMITS.login.id = 5 → as 5 primeiras passam do teto e falham no
-    // provedor; a 6ª nem chega lá.
-    expect(resultados.slice(0, 5).map((r) => r.error)).toEqual(
-      Array(5).fill("invalid_credentials"),
+    // AUTH_LIMITS.login.id = 3 → as 3 primeiras passam do teto e falham no
+    // provedor; a 4ª nem chega lá.
+    expect(resultados.slice(0, 3).map((r) => r.error)).toEqual(
+      Array(3).fill("invalid_credentials"),
     );
-    expect(resultados[5]?.error).toBe("rate_limited");
-    expect(signIn).toHaveBeenCalledTimes(5);
+    expect(resultados[3]?.error).toBe("rate_limited");
+    expect(signIn).toHaveBeenCalledTimes(3);
   });
 
   it("acertar a senha não gasta o orçamento de bloqueio da conta", async () => {
@@ -77,7 +77,7 @@ describe("signInWithPassword — teto de tentativas", () => {
       resultados.push(await signInWithPassword(input));
     }
 
-    // Nenhuma das dez foi barrada: se o sucesso contasse, a 6ª seria.
+    // Nenhuma das dez foi barrada: se o sucesso contasse, a 4ª seria.
     expect(resultados.filter((r) => r?.error === "rate_limited")).toHaveLength(0);
     expect(signIn).toHaveBeenCalledTimes(10);
   });
