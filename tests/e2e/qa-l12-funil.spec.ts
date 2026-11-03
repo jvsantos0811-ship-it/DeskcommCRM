@@ -382,6 +382,67 @@ test.describe("Lote 12 — quadro do funil", () => {
     expect(data).toEqual([]);
     await captura(page, "911-12-card-excluido");
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PC-013 — abas no topo do funil, etiquetas à vista e ações que aparecem só
+  // com o mouse em cima. Usa o LoteB, que os casos acima deixam em "Entrada"
+  // (o lote até a perda é recusado) e com cinco etiquetas ou mais.
+  test("PC-013 — abas no topo, etiquetas à vista e mover pelo botão do card", async ({ page }) => {
+    await login(page, c.users.manager!.email, c.password);
+    await abreQuadro(page, pipelineId, `LoteB ${SUFIXO}`);
+    const card = page.getByRole("group", { name: `Lead: LoteB ${SUFIXO}` });
+
+    const abas = page.getByRole("navigation", { name: "Partes do funil" });
+    await expect(abas.getByRole("link", { name: "Funil", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(abas.getByRole("link", { name: "Recuperação", exact: true })).toBeVisible();
+
+    // Etiquetas: até duas à vista e um "+N" com o resto — contado do banco.
+    const { data: antes } = await admin.from("crm_leads").select("tags").eq("id", leads["lote-b"]).single();
+    const total = ((antes as { tags: string[] }).tags ?? []).length;
+    registra(`PC-013 · LoteB tem ${total} etiquetas no banco`);
+    expect(total, "fixture: o LoteB tem mais de duas etiquetas").toBeGreaterThan(2);
+    const etiquetas = card.getByTestId("etiquetas-no-card");
+    await expect(etiquetas.getByRole("listitem")).toHaveCount(3);
+    await expect(etiquetas.getByText(`+${total - 2}`, { exact: true })).toBeVisible();
+
+    // Sem o mouse em cima, a faixa de ações está apagada; com ele, acende.
+    const faixa = card.getByTestId("acoes-rapidas-do-card");
+    await page.mouse.move(2, 2);
+    await expect
+      .poll(async () => Number(await faixa.evaluate((el) => getComputedStyle(el).opacity)))
+      .toBe(0);
+    await card.hover();
+    await expect
+      .poll(async () => Number(await faixa.evaluate((el) => getComputedStyle(el).opacity)))
+      .toBe(1);
+    await captura(page, "pc013-01-acoes-no-hover");
+
+    // Mover pelo botão do card: a mesma mutação do arrasto, gravada no banco.
+    await card.getByRole("button", { name: "Mover de etapa" }).click();
+    await page.getByRole("menuitem", { name: "Conversa", exact: true }).click();
+    await expect
+      .poll(
+        async () => {
+          const { data } = await admin.from("crm_leads").select("stage_id").eq("id", leads["lote-b"]).single();
+          return (data as { stage_id: string } | null)?.stage_id;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(etapas.Conversa);
+    registra("PC-013 · mover pelo botão do card gravou a etapa Conversa");
+
+    // As abas levam à tela que já existe, e "Funil" volta ao mesmo quadro.
+    await abas.getByRole("link", { name: "Recuperação", exact: true }).click();
+    await page.waitForURL(/\/app\/recuperacao/);
+    const abasLa = page.getByRole("navigation", { name: "Partes do funil" });
+    await expect(abasLa.getByRole("link", { name: "Recuperação", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await captura(page, "pc013-02-abas-na-recuperacao");
+    await abasLa.getByRole("link", { name: "Funil", exact: true }).click();
+    await page.waitForURL(new RegExp(`/app/pipelines/${pipelineId}`));
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

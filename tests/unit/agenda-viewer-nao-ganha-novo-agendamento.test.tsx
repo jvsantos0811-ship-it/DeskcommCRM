@@ -61,6 +61,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   usePermission: () => true,
   useAuth: () => ({ user: { id: "u1" }, activeOrg: { id: "o1", role: "agent" } }),
+  // As abas do funil (PC-013), no topo da Agenda, leem quem está logado por
+  // estes dois — a mesma pessoa e a mesma organização do `useAuth` acima.
+  useUser: () => ({ id: "u1" }),
+  useActiveOrg: () => ({ id: "o1", role: "agent" }),
 }));
 
 // `useT` devolve, nas telas, a função que traduz — e é chamada das duas

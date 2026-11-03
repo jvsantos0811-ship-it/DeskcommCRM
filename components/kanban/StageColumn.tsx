@@ -39,6 +39,13 @@ interface StageColumnProps {
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
+  /**
+   * As etapas do funil, na ordem, para o botão "Mover de etapa" das ações
+   * rápidas do card (PC-013). A mudança passa por `onMover`, que é a mesma
+   * mutação do arrasto e do pop-up (`moverPeloPopup` do quadro).
+   */
+  etapas?: ReadonlyArray<{ id: string; name: string }>;
+  onMover?: (leadId: string, stageId: string) => void;
 }
 
 export function StageColumn({
@@ -55,6 +62,8 @@ export function StageColumn({
   onOpen,
   podeRenomear = false,
   onRenomear,
+  etapas,
+  onMover,
 }: StageColumnProps) {
   const t = useT();
   // O TOTAL É POR MOEDA (#1531). Antes ele somava todos os `value_cents` e
@@ -263,6 +272,8 @@ export function StageColumn({
                 pulseCount={pulses?.get(lead.id) ?? 0}
                 onSelect={aoSelecionar}
                 onOpen={onOpen}
+                etapas={etapas}
+                onMover={onMover ? (stageId) => onMover(lead.id, stageId) : undefined}
               />
             ))}
             {provided.placeholder}
