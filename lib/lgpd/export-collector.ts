@@ -705,8 +705,12 @@ export interface ExportPayload {
   proposals: ProposalRow[];
   /** Contratos do negócio enviados a ele (fork, 9008) — ver `ContractRow`. */
   contracts: ContractRow[];
-  /** Passagens da conversa dele entre agentes (fork, 9015) — ver `PassagemEntreAgentesRow`. */
-  passagens_entre_agentes: PassagemEntreAgentesRow[];
+  /**
+   * Passagens da conversa dele entre agentes (fork, 9015) — ver
+   * `PassagemEntreAgentesRow`. Opcional no TIPO como `reply_drafts`: o coletor
+   * sempre preenche; quem monta um payload à mão (o PDF, os testes) pode omitir.
+   */
+  passagens_entre_agentes?: PassagemEntreAgentesRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
