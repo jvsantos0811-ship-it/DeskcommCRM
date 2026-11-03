@@ -243,6 +243,15 @@ import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
+import {
+  contarRepeticaoNaConversa,
+  criarConferenciaDeRepeticao,
+  erroDeEnsinoDaRepeticao,
+  semAPerguntaRepetida,
+  type Repeticao,
+} from './repeticao-entre-respostas';
+import { embedText } from '@/lib/ai/embed';
+import { resolverChaveDeEmbedding } from '@/lib/ai/embeddings/chave';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
 import { aplicaDestinoDaIntencao, funisDeProdutoDoRoteador } from './destino-da-intencao';
 import { recalculaScoreDoLead } from '@/lib/leads/score-writer';
@@ -2944,6 +2953,58 @@ async function executarTurnoDoAgente(
   // SDK as executa juntas) — sem a reserva, todas passariam pela checagem antes de
   // qualquer envio registrar (#2996, item 6).
   const dupTrava = criarTravaDeDuplicata();
+  // PC-018: a trava de repetição ENTRE turnos e no follow-up (o `dupTrava`
+  // acima cobre só o turno). Lê as últimas mensagens da IA para o contato (de
+  // qualquer agente, fora as deste turno) na primeira candidata; embedding só
+  // das perguntas. Um bloqueio por turno: a reescrita que repete de novo sai no
+  // turno de resposta (registrada) e é pulada no follow-up.
+  const inicioDoTurnoParaRepeticao = clock();
+  let chaveDeEmbeddingDaRepeticao: ReturnType<typeof resolverChaveDeEmbedding> | null = null;
+  const conferenciaDeRepeticao = preview
+    ? null
+    : criarConferenciaDeRepeticao(
+        pool,
+        { organizationId: tenantId, contactId: leadId, desde: inicioDoTurnoParaRepeticao },
+        async (texto) => {
+          chaveDeEmbeddingDaRepeticao ??= resolverChaveDeEmbedding(tenantId, 'embedding_consultar').catch(() => null);
+          const chave = await chaveDeEmbeddingDaRepeticao;
+          if (!chave) return null;
+          const r = await embedText(texto, { organizationId: tenantId, ponto: 'embedding_consultar', chave });
+          return r.embedding;
+        },
+      );
+  let repeticoesBarradasNoTurno = 0;
+  const registrarRepeticao = async (
+    rep: Repeticao,
+    desfecho: 'repeticoes_barradas' | 'repeticoes_liberadas' | 'toques_pulados_por_repeticao',
+  ): Promise<void> => {
+    try {
+      await contarRepeticaoNaConversa(pool, tenantId, input.conversationId, desfecho);
+      if (desfecho !== 'repeticoes_liberadas') {
+        const gate = desfecho === 'toques_pulados_por_repeticao' ? 'repeticao_followup' : 'repeticao';
+        await emitAgentActivityForContact({
+          pool,
+          organizationId: tenantId,
+          contactId: leadId,
+          type: 'send_vetoed',
+          sourceModule: 'repeticao',
+          sourceId: job?.id ?? null,
+          ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+          reason: vetoReason(gate, rep.tipo),
+          payload: {
+            gate,
+            code: rep.tipo,
+            conversation_id: input.conversationId,
+            mensagem_anterior_id: rep.anterior.id,
+          },
+        });
+      }
+    } catch (err) {
+      runLog.warn('registro da repetição não gravado', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  };
   // #1943: o turno foi DESCARTADO como obsoleto (guard `resposta_obsoleta`, #1940)
   // ainda no run — o cliente escreveu de novo enquanto o modelo pensava. Quando
   // ligada, NADA mais sai dele, nem a pergunta pendente do roteiro (que segue
@@ -3486,7 +3547,9 @@ async function executarTurnoDoAgente(
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
-        const body = formatarParaWhatsApp(corpoDoModelo);
+        // `let`: a trava de repetição (PC-018) pode tirar a pergunta repetida
+        // da reescrita que repetiu de novo, antes de qualquer outra régua.
+        let body = formatarParaWhatsApp(corpoDoModelo);
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -3516,6 +3579,59 @@ async function executarTurnoDoAgente(
         // correção re-entra por aqui, na janela em memória. Bolhas de UM
         // send_message não se comparam entre si (só candidato contra candidato),
         // então fatiamento legítimo não se autossuprime.
+        // PC-018: REPETIÇÃO ENTRE TURNOS. Antes do `dupTrava.checar` (que é
+        // síncrono até a reserva, de propósito): esta conferência lê o banco e
+        // pode pedir embedding, e não pode ficar entre o checar e o reservar.
+        if (conferenciaDeRepeticao !== null && job !== null && turnoVaiFalarComOLead(liveJob())) {
+          const repeticao = await conferenciaDeRepeticao
+            .conferir(body, { followup: liveJob().kind === 'followup_turn' })
+            .catch((err: unknown) => {
+            runLog.warn('conferência de repetição falhou — a mensagem segue', {
+              error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+            });
+            return null;
+          });
+          if (repeticao !== null) {
+            const ehFollowup = liveJob().kind === 'followup_turn';
+            if (repeticoesBarradasNoTurno === 0) {
+              repeticoesBarradasNoTurno += 1;
+              runLog.info('repetição barrada — o modelo recebe o que já foi dito e reescreve', {
+                tipo: repeticao.tipo,
+                followup: ehFollowup,
+              });
+              await registrarRepeticao(repeticao, 'repeticoes_barradas');
+              return {
+                ok: false,
+                error: {
+                  code: 'repeticao',
+                  message: erroDeEnsinoDaRepeticao(repeticao, fusoDaOrg, ehFollowup),
+                },
+              };
+            }
+            if (ehFollowup) {
+              runLog.info('toque pulado por repetição — a reescrita repetiu de novo', { tipo: repeticao.tipo });
+              await registrarRepeticao(repeticao, 'toques_pulados_por_repeticao');
+              return {
+                ok: false,
+                error: {
+                  code: 'toque_pulado_por_repeticao',
+                  message:
+                    'Esta retomada repetiria de novo o que já foi dito, então ela NÃO sai. ' +
+                    'NÃO chame send_message de novo — encerre o turno agora, sem mensagem.',
+                },
+              };
+            }
+            // Turno de resposta: o cliente nunca fica sem resposta — a reescrita
+            // sai, SEM a pergunta repetida quando dá para tirá-la, e fica registrado.
+            const semPergunta = semAPerguntaRepetida(body, repeticao);
+            if (semPergunta !== null) body = semPergunta;
+            runLog.warn('repetição liberada no turno de resposta — a reescrita repetiu de novo', {
+              tipo: repeticao.tipo,
+              pergunta_retirada: semPergunta !== null,
+            });
+            await registrarRepeticao(repeticao, 'repeticoes_liberadas');
+          }
+        }
         const corpoRepetido = dupTrava.checar(body);
         if (corpoRepetido !== null) {
           runLog.info('duplicate_suppressed — candidato quase idêntico ao já aceito no turno', {

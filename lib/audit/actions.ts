@@ -1242,6 +1242,9 @@ export const AUDIT_ACTIONS = [
   // escrevendo em uma linha o que fez. Metadata com o agente; a linha fica na
   // tabela da passagem.
   "conversation.devolvida_ao_agente",
+  // Pacote Conversa (PC-018 em diante): as regras da IA na conversa da
+  // organização (Configurações › IA). Metadata com as chaves alteradas.
+  "settings.conversa_atualizada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

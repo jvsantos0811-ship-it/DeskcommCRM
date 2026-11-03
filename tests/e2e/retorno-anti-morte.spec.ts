@@ -110,11 +110,16 @@ test("a linha do tempo do negócio mostra o retorno em português de gente", asy
 
   await page.getByRole("button", { name: creds.retorno.lead_title, exact: true }).click();
   const dossie = page.getByRole("dialog").first();
-  await expect(dossie.getByText("Retorno agendado", { exact: true }).first()).toBeVisible();
+  // PC-013: a linha do tempo virou um botão (contagem + último registro) que
+  // abre o painel com tudo — é o painel que se lê aqui.
+  await dossie.getByTestId("botao-linha-do-tempo").click();
+  const painel = dossie.getByTestId("painel-linha-do-tempo");
+  await expect(painel.getByText("Retorno agendado", { exact: true }).first()).toBeVisible();
 
   // O que o operador LÊ, não o que a API devolve: rótulo humano, sem
   // identificador técnico e sem a frase repetida.
-  const linha = (await dossie.innerText()).split("LINHA DO TEMPO")[1] ?? "";
+  const linha = await painel.innerText();
+  expect(linha.length, "o painel da linha do tempo tem texto").toBeGreaterThan(0);
   expect(linha).not.toMatch(/followup_scheduled|followup_cancelled|demand_closed/);
   expect(linha).not.toContain("Atividade registrada");
   await captura(page, "w2-retorno-na-linha-do-tempo.png");

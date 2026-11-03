@@ -284,6 +284,10 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     await card.getByRole("button", { name: cenario.contactName }).click();
     // O dossiê do negócio é um Sheet — `role=dialog` no Radix.
     const dossieDoNegocio = page.getByRole("dialog");
+    // PC-013: a linha do tempo do negócio abre pelo botão (contagem + último
+    // registro), num painel dentro da coluna da direita do próprio card.
+    await dossieDoNegocio.getByTestId("botao-linha-do-tempo").click();
+    await expect(dossieDoNegocio.getByTestId("painel-linha-do-tempo")).toBeVisible();
     await expect(dossieDoNegocio).toContainText("Follow-up pausado");
     await expect(dossieDoNegocio).toContainText("Follow-up retomado");
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "05-timeline-do-negocio.png"), fullPage: true });

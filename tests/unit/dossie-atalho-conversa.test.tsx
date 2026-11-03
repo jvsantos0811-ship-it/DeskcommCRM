@@ -85,7 +85,14 @@ describe("o elo que some sem barulho", () => {
   it("e o bloco vem ANTES da linha do tempo que anuncia o canal", () => {
     // É a timeline que diz "Entrou no funil". A porta atrás do anúncio
     // obrigaria a rolar para achar o que o próprio texto acabou de prometer.
+    // PC-013: a linha do tempo virou botão + painel (`LinhaDoTempoDoNegocio`);
+    // os dois pontos de montagem continuam DEPOIS do bloco da conversa.
     const fonte = readFileSync("components/kanban/LeadDossier.tsx", "utf8");
-    expect(fonte.indexOf("<ConversaNoDossie")).toBeLessThan(fonte.indexOf("<LeadTimeline"));
+    const conversa = fonte.indexOf("<ConversaNoDossie");
+    expect(conversa).toBeGreaterThan(-1);
+    for (const marca of ["<PainelDaLinhaDoTempo", "<BotaoDaLinhaDoTempo"]) {
+      expect(fonte.indexOf(marca), `${marca} sumiu do dossiê`).toBeGreaterThan(-1);
+      expect(conversa).toBeLessThan(fonte.indexOf(marca));
+    }
   });
 });

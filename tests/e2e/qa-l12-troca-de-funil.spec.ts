@@ -143,6 +143,9 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     const dossie = page.getByRole("dialog");
     await expect(dossie).toBeVisible({ timeout: 30_000 });
     await page.waitForLoadState("networkidle").catch(() => {});
+    // PC-013: a linha do tempo abre pelo botão, num painel dentro do card.
+    await dossie.getByTestId("botao-linha-do-tempo").click();
+    await expect(dossie.getByTestId("painel-linha-do-tempo")).toContainText(`Troca Origem ${S}`, { timeout: 15_000 });
     const textoClone = await dossie.innerText();
     registra(`#936 · dossiê do CLONE = ${JSON.stringify(textoClone.slice(0, 900))}`);
     expect(textoClone, "o clone precisa dizer de onde veio").toContain("Veio");
