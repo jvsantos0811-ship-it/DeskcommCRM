@@ -42,6 +42,7 @@ import {
 import { usePessoasDaAgenda } from "@/hooks/agenda/usePessoasDaAgenda";
 import { CalendarPlus, CaretLeft, CaretRight } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { AbasDoFunil } from "@/components/kanban/AbasDoFunil";
 
 const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
   { id: "dia", rotulo: "Dia" },
@@ -465,6 +466,7 @@ export function AgendaClient({
       data-fuso={fusoDeApresentacao ?? "organizacao"}
       className="flex h-full flex-col gap-4 p-6"
     >
+      <AbasDoFunil />
       {/*
         Em Suspense porque `useSearchParams` obriga: sem a fronteira, o Next
         reprova o build da rota. Fallback nulo porque a ausência do aviso é o

@@ -7,6 +7,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { FunisClient, type FunilDaLista } from "./_client";
+import { AbasDoFunil } from "@/components/kanban/AbasDoFunil";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Funis" };
@@ -66,6 +67,7 @@ export default async function KanbanPickerPage() {
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
+      <AbasDoFunil />
       <header className="flex items-center gap-3">
         <Kanban size={28} className="text-muted-foreground" weight="duotone" />
         {/* Era "Pipelines" — nome de quem construiu o sistema, não de quem

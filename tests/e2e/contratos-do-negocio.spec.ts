@@ -207,7 +207,13 @@ test("a atendente anexa o contrato, envia ao cliente pelo WhatsApp e marca como 
   expect(mensagens![0]!.body).toBe("Segue o contrato para sua assinatura. Qualquer dúvida, é só me chamar.");
 
   // 3. a linha do tempo do negócio registra o envio, com a atendente como autora.
-  await expect(dossie).toContainText("Contrato enviado ao cliente", { timeout: 15_000 });
+  //    PC-013: ela abre pelo botão (que já diz o último registro) num painel
+  //    que ocupa a coluna — e "voltar" devolve tarefas e contratos.
+  await dossie.getByTestId("botao-linha-do-tempo").click();
+  await expect(dossie.getByTestId("painel-linha-do-tempo")).toContainText("Contrato enviado ao cliente", {
+    timeout: 15_000,
+  });
+  await dossie.getByRole("button", { name: "Voltar para tarefas e contratos" }).click();
 
   // 4. marcar como assinado, com a via assinada.
   await item.getByRole("button", { name: "Marcar como assinado" }).click();
@@ -220,7 +226,9 @@ test("a atendente anexa o contrato, envia ao cliente pelo WhatsApp e marca como 
   await expect(item).toHaveAttribute("data-contrato-status", "assinado", { timeout: 15_000 });
   await expect(item).toContainText("Assinado");
   await expect(item.getByRole("button")).toHaveCount(0);
-  await expect(dossie).toContainText("Contrato assinado", { timeout: 15_000 });
+  await dossie.getByTestId("botao-linha-do-tempo").click();
+  await expect(dossie.getByTestId("painel-linha-do-tempo")).toContainText("Contrato assinado", { timeout: 15_000 });
+  await dossie.getByRole("button", { name: "Voltar para tarefas e contratos" }).click();
   await captura(page, "03-contrato-assinado");
 
   // A via assinada abre: a rota confere a organização e assina a URL.

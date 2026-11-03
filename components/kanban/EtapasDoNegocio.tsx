@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-/** Até quantas etapas a régua mostra os números; acima disso, seletor. */
+/** Até quantas etapas a régua aparece inteira; acima disso, seletor. */
 export const LIMITE_DA_REGUA = 14;
 
 export interface EtapaDoNegocio {
@@ -61,10 +61,13 @@ export function EtapasDoNegocio({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* RÉGUA COMPACTA (PC-011): sem barra de rolagem. Cada etapa é um número
-          (o nome no `title` e no toque — tocar escolhe e a confirmação diz o
-          nome); a ATUAL leva o nome à vista. No celular e em funil comprido,
-          só a atual + um seletor. As regras de mover não mudam. */}
+      {/* RÉGUA COMPACTA (PC-011) COM NOMES (PC-013): sem barra de rolagem.
+          Cada etapa leva o número E o nome, dividindo a largura em partes
+          iguais (a atual ganha um pouco mais); nome que não cabe corta com
+          "…" e aparece inteiro no `title`. Antes só a atual tinha nome — o
+          dono pediu para ler o funil sem passar o mouse em cada número. No
+          celular e em funil comprido, só a atual + um seletor. As regras de
+          mover não mudam. */}
       <ol
         className={cn("flex flex-nowrap items-center gap-1", soSeletor ? "hidden" : "max-sm:hidden")}
         aria-label={t("Etapas do funil")}
@@ -84,7 +87,10 @@ export function EtapasDoNegocio({
               ? "border-primary text-text"
               : "border-border text-text-muted hover:border-primary/50 hover:text-text";
           return (
-            <li key={etapa.id} className={ehAtual ? "min-w-0 shrink" : "shrink-0"}>
+            <li
+              key={etapa.id}
+              className={cn("min-w-0 basis-0", ehAtual ? "grow-[1.6]" : "grow")}
+            >
               <button
                 type="button"
                 disabled={!podeMover || ehAtual || movendo}
@@ -94,8 +100,7 @@ export function EtapasDoNegocio({
                 title={ehAtual ? `${t("Etapa atual")}: ${etapa.name}` : `${t("Mover para")} ${etapa.name}`}
                 onClick={() => setEscolhida(marcada ? null : etapa.id)}
                 className={
-                  "flex h-7 min-w-0 items-center gap-1.5 rounded-full border text-xs font-medium transition-colors disabled:cursor-default " +
-                  (ehAtual ? "max-w-[14rem] pr-2.5 pl-0.5 " : "w-7 justify-center ") +
+                  "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-full border pr-2.5 pl-0.5 text-xs font-medium transition-colors disabled:cursor-default " +
                   cor
                 }
               >
@@ -112,11 +117,9 @@ export function EtapasDoNegocio({
                 >
                   {feita ? <Check size={12} /> : i + 1}
                 </span>
-                {ehAtual && (
-                  <span className="truncate" aria-hidden>
-                    {etapa.name}
-                  </span>
-                )}
+                <span className="min-w-0 truncate" aria-hidden>
+                  {etapa.name}
+                </span>
               </button>
             </li>
           );

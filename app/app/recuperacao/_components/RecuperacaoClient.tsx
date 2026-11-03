@@ -17,6 +17,7 @@ import {
   type PeriodoEmDias,
 } from "@/lib/leads/recuperacao";
 import { formatValorDoNegocio } from "@/lib/money";
+import { AbasDoFunil } from "@/components/kanban/AbasDoFunil";
 
 const TODOS = "__todos__";
 
@@ -93,6 +94,7 @@ export function RecuperacaoClient({ podeAgir }: { podeAgir: boolean }) {
 
   return (
     <div className="flex flex-col gap-6 p-6" data-recuperacao>
+      <AbasDoFunil />
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">{t("Recuperação de negócios perdidos")}</h1>
         <p className="text-sm text-muted-foreground">
