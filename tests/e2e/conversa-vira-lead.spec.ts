@@ -117,6 +117,8 @@ test.describe("a conversa vira lead", () => {
     await page.goto(`/app/pipelines/${creds.nascimento!.pipeline_default_id}`);
 
     await page.getByText(NOME, { exact: false }).first().click();
+    // PC-013: a linha do tempo abre pelo botão (contagem + último registro).
+    await page.getByTestId("botao-linha-do-tempo").click();
 
     // "Entrou no funil" é o rótulo de `lead_created`; o CANAL vem no motivo,
     // tirado de `conversations.channel` (`lib/channels/origem-do-negocio.ts`).

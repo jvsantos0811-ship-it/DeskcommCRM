@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useT } from "@/hooks/i18n/useT";
+import { AbasDoFunil } from "@/components/kanban/AbasDoFunil";
 import { useCallsQuery, useDialCall, type CallRow } from "@/hooks/calls/useCallsQuery";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
@@ -136,6 +137,7 @@ export function CallsClient() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
+      <AbasDoFunil />
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t("Chamadas")}</h1>

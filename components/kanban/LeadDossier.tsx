@@ -19,7 +19,7 @@ import { ConversaNoDossie } from "./ConversaNoDossie";
 import { EtapasDoNegocio, type EtapaDoNegocio } from "./EtapasDoNegocio";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
-import { LeadTimeline } from "./LeadTimeline";
+import { BotaoDaLinhaDoTempo, PainelDaLinhaDoTempo } from "./LinhaDoTempoDoNegocio";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
 import { OwnerBadge, ownerInitials } from "./OwnerBadge";
@@ -62,7 +62,8 @@ function formatValor(cents: number | null, currency: string | null): string {
  *
  * Três colunas — os DADOS à esquerda (contato e campos), a CONVERSA no meio
  * (o mesmo chat do Inbox, com envio, notas e templates) e o que ACONTECE à
- * direita (tarefas, linha do tempo e propostas, à vista). Por cima, a régua de
+ * direita (tarefas, contratos e propostas à vista; a linha do tempo atrás de um
+ * botão com a contagem e o último registro — PC-013). Por cima, a régua de
  * etapas: clicar numa etapa move o negócio pela mesma mutação do arrasto, com
  * os mesmos diálogos de campos obrigatórios e de retomada.
  *
@@ -107,6 +108,8 @@ export function LeadDossier({
   const laterais = useLateraisDoDossie(user.id);
   const { modoFoco, alternarFoco, sairDoFoco } = useModoFoco(open);
   const [abaNoCelular, setAbaNoCelular] = useState<AbaDoDossie>("conversa");
+  // PC-013: a linha do tempo abre num painel que ocupa a coluna da direita.
+  const [linhaDoTempoAberta, setLinhaDoTempoAberta] = useState(false);
   const aba: AbaDoDossie = modoFoco ? "conversa" : abaNoCelular;
   const dadosRecolhidos = modoFoco || laterais.dadosRecolhidos;
   const detalhesRecolhidos = modoFoco || laterais.detalhesRecolhidos;
@@ -285,7 +288,8 @@ export function LeadDossier({
             </div>
           </ColunaLateral>
 
-          {/* o que acontece — tarefas, linha do tempo, propostas, tudo à vista */}
+          {/* o que acontece — tarefas, contratos e propostas à vista; a linha do
+              tempo num botão que abre o painel (PC-013) */}
           <ColunaLateral
             lado="direita"
             rotulo={t("Tarefas e linha do tempo")}
@@ -297,6 +301,17 @@ export function LeadDossier({
             ariaLabel={t("Detalhes do negócio")}
             testid="coluna-detalhes-do-negocio"
           >
+            {linhaDoTempoAberta ? (
+              <div className="flex min-h-full flex-col px-4">
+                <PainelDaLinhaDoTempo
+                  itens={timeline.itens}
+                  chegouAoVivo={timeline.chegouAoVivo}
+                  isLoading={timeline.isLoading}
+                  isError={timeline.isError}
+                  onFechar={() => setLinhaDoTempoAberta(false)}
+                />
+              </div>
+            ) : (
             <div className="flex min-h-full flex-col px-4">
               {/* As tarefas ANTES da linha do tempo: a timeline conta o que já
                   aconteceu, a tarefa é o que ainda falta fazer — e quem abre o card
@@ -319,26 +334,28 @@ export function LeadDossier({
                 tags={lead.tags ?? []}
                 podeConfirmar={podeCriarProposta && !user.support}
               />
-              {/* A linha do tempo fica À VISTA, sem aba: é ela que responde "de onde
-                  veio este card?" (entrou no funil, primeira mensagem, troca de
-                  funil). */}
-              <section className="flex-1 py-3">
-                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
-                  {t("Linha do tempo")}
-                </h3>
-                <LeadTimeline
-                  itens={timeline.itens}
-                  chegouAoVivo={timeline.chegouAoVivo}
-                  isLoading={timeline.isLoading}
-                  isError={timeline.isError}
-                />
-              </section>
               <PropostasDoNegocio
                 leadId={lead.id}
                 pipelineId={pipelineId}
                 podeCriar={podeCriarProposta}
               />
+              {/* A LINHA DO TEMPO VIROU BOTÃO (PC-013). Ela ficava à vista aqui e,
+                  em negócio com histórico, empurrava Propostas para fora da tela.
+                  O botão diz quantos registros há e qual foi o último — "de onde
+                  veio este card?" continua a um clique — e abre o painel com
+                  tudo, por dia e com filtros. Fica no PÉ da coluna, sempre no
+                  mesmo lugar. */}
+              <div className="mt-auto">
+                <BotaoDaLinhaDoTempo
+                  itens={timeline.itens}
+                  chegouAoVivo={timeline.chegouAoVivo}
+                  isLoading={timeline.isLoading}
+                  isError={timeline.isError}
+                  onAbrir={() => setLinhaDoTempoAberta(true)}
+                />
+              </div>
             </div>
+            )}
           </ColunaLateral>
         </div>
       </DialogContent>

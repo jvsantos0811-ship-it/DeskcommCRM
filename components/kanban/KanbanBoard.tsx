@@ -229,6 +229,18 @@ export function KanbanBoard({
     [qc, pipelineId, data, moveCard],
   );
 
+  // As etapas vivas, na ordem do funil — as mesmas que o pop-up do negócio
+  // oferece, agora também no botão "Mover de etapa" do card (PC-013).
+  const etapasDoMenu = useMemo(
+    () =>
+      (data?.stages ?? [])
+        .filter((s) => !s.is_archived)
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((s) => ({ id: s.id, name: s.name })),
+    [data?.stages],
+  );
+
   const handleDragEnd = useCallback(
     (result: DropResult) => {
       if (!data || !grouped) return;
@@ -351,6 +363,11 @@ export function KanbanBoard({
             onOpen={setDossieId}
             podeRenomear={podeRenomearEtapa}
             onRenomear={(nome) => renameStage.mutate({ stageId: stage.id, name: nome })}
+            etapas={etapasDoMenu}
+            onMover={(leadId, stageId) => {
+              const lead = data.leads.find((l) => l.id === leadId);
+              if (lead) moverPeloPopup(lead, stageId);
+            }}
           />
         ))}
       </div>
