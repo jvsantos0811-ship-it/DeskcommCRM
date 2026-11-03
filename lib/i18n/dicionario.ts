@@ -2101,6 +2101,9 @@ export const DICIONARIO: Traducoes = {
   // molde de vazio/erro das outras telas.
   "Carregando o desempenho": { es: "Cargando el rendimiento" },
   "Expandir sidebar": { es: "Expandir barra lateral" },
+  // PC-013 — trilho lateral que abre com o mouse
+  "Fixar o menu aberto": { es: "Fijar el menú abierto" },
+  "Menu completo": { es: "Menú completo" },
   "Recolher sidebar": { es: "Contraer barra lateral" },
   Versão: { es: "Versión" },
   versão: { es: "versión" },
