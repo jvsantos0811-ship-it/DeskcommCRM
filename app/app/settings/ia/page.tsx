@@ -18,6 +18,7 @@ import {
   lerAjustesDeRepeticao,
 } from "@/lib/agent-engine/agent/repeticao-entre-respostas";
 import { FRASES_PADRAO, lerFrasesProibidas } from "@/lib/agent-engine/agent/frases-proibidas";
+import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
@@ -77,6 +78,7 @@ export default async function IaSettingsPage() {
   const naoEntendidasPorDia = contarPorDia(
     [...(audiosNaoEntendidos.data ?? []), ...(outrasNaoEntendidas.data ?? [])] as { type: string; created_at: string }[],
     fuso,
+    tagDeIdioma(idioma),
   );
   const podeEditarFrases =
     (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;

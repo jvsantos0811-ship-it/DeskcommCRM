@@ -1,7 +1,8 @@
 /**
  * PC-021, item 6: as mídias não entendidas da organização, contadas por dia no
  * fuso dela. Pura: recebe as linhas já lidas (tipo e hora) e devolve a tabela,
- * do dia mais recente para o mais antigo.
+ * do dia mais recente para o mais antigo. O dia sai no formato do idioma de
+ * quem lê (`tag` BCP-47, de `tagDeIdioma`) — nunca "pt-BR" fixo.
  */
 export interface MidiasNaoEntendidasPorDia {
   dia: string;
@@ -12,10 +13,11 @@ export interface MidiasNaoEntendidasPorDia {
 export function contarPorDia(
   linhas: ReadonlyArray<{ type: string; created_at: string }>,
   fuso: string,
+  tag: string,
 ): MidiasNaoEntendidasPorDia[] {
   const fmt = (iso: string): string => {
     try {
-      return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", timeZone: fuso }).format(new Date(iso));
+      return new Intl.DateTimeFormat(tag, { day: "2-digit", month: "2-digit", timeZone: fuso }).format(new Date(iso));
     } catch {
       return iso.slice(0, 10);
     }

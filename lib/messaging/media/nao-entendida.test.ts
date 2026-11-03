@@ -180,10 +180,13 @@ describe("PC-021 — mídias não entendidas por dia", () => {
         { type: "audio", created_at: "2026-11-02T02:00:00Z" }, // 01/11 23h em SP
       ],
       "America/Sao_Paulo",
+      "pt-BR",
     );
     expect(linhas).toEqual([
       { dia: "03/11", audios: 2, outras: 1 },
       { dia: "01/11", audios: 1, outras: 0 },
     ]);
+    // O dia segue o idioma de quem lê.
+    expect(contarPorDia([{ type: "audio", created_at: "2026-11-03T13:00:00Z" }], "America/Sao_Paulo", "en-US")[0]?.dia).toBe("11/03");
   });
 });
