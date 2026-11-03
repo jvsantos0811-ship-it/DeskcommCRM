@@ -4,6 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { AgentInboxList } from "./_components/AgentInboxList";
+import { PainelDePassagens } from "./_components/PainelDePassagens";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function AgentInboxPage() {
           )}
         </p>
       </header>
+      <PainelDePassagens />
       <AgentInboxList canResolve={canResolve} />
     </div>
   );

@@ -8907,7 +8907,6 @@
   "No arquivo de ambiente, TRANSCRIPTION_BASE_URL.": "In the environment file, TRANSCRIPTION_BASE_URL.",
   "Quem responde vira dono da conversa, e a IA se cala até alguém devolver.": "Whoever replies becomes the conversation's owner, and the AI stays quiet until someone hands it back.",
   "A IA volta sozinha sem resposta da equipe": "The AI comes back on its own with no reply from the team",
-  "Devolve a conversa ao agente depois de um tempo sem resposta de uma pessoa.": "Hands the conversation back to the agent after a while with no reply from a person.",
   "Atendente só vê os seus": "Agents only see their own",
   "Restringe o que cada atendente enxerga nas conversas e no funil.": "Restricts what each agent sees in conversations and in the pipeline.",
   "Diz ao agente para qual etapa do funil levar o negócio quando qualifica ou agenda.": "Tells the agent which pipeline stage to move the deal to when it qualifies or schedules.",
@@ -9273,5 +9272,6 @@
   "Fluxo importado como rascunho.": "Flow imported as a draft.",
   "O arquivo não é um fluxo válido. Confira os itens abaixo e tente de novo.": "The file is not a valid flow. Check the items below and try again.",
   "Este arquivo é de um fluxo de atendimento, e os fluxos de atendimento estão desligados nesta instalação.": "This file is a service flow, and service flows are turned off in this installation.",
-  "Este fluxo ainda não tem caixas suficientes para exportar. Monte o fluxo no editor e salve antes.": "This flow doesn't have enough boxes to export yet. Build the flow in the editor and save it first."
+  "Este fluxo ainda não tem caixas suficientes para exportar. Monte o fluxo no editor e salve antes.": "This flow doesn't have enough boxes to export yet. Build the flow in the editor and save it first.",
+  "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": "Hands back to the agent a conversation a person took and left idle. A conversation the AI passed to the team only goes back through the Hand back button."
 }

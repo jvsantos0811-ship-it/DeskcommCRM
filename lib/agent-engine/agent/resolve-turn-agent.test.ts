@@ -841,3 +841,57 @@ describe('2155 — destino de funil na intenção casada', () => {
     expect(out.destinationPipelineId ?? null).toBeNull();
   });
 });
+
+/**
+ * PC-014 — depois de uma passagem (ferramenta ou devolução da equipe), o
+ * destino vale como grudado: a mensagem seguinte com intenção "nenhuma" fica
+ * com ele, mesmo num roteador sem `sticky`. A troca por intenção FORTE e
+ * diferente continua valendo (regra 2).
+ */
+describe('PC-014 — aderência pela passagem', () => {
+  function fakeDb(passagemPara: string | null) {
+    return {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('from conversations')) return { rows: [{ active_ai_agent_id: 'agent-suporte', active_intent: 'suporte' }] };
+        if (sql.includes('from passagens_entre_agentes')) return { rows: passagemPara ? [{ para_agente_id: passagemPara }] : [] };
+        if (sql.includes('id<>$3')) return { rows: [] };
+        return { rows: [{ id: 'msg-1', body: 'ok, obrigado' }] };
+      }),
+    };
+  }
+
+  it('roteador sem sticky + passagem para o agente ativo + intenção "nenhuma": fica com o destino', async () => {
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.2 });
+    const out = await resolveConversationTurn(fakeDb('agent-suporte') as never, {} as never, { ...baseInput, inbound: true },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false, fallbackAgentId: 'agent-vendas' })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+      }));
+    expect(out.outcome).toBe('sticky');
+    expect(out.config?.agentId).toBe('agent-suporte');
+  });
+
+  it('controle: sem a passagem, o mesmo roteador sem sticky cai na reserva', async () => {
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.2 });
+    const out = await resolveConversationTurn(fakeDb(null) as never, {} as never, { ...baseInput, inbound: true },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false, fallbackAgentId: 'agent-vendas' })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+      }));
+    expect(out.outcome).toBe('fallback');
+    expect(out.config?.agentId).toBe('agent-vendas');
+  });
+
+  it('passagem para OUTRO agente (o roteador trocou depois): não força nada', async () => {
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.2 });
+    const out = await resolveConversationTurn(fakeDb('agent-vendas') as never, {} as never, { ...baseInput, inbound: true },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false, fallbackAgentId: 'agent-vendas' })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+      }));
+    expect(out.outcome).toBe('fallback');
+  });
+});

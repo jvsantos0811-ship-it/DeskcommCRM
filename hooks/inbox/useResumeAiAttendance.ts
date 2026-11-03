@@ -6,6 +6,9 @@ import { apiClient } from "@/lib/api/client";
 
 interface ResumeArgs {
   conversation_id: string;
+  /** PC-014: num número com roteador, o agente escolhido e a linha do que foi feito. */
+  agente_id?: string;
+  nota?: string;
 }
 
 /** O que a pessoa fez, devolvido junto com o controle — nunca só o controle. */
@@ -35,7 +38,7 @@ export function useResumeAiAttendance() {
     mutationFn: async (args: ResumeArgs) =>
       apiClient.post<ResumeResponse>(
         `/api/v1/conversations/${args.conversation_id}/reactivate-bot`,
-        {},
+        args.agente_id !== undefined ? { agente_id: args.agente_id, nota: args.nota ?? "" } : {},
       ),
     onError: (err) => showApiError(err),
     onSuccess: (_data, args) => {

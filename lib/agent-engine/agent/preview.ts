@@ -413,6 +413,32 @@ export function applyPreviewPolicy(
                 message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
               };
             }
+            // PC-014: a passagem para outro agente do roteador. No Testar nada
+            // muda: a ferramenta do turno (sem efeito em prévia) diz para quem
+            // passaria, e a tela mostra isso como aviso e como ação proposta.
+            if (name === 'passar_para_agente') {
+              const original = (definition as { execute?: (a: unknown, o?: unknown) => unknown }).execute;
+              const r = (original ? await original(args, {}) : null) as
+                | { ok: true; para?: string; message?: string }
+                | { ok: false; error: { code: string; message: string } }
+                | null;
+              if (r === null || r.ok !== true) {
+                return r ?? { ok: false, error: { code: 'unknown_preview_tool', message: 'Ferramenta não autorizada no teste.' } };
+              }
+              p.result.proposals.push({ tool: name, arguments: args });
+              if (!p.result.warnings.some((w) => w.code === 'passaria_para_agente'))
+                p.result.warnings.push({
+                  code: 'passaria_para_agente',
+                  message:
+                    `Em produção, a conversa passaria para ${r.para ?? 'outro agente'}, que falaria com o cliente em seguida. ` +
+                    'No Testar nada muda.',
+                });
+              return {
+                ok: true,
+                status: 'teste',
+                message: r.message ?? 'No Testar nada muda. Encerre o turno.',
+              };
+            }
             if (catalog?.category === 'read')
               return {
                 ok: false,
@@ -476,6 +502,15 @@ export function explicarTesteSemMensagem(r: PreviewResult): void {
       message:
         'O agente passou a conversa para a equipe (request_human_handoff) sem escrever mensagem. ' +
         'Em produção o cliente recebe o aviso automático de passagem; o teste não simula esse aviso.',
+    });
+    return;
+  }
+  if (r.proposals.some((p) => p.tool === 'passar_para_agente')) {
+    r.impediments.push({
+      code: 'passou_para_outro_agente',
+      message:
+        'O agente passou a conversa para outro agente do roteador (passar_para_agente) sem escrever mensagem. ' +
+        'Em produção o agente de destino fala com o cliente em seguida; o teste não simula esse turno.',
     });
     return;
   }

@@ -52,6 +52,11 @@ vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 // a barra de ações, não a carteira (que tem arquivo próprio).
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
+// PC-014: sem roteador, "Devolver" segue sendo um clique.
+vi.mock("@/hooks/inbox/useAgentesParaDevolver", () => ({
+  useAgentesParaDevolver: () => ({ data: { tem_roteador: false, agentes: [] } }),
+}));
+vi.mock("@/components/inbox/DevolverParaAgenteDialog", () => ({ DevolverParaAgenteDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeSubmenu: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));

@@ -275,6 +275,21 @@ export interface ContractRow {
 }
 
 /**
+ * Passagem da conversa dele entre agentes do roteador (fork, 9015, PC-014): de
+ * quem para quem é trilha de máquina; o cartão e o motivo citam o que ele
+ * contou (nome, benefício, o que falta) — é dado dele, e o gatilho da 9015 os
+ * apaga na anonimização.
+ */
+export interface PassagemEntreAgentesRow {
+  id: string;
+  origem: string;
+  intencao: string | null;
+  motivo: string | null;
+  cartao: string | null;
+  created_at: string;
+}
+
+/**
  * Tarefa combinada SOBRE a pessoa (migration 0210).
  *
  * ⚠️ ESTE BLOCO NASCEU COM A OUTRA METADE, e não depois dela. A migration liga o
@@ -690,6 +705,8 @@ export interface ExportPayload {
   proposals: ProposalRow[];
   /** Contratos do negócio enviados a ele (fork, 9008) — ver `ContractRow`. */
   contracts: ContractRow[];
+  /** Passagens da conversa dele entre agentes (fork, 9015) — ver `PassagemEntreAgentesRow`. */
+  passagens_entre_agentes: PassagemEntreAgentesRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
@@ -1591,6 +1608,28 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Passagens entre agentes (fork, 9015) — contact_id direto. O gatilho da 9015
+  // apaga cartão e motivo na anonimização; este bloco é a outra metade.
+  let passagens_entre_agentes: PassagemEntreAgentesRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("passagens_entre_agentes")
+      .select("id, origem, intencao, motivo, cartao, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] passagens entre agentes load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("passagens_entre_agentes", data, 500);
+      passagens_entre_agentes = data as PassagemEntreAgentesRow[];
+    }
+  }
+
   // Empresas e pessoas (0448/0449) — ver o comentário do campo `b2b` no tipo.
   // A pessoa vem de `contacts.person_id`; as linhas de planilha casam pelo
   // contato OU pela pessoa, o MESMO escopo da redação da 0449. Erro lança:
@@ -2330,6 +2369,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     sales,
     proposals,
     contracts,
+    passagens_entre_agentes,
     tasks,
     webhook_captures,
     audit_log_extract,
@@ -2525,6 +2565,7 @@ function emptyPayload(
     sales: [],
     proposals: [],
     contracts: [],
+    passagens_entre_agentes: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],

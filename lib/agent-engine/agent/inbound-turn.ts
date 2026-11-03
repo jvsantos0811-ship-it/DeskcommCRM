@@ -169,6 +169,26 @@ import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
+  blocoDeChegada,
+  definicaoDaFerramentaDePassagem,
+  destinosDaPassagem,
+  executarPassagemPelaFerramenta,
+  marcarRespostaDoDestino,
+  nomesDosAgentes,
+  passagemEsperandoODestino,
+  passagemNoTeste,
+  registrarPassagemEntreAgentes,
+  sessaoDoRoteadorDoAgente,
+  ultimaPassagem,
+  aberturaDoTurnoDaPassagem,
+  esperaAntesDeFalar,
+  lerPassagemDoTurno,
+  turnoDaPassagemTemOQueFazer,
+  ultimoEnvioDaConversa,
+} from './passagem-entre-agentes';
+import { loadActiveRouter } from './router-config';
+import { loadPublishedAgentConfigById } from './agent-config';
+import {
   hasOpenCaseForContact,
   getCaseAwaitingLead,
   openCase,
@@ -1530,6 +1550,13 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
  */
 export interface AgentTurnInput {
   resolvedAgent?: TurnAgentResolution;
+  /**
+   * PC-014: o turno do DESTINO de uma passagem entre agentes, que fala primeiro
+   * sem mensagem nova do cliente. Não paga os classificadores da mensagem nova
+   * (ela já foi classificada no turno de quem passou) e não entra na medida de
+   * tempo de resposta (a espera é de propósito, não demora).
+   */
+  turnoDaPassagem?: boolean;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
   /** conversa do CRM — destino do send_message. */
@@ -2358,12 +2385,35 @@ async function executarTurnoDoAgente(
   if (!preview && routed.routerId !== null) {
     try {
       if (agentConfig !== null) {
-        await pool.query(
-          `update conversations
+        // O agente de ANTES vem na mesma escrita (PC-014): quando o roteador
+        // troca de agente, a troca vira uma passagem com origem 'roteador' — o
+        // painel de passagens compara regra do roteador × ferramenta.
+        const { rows: antes } = await pool.query<{ anterior: string | null }>(
+          `with antes as (
+             select active_ai_agent_id from conversations
+              where organization_id = $1 and id = $2
+              for update
+           )
+           update conversations
            set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now()
-           where organization_id = $1 and id = $2`,
+           where organization_id = $1 and id = $2
+           returning (select active_ai_agent_id from antes) as anterior`,
           [tenantId, input.conversationId, agentConfig.agentId, routed.intentName],
         );
+        const anterior = antes[0]?.anterior ?? null;
+        if (anterior !== null && anterior !== agentConfig.agentId) {
+          await registrarPassagemEntreAgentes(pool, {
+            organizationId: tenantId,
+            conversationId: input.conversationId,
+            contactId: leadId || null,
+            routerId: routed.routerId,
+            deAgenteId: anterior,
+            paraAgenteId: agentConfig.agentId,
+            intencao: routed.intentName,
+            origem: 'roteador',
+            jobId: liveJob().id,
+          });
+        }
       }
       // A intenção e a confiança que ROTEARAM — do classificador, ou do Jev
       // quando a tarefa do roteador dele decide (`resolve-turn-agent.ts`). Quem
@@ -2934,6 +2984,13 @@ async function executarTurnoDoAgente(
   // correção do turno que terminou sem falar com o cliente (ver depois da chamada principal).
   let tentativasDeEnvio = 0;
   let passouParaAEquipe = false;
+  // PC-014: o agente passou a conversa para outro agente do roteador neste turno.
+  // Para o motor, é silêncio legítimo como a passagem à equipe: o destino fala
+  // primeiro, em instantes, num turno próprio.
+  let passouParaOutroAgente = false;
+  // PC-014: a passagem que espera a 1ª resposta deste agente (para o painel
+  // contar "sem resposta do destino em 2 min"). Marcada no fim, se uma bolha saiu.
+  let passagemEsperandoResposta: string | null = null;
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -4559,6 +4616,94 @@ async function executarTurnoDoAgente(
   // turno (tests/unit/chave-juridico-so-troca-a-descricao.test.ts).
   aplicaAChaveDeAssuntoJuridico(rawTools, agentConfig?.handoffLegalEnabled);
 
+  // PC-014: passar a conversa para OUTRO agente do roteador, sem esperar o
+  // cliente escrever de novo. Só aparece num número com roteador ATIVO e quando
+  // o agente do turno faz parte dele (membro ou reserva). No Testar, o roteador
+  // é aquele de que o agente faz parte, e a ferramenta só diz para quem passaria.
+  if (agentConfig !== null) {
+    try {
+      const sessaoDoRoteador = preview
+        ? await sessaoDoRoteadorDoAgente(pool, tenantId, agentConfig.agentId)
+        : input.channelSessionId;
+      const roteador = sessaoDoRoteador ? await loadActiveRouter(pool, tenantId, sessaoDoRoteador) : null;
+      const nomes = roteador
+        ? await nomesDosAgentes(pool, tenantId, [
+            ...roteador.members.map((m) => m.agentId),
+            ...(roteador.fallbackAgentId ? [roteador.fallbackAgentId] : []),
+          ])
+        : new Map<string, string>();
+      const destinos = destinosDaPassagem(roteador, agentConfig.agentId, nomes);
+      if (roteador !== null && destinos !== null) {
+        rawTools.passar_para_agente = tool({
+          ...definicaoDaFerramentaDePassagem(destinos),
+          execute: async (raw) => {
+            if (preview) return passagemNoTeste(raw, destinos);
+            try {
+              const res = await executarPassagemPelaFerramenta(
+                pool,
+                {
+                  organizationId: tenantId,
+                  contactId: leadId,
+                  conversationId: input.conversationId,
+                  channelSessionId: input.channelSessionId,
+                  agentId: agentConfig.agentId,
+                  router: roteador,
+                  destinos,
+                  inboundMessageId: input.inboundMessageId ?? null,
+                  jobId: liveJob().id,
+                },
+                {
+                  nomeDeQuemPassa: nomes.get(agentConfig.agentId) ?? 'o agente',
+                  versaoPublicada: (id) => loadPublishedAgentConfigById(pool, tenantId, id),
+                  abrirCaso: (c) =>
+                    openCase(
+                      pool,
+                      { tenantId, conversationId: input.conversationId, agentId: agentConfig.agentId },
+                      { title: c.title, summary: c.summary, blocker: c.blocker, kind: 'outro' },
+                    ),
+                  anotarNoNegocio: async (cartao, destino) => {
+                    await emitAgentActivityForContact({
+                      pool,
+                      organizationId: tenantId,
+                      contactId: leadId,
+                      type: 'note',
+                      reason: `Passagem para ${destino}\n${cartao}`,
+                      sourceModule: 'passagem_entre_agentes',
+                      agentId: agentConfig.agentId,
+                      payload: { passagem: true, para: destino, cartao },
+                    });
+                  },
+                },
+                raw,
+              );
+              if (res.ok && res.status === 'passou') {
+                passouParaOutroAgente = true;
+              }
+              return res;
+            } catch (err) {
+              // Sem `noteRunError` de propósito: refazer o turno inteiro repetiria
+              // a nota e a fala de quem passou. O agente atual segue respondendo.
+              runLog.warn('passar_para_agente falhou — o agente atual segue atendendo', {
+                error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+              });
+              return {
+                ok: false,
+                error: {
+                  code: 'internal_error',
+                  message: 'não consegui passar a conversa agora — siga atendendo o cliente você mesmo.',
+                },
+              };
+            }
+          },
+        });
+      }
+    } catch (err) {
+      runLog.warn('passar_para_agente indisponível neste turno (roteador não lido)', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
+
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
@@ -4902,7 +5047,7 @@ async function executarTurnoDoAgente(
       ...(deps.knobs.ferramentaTempoMaximoMs !== undefined
         ? {
             umaTentativa: {
-              exceto: ['send_message', 'send_template', 'request_human_handoff'],
+              exceto: ['send_message', 'send_template', 'request_human_handoff', 'passar_para_agente'],
               tempoMaximoMs: deps.knobs.ferramentaTempoMaximoMs,
               aoFalhar: () => {
                 ferramentasQueFalharam += 1;
@@ -4981,7 +5126,7 @@ async function executarTurnoDoAgente(
     // Só classifica quando há mensagem nova e quem use a resposta (ver
     // `classificadores-do-turno.ts`).
     const vaiClassificar = classificadoresDoTurno({
-      jobKind: job?.kind ?? null,
+      jobKind: input.turnoDaPassagem === true ? 'turno_da_passagem' : (job?.kind ?? null),
       estagioLigado: deps.knobs.stageClassifier !== undefined,
       temQuemConfirmeOEstagio: rawTools.update_lead_state !== undefined,
       manipulacaoLigada,
@@ -5132,8 +5277,32 @@ async function executarTurnoDoAgente(
     // estado da qualificação em vez de adivinhar. Fora do teste sem contato.
     const camposDoNegocioBlock =
       preview?.kind === 'sandbox' ? '' : await blocoDosCamposDoNegocio(pool, tenantId, leadId || null);
+    // PC-014: a chegada desta conversa — quem passou para este agente e o
+    // cartão da passagem (ou a linha da equipe que devolveu). Fica enquanto a
+    // passagem mais recente for para ESTE agente. Falha de leitura = sem bloco.
+    let chegadaBlock = '';
+    if (!preview && agentConfig !== null) {
+      try {
+        chegadaBlock = blocoDeChegada(
+          await ultimaPassagem(pool, tenantId, input.conversationId),
+          agentConfig.agentId,
+          fusoDaOrg,
+        );
+        passagemEsperandoResposta = await passagemEsperandoODestino(
+          pool,
+          tenantId,
+          input.conversationId,
+          agentConfig.agentId,
+        );
+      } catch (err) {
+        runLog.warn('bloco de chegada não lido — seguindo sem ele', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      }
+    }
     const openingSuffixes = [
       agoraBlock,
+      chegadaBlock,
       camposDoNegocioBlock,
       matchedSkillsBlock,
       stageHintBlock,
@@ -5312,7 +5481,7 @@ async function executarTurnoDoAgente(
         tentativasDeEnvio,
         enviadas: outcomes.length,
         turnoDescartado,
-        passouParaAEquipe,
+        passouParaAEquipe: passouParaAEquipe || passouParaOutroAgente,
         capDeEnvio: capDeEnvioAtingido(),
       });
     if (correcaoDoTurnoMudoPedida) {
@@ -5383,6 +5552,7 @@ async function executarTurnoDoAgente(
       tentativasDeEnvio === 0 &&
       !turnoDescartado &&
       !passouParaAEquipe &&
+      !passouParaOutroAgente &&
       !capDeEnvioAtingido();
     if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou)) {
       const desfechoTerminal = saidaTruncada
@@ -5527,7 +5697,7 @@ async function executarTurnoDoAgente(
         enviadas: outcomes.length + (perguntaDoRoteiroSaiu ? 1 : 0),
         vetos: vetosDoTurno,
         turnoDescartado: turnoDescartado || respostaCortada,
-        passouParaAEquipe,
+        passouParaAEquipe: passouParaAEquipe || passouParaOutroAgente,
         capDeEnvio: capDeEnvioAtingido(),
         optedOut: optedOutThisTurn,
       })
@@ -6115,9 +6285,17 @@ async function executarTurnoDoAgente(
     // Turno que terminou sem enviar (veto, handoff, erro) também para de renovar.
     pararDigitando();
     await mcpCleanup?.();
+    // PC-014: o destino de uma passagem respondeu (a 1ª bolha saiu neste turno).
+    if (!preview && passagemEsperandoResposta !== null && primeiraBolhaEm !== null) {
+      await marcarRespostaDoDestino(pool, tenantId, passagemEsperandoResposta).catch((err: unknown) => {
+        runLog.warn('resposta do destino da passagem não marcada', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      });
+    }
     // PC-002, item 5: o tempo deste turno, sem conteúdo de mensagem. Best-effort:
     // a medida nunca derruba o turno que ela mede.
-    if (!preview && job !== null && liveJob().kind === 'inbound_turn') {
+    if (!preview && job !== null && liveJob().kind === 'inbound_turn' && input.turnoDaPassagem !== true) {
       await gravarTempoDoTurno(pool, {
         organizationId: tenantId,
         conversationId: input.conversationId,
@@ -6231,6 +6409,73 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         job_id: job.id,
         error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
       });
+    }
+    // PC-014: o turno do DESTINO de uma passagem, que fala primeiro sem o
+    // cliente ter escrito de novo. Não classifica (o destino já foi decidido),
+    // não pergunta se a última mensagem já foi respondida (foi, por quem passou)
+    // e espera 5 a 10 s depois do último envio — a fila já garante que o turno
+    // de quem passou terminou antes deste começar.
+    const passagemId = typeof payload.passagem_id === 'string' ? payload.passagem_id : null;
+    if (passagemId !== null) {
+      const passagem = await lerPassagemDoTurno(pool, job.organization_id, passagemId);
+      if (passagem !== null && passagem.clienteEscreveuDepois) {
+        // O cliente escreveu depois da passagem: o turno DELE responde (já com o
+        // destino, pela aderência da passagem, e com o cartão na chegada).
+        deps.log.info('turno da passagem pulado — o cliente escreveu depois; o turno da mensagem responde', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
+        return;
+      }
+      if (!turnoDaPassagemTemOQueFazer(passagem)) {
+        deps.log.info('turno da passagem pulado — a conversa já saiu do destino ou ele já respondeu', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
+        return;
+      }
+      const destino = await loadPublishedAgentConfigById(pool, job.organization_id, passagem!.paraAgenteId!);
+      if (destino === null || destino.pausedAt) {
+        deps.log.warn('turno da passagem pulado — destino sem versão publicada ou pausado', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
+        return;
+      }
+      const espera = esperaAntesDeFalar(
+        await ultimoEnvioDaConversa(pool, job.organization_id, payload.conversation_id),
+        deps.clock?.() ?? new Date(),
+        Math.random(),
+      );
+      if (espera > 0) await (deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms))))(espera);
+      // A anotação arma as guardas de resposta obsoleta: se o cliente escrever
+      // enquanto o destino compõe, a resposta dele é descartada e o turno da
+      // mensagem nova responde às duas coisas.
+      await anotarUltimaInboundVista(pool, {
+        organizationId: job.organization_id,
+        contactId: job.contact_id,
+        conversationId: payload.conversation_id,
+        jobId: job.id,
+      });
+      await runAgentTurn(deps, job, pool, ctx, {
+        turnoDaPassagem: true,
+        resolvedAgent: {
+          config: destino,
+          routerId: null,
+          intentName: passagem!.intencao,
+          confidence: null,
+          outcome: 'sticky',
+        },
+        channelSessionId: payload.channel_session_id,
+        conversationId: payload.conversation_id,
+        inboundMessageId: payload.inbound_message_id,
+        buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, compromissosBlock, origemBlock }) =>
+          aberturaDoTurnoDaPassagem(
+            passagem!.deAgente,
+            ritualBlocks(previous, leadState, context, notesIndexBlock, projeta, compromissosBlock, origemBlock),
+          ),
+      });
+      return;
     }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,
