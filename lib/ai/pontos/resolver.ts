@@ -231,6 +231,8 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   "stage_classifier",
   "jailbreak_detect",
   "promise_semantic",
+  // PC-020 (fork): a conferência de fonte também passa por `argsAux`.
+  "conferencia_de_fonte",
   "compaction",
   "flush",
   "checkpoint",
@@ -276,6 +278,10 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
 export const PONTOS_DE_TIER_ECONOMICO: ReadonlySet<string> = new Set([
   "stage_classifier",
   "jailbreak_detect",
+  // PC-020 (fork): a conferência "sem fonte, não afirma" é uma classificação
+  // curta (um veredito por frase, em JSON) e roda em toda mensagem que afirma
+  // regra — o pedido é "modelo barato".
+  "conferencia_de_fonte",
 ]);
 
 /**

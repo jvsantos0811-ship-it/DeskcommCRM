@@ -496,6 +496,24 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
   },
 
+  {
+    // PC-020 (fork): a conferência que NÃO depende de o agente ter consultado a
+    // base. Afirmação de regra é conferida contra o material (o do turno mais a
+    // busca com a própria frase) e o que a IA atribui ao cliente, contra as
+    // falas dele e as notas. Uma chamada por mensagem com afirmação; nenhuma
+    // nas demais. Herda o modelo do agente — escolha aqui um modelo barato.
+    id: "conferencia_de_fonte",
+    rotulo: "Não afirmar sem fonte",
+    oQueFaz:
+      "Antes de a resposta sair, confere se a regra que ela afirma (benefício, prazo, valor, documento) está no material do escritório e se o que ela diz que o cliente falou ele falou mesmo.",
+    papel: "proteger",
+    exige: {},
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha:
+      "O agente diz ao cliente um prazo, um valor ou um requisito que não está em nenhum material, ou afirma que o cliente disse algo que ele não disse.",
+    registraEm: "llm_calls",
+  },
+
   // ─────────────────────────── Lembrar e buscar ────────────────────────────
   {
     id: "compaction",

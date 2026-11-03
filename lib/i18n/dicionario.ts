@@ -12674,6 +12674,12 @@ export const DICIONARIO: Traducoes = {
   "Não enviei: a mensagem usava termos internos do sistema que o cliente não deve ler": {
     es: "No envié: el mensaje usaba términos internos del sistema que el cliente no debe leer",
   },
+  // PC-018 / PC-020 — motivos de veto na linha do tempo
+  "Repetição barrada: o agente ia repetir uma pergunta ou mensagem que já tinha feito, e reescreveu": { es: "Repetición bloqueada: el agente iba a repetir una pregunta o un mensaje que ya había hecho, y lo reescribió" },
+  "Toque pulado por repetição: a retomada repetiria o que já foi dito ao cliente": { es: "Toque omitido por repetición: la retomada repetiría lo que ya se le dijo al cliente" },
+  "Afirmação sem fonte barrada: o agente afirmava uma regra que não está no material, ou algo que o cliente não disse, e reescreveu": { es: "Afirmación sin fuente bloqueada: el agente afirmaba una regla que no está en el material, o algo que el cliente no dijo, y lo reescribió" },
+  "Afirmação sem fonte barrada: o agente afirmava uma regra (prazo, valor, requisito, documento) que não está no material do escritório, e reescreveu": { es: "Afirmación sin fuente bloqueada: el agente afirmaba una regla (plazo, valor, requisito, documento) que no está en el material de la oficina, y lo reescribió" },
+  "Afirmação sem fonte barrada: o agente atribuía ao cliente algo que ele não disse, e reescreveu": { es: "Afirmación sin fuente bloqueada: el agente le atribuía al cliente algo que no dijo, y lo reescribió" },
   "A sugestão de retomar contato venceu sem decisão": {
     es: "La sugerencia de retomar contacto venció sin decisión",
   },
@@ -16947,6 +16953,16 @@ export const DICIONARIO: Traducoes = {
   "Devolvidas pela equipe": { es: "Devueltas por el equipo" },
   "Nenhuma passagem no período.": { es: "Ningún traspaso en el período." },
   "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": { es: "Devuelve al agente la conversación que una persona asumió y dejó parada. La conversación que la IA pasó al equipo solo vuelve con el botón Devolver." },
+  // PC-020 — sem fonte, não afirma
+  "Conferência de fonte salva.": { es: "Verificación de fuente guardada." },
+  "Barrar e reescrever (recomendado)": { es: "Bloquear y reescribir (recomendado)" },
+  "Só registrar, sem barrar": { es: "Solo registrar, sin bloquear" },
+  "Sem fonte, não afirma": { es: "Sin fuente, no afirma" },
+  "Antes de enviar, o sistema confere se a regra que a IA afirma (benefício, prazo, valor, documento) está no material do escritório e se o que ela diz que o cliente falou ele falou mesmo. Sem fonte, a IA reescreve a partir do material ou diz que vai confirmar com a equipe. Uma chamada de modelo barato só nas mensagens que afirmam algo.": { es: "Antes de enviar, el sistema verifica si la regla que afirma la IA (beneficio, plazo, valor, documento) está en el material del despacho y si lo que dice que el cliente dijo él realmente lo dijo. Sin fuente, la IA reescribe a partir del material o dice que lo confirmará con el equipo. Una llamada a un modelo económico solo en los mensajes que afirman algo." },
+  "Quando a afirmação não tem fonte": { es: "Cuando la afirmación no tiene fuente" },
+  "Não afirmar sem fonte": { es: "No afirmar sin fuente" },
+  "Antes de a resposta sair, confere se a regra que ela afirma (benefício, prazo, valor, documento) está no material do escritório e se o que ela diz que o cliente falou ele falou mesmo.": { es: "Antes de que salga la respuesta, verifica si la regla que afirma (beneficio, plazo, valor, documento) está en el material del despacho y si lo que dice que el cliente dijo él realmente lo dijo." },
+  "O agente diz ao cliente um prazo, um valor ou um requisito que não está em nenhum material, ou afirma que o cliente disse algo que ele não disse.": { es: "El agente le dice al cliente un plazo, un valor o un requisito que no está en ningún material, o afirma que el cliente dijo algo que no dijo." },
   // PC-021 — áudio ou imagem não entendidos
   "Áudio não entendido — a IA pediu para repetir ou escrever.": { es: "Audio no entendido — la IA pidió repetir o escribir." },
   "Mídias não entendidas": { es: "Medios no entendidos" },

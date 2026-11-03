@@ -10,6 +10,9 @@
  *    mensagem da IA sair. Ausente = a lista padrão (`FRASES_PADRAO`). Só o
  *    ADMIN edita a lista (manager vê). O GET traz também a contagem das últimas
  *    4 semanas por frase (`frases_proibidas_na_semana`).
+ *  - `sem_fonte` (PC-020): a conferência "sem fonte, não afirma" — `decidindo`
+ *    (padrão: veta e o modelo reescreve), `observando` (só registra) ou
+ *    `desligada`.
  *
  * Mesma forma de `settings/frase-segura`: merge NÃO destrutivo do jsonb, e a
  * leitura que falhou PARA a gravação (tratá-la como `{}` regravaria o settings
@@ -37,6 +40,11 @@ import {
   lerFrasesProibidas,
 } from "@/lib/agent-engine/agent/frases-proibidas";
 import { ROLE_RANK } from "@/lib/auth/types";
+import {
+  ajustesSemFonteSchema,
+  ESTADO_PADRAO_SEM_FONTE,
+  lerEstadoSemFonte,
+} from "@/lib/agent-engine/guardrails/sem-fonte";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +52,7 @@ export const dynamic = "force-dynamic";
 const entradaSchema = z.strictObject({
   repeticao: ajustesDeRepeticaoSchema.optional(),
   frases_proibidas: frasesProibidasSchema.optional(),
+  sem_fonte: ajustesSemFonteSchema.optional(),
 });
 
 interface ContagemDaFrase {
@@ -81,8 +90,10 @@ function resposta(settings: Record<string, unknown>, contagem: ContagemDaFrase[]
   return {
     repeticao: ajustesParaGravar(lerAjustesDeRepeticao(settings)),
     frases_proibidas: { lista: lerFrasesProibidas(settings) },
+    sem_fonte: { estado: lerEstadoSemFonte(settings) },
     contagem_das_frases: contagem,
     padrao: {
+      sem_fonte: { estado: ESTADO_PADRAO_SEM_FONTE },
       repeticao: ajustesParaGravar({ ...AJUSTES_PADRAO_DE_REPETICAO }),
       frases_proibidas: { lista: [...FRASES_PADRAO] },
     },
@@ -128,6 +139,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     ...conversaAtual,
     ...(parsed.data.repeticao !== undefined ? { repeticao: parsed.data.repeticao } : {}),
     ...(parsed.data.frases_proibidas !== undefined ? { frases_proibidas: parsed.data.frases_proibidas } : {}),
+    ...(parsed.data.sem_fonte !== undefined ? { sem_fonte: parsed.data.sem_fonte } : {}),
   };
   const settings = { ...lido.settings, conversa };
 

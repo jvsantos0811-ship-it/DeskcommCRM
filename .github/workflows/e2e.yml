@@ -1283,6 +1283,7 @@ jobs:
         redes-sociais-volta-nao-desloga.spec.ts
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
+        sem-fonte.spec.ts
         registro-da-conversa.spec.ts
         regras-da-ia-repeticao.spec.ts
         skills-versao-nova-do-catalogo.spec.ts

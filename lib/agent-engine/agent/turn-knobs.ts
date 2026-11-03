@@ -60,6 +60,9 @@ export function turnKnobsFromEnv(env: Env): InboundTurnKnobs {
       },
       ...(env.PROMISE_SEMANTIC_MODEL !== undefined ? { model: env.PROMISE_SEMANTIC_MODEL } : {}),
     },
+    semFonte: {
+      ...(env.SEM_FONTE_MODEL !== undefined ? { model: env.SEM_FONTE_MODEL } : {}),
+    },
     followupAi: {
       ...(env.FOLLOWUP_AI_MODEL !== undefined ? { model: env.FOLLOWUP_AI_MODEL } : {}),
     },

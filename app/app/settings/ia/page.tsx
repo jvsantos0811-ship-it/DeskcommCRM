@@ -3,7 +3,8 @@
  *
  * As regras que o CRM garante antes de cada mensagem da IA sair, por
  * organização. O prompt orienta; só o CRM garante: a trava de repetição
- * (PC-018) e as frases proibidas (PC-022).
+ * (PC-018), as frases proibidas (PC-022), a conferência de fonte (PC-020) e
+ * a conta das mídias não entendidas (PC-021).
  *
  * Gate = manager+, o mesmo de Distribuição de atendimento. A lista de frases
  * proibidas só o admin muda (o manager vê a lista e a contagem).
@@ -27,6 +28,8 @@ import { MidiasNaoEntendidas } from "./_midias-nao-entendidas";
 import { contarPorDia } from "@/lib/messaging/media/nao-entendidas-por-dia";
 import { PREFIXO_AUDIO_NAO_ENTENDIDO, PREFIXO_MIDIA_NAO_ENTENDIDA } from "@/lib/messaging/media/nao-entendida";
 import { RepeticaoForm } from "./_repeticao-form";
+import { SemFonteForm } from "./_sem-fonte-form";
+import { lerEstadoSemFonte } from "@/lib/agent-engine/guardrails/sem-fonte";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +101,7 @@ export default async function IaSettingsPage() {
         inicial={ajustesParaGravar(lerAjustesDeRepeticao(settings))}
         padrao={ajustesParaGravar({ ...AJUSTES_PADRAO_DE_REPETICAO })}
       />
+      <SemFonteForm inicial={lerEstadoSemFonte(settings)} />
       <FrasesProibidasForm
         inicial={lerFrasesProibidas(settings)}
         padrao={[...FRASES_PADRAO]}

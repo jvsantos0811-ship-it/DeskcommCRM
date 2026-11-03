@@ -246,6 +246,10 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
   PROMISE_SEMANTIC_MODEL: z.string().min(1).optional(),
+  // PC-020: modelo da conferência "sem fonte, não afirma" (1 chamada por
+  // mensagem que afirma regra ou fala do cliente). Vazio = o painel de
+  // Provedores (ponto "Não afirmar sem fonte") e, sem ele, o modelo do agente.
+  SEM_FONTE_MODEL: z.string().min(1).optional(),
   // Onda 5 (Task 5.1) — modelo auxiliar dos turnos classify/decide_timing do
   // sistema de fluxos de follow-up (sem valor = default da org).
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),
