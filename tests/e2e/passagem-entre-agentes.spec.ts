@@ -81,8 +81,15 @@ interface Cenario {
   cartao: string;
 }
 
+// O que esta spec semeia e precisa desfazer no fim: agentes PUBLICADOS e um
+// roteador ATIVO na organização compartilhada do e2e mudam o que as specs
+// vizinhas medem — `prova-painel-provedores` ("instalação sem agente
+// publicado") reprovou no CI depois desta.
+const semeado: { agentes: string[]; roteador: string | null } = { agentes: [], roteador: null };
+
 async function agentePublicado(org: string, nome: string): Promise<string> {
   const id = randomUUID();
+  semeado.agentes.push(id);
   const { error: e1 } = await admin.from("ai_agents").insert({ id, organization_id: org, name: nome, system_prompt: "s" });
   if (e1) throw new Error(`agente: ${e1.message}`);
   const versao = randomUUID();
@@ -123,6 +130,7 @@ async function cenario(): Promise<Cenario> {
     .select("id")
     .single();
   if (e1 || !roteador) throw new Error(`roteador: ${e1?.message}`);
+  semeado.roteador = roteador.id;
   const { error: e2 } = await admin.from("ai_router_members").insert({
     organization_id: org,
     router_id: roteador.id,
@@ -219,8 +227,34 @@ async function cenario(): Promise<Cenario> {
       destino_respondeu_em: new Date(agora.getTime() + 20_000).toISOString(),
       created_at: agora.toISOString(),
     },
-    { ...base, de_agente_id: raquel, para_agente_id: recepcao, origem: "roteador", desfecho: "passou" },
-    { ...base, de_agente_id: recepcao, para_agente_id: raquel, intencao: "auxilio", origem: "ferramenta", desfecho: "laco" },
+    // ⚠️ Todas as linhas com as MESMAS chaves: o insert em lote do PostgREST
+    // monta a lista de colunas pela união das chaves, e a coluna que falta numa
+    // linha vai como NULL, não como o default — `created_at` (not null) reprovou
+    // o lote inteiro no CI.
+    {
+      ...base,
+      de_agente_id: raquel,
+      para_agente_id: recepcao,
+      intencao: null,
+      origem: "roteador",
+      desfecho: "passou",
+      motivo: null,
+      cartao: null,
+      destino_respondeu_em: null,
+      created_at: new Date(agora.getTime() + 1_000).toISOString(),
+    },
+    {
+      ...base,
+      de_agente_id: recepcao,
+      para_agente_id: raquel,
+      intencao: "auxilio",
+      origem: "ferramenta",
+      desfecho: "laco",
+      motivo: "terceira passagem na mesma hora",
+      cartao: null,
+      destino_respondeu_em: null,
+      created_at: new Date(agora.getTime() + 2_000).toISOString(),
+    },
   ]);
   if (e9) throw new Error(`passagens: ${e9.message}`);
 
@@ -233,6 +267,21 @@ test.describe("PC-014 — passagem entre agentes pela tela", () => {
 
   test.beforeAll(async () => {
     c = await cenario();
+  });
+
+  test.afterAll(async () => {
+    // Arquiva e despublica os agentes e desliga o roteador (sem apagar: a
+    // conversa e as passagens apontam para eles). Roda mesmo se o cenário
+    // parou no meio.
+    if (semeado.roteador) {
+      await admin.from("ai_routers").update({ is_active: false }).eq("id", semeado.roteador);
+    }
+    if (semeado.agentes.length > 0) {
+      await admin
+        .from("ai_agents")
+        .update({ published_version_id: null, archived_at: new Date().toISOString() })
+        .in("id", semeado.agentes);
+    }
   });
 
   test("a Central mostra o painel de passagens do dia", async ({ page }) => {
