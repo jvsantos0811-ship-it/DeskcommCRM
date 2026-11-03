@@ -242,6 +242,7 @@ import { CORRECAO_DO_TURNO_MUDO, turnoMudoPedeCorrecao } from './turno-mudo';
 import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
+import { aplicarRegistroDoFechamento, blocoDoRegistro } from './registro-da-conversa';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import {
   contarRepeticaoNaConversa,
@@ -2995,7 +2996,10 @@ async function executarTurnoDoAgente(
             gate,
             code: rep.tipo,
             conversation_id: input.conversationId,
-            mensagem_anterior_id: rep.anterior.id,
+            // PC-019: achada no registro da conversa → o id é do item, não da mensagem.
+            ...(rep.tipo === 'pergunta_respondida' && rep.fonte === 'registro'
+              ? { registro_item_id: rep.anterior.id }
+              : { mensagem_anterior_id: rep.anterior.id }),
           },
         });
       }
@@ -5416,9 +5420,28 @@ async function executarTurnoDoAgente(
         });
       }
     }
+    // PC-019: o registro da conversa (o que já foi perguntado e respondido, as
+    // licenças, o que foi prometido) — do CONTATO, de qualquer agente; sobrevive
+    // à compactação e à troca de agente. Sufixo por lead (não quebra o cache).
+    let registroBlock = '';
+    if (preview?.kind !== 'sandbox' && leadId) {
+      try {
+        registroBlock = await blocoDoRegistro(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          agora: clock(),
+          fuso: fusoDaOrg,
+        });
+      } catch (err) {
+        runLog.warn('registro da conversa não lido — o turno segue sem ele', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+      }
+    }
     const openingSuffixes = [
       agoraBlock,
       chegadaBlock,
+      registroBlock,
       camposDoNegocioBlock,
       matchedSkillsBlock,
       stageHintBlock,
@@ -6065,6 +6088,29 @@ async function executarTurnoDoAgente(
     // faria a seguir.
     const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
     await insertCheckpoint(pool, { tenantId, leadId, jobId: liveJob().id, content });
+
+    // PC-019: o registro da conversa sai da MESMA chamada de fechamento (campo
+    // `registro` + as promessas da declaração) — sem chamada de modelo a mais.
+    // Falhar aqui não derruba o turno que já respondeu ao cliente.
+    try {
+      const itens = await aplicarRegistroDoFechamento(pool, {
+        organizationId: tenantId,
+        contactId: leadId,
+        registro: content.registro,
+        promessas: promessasEmAberto(content.declaracao ?? null),
+        contexto: {
+          agora: clock(),
+          agentId: agentConfig?.agentId ?? null,
+          conversationId: input.conversationId,
+          jobId: liveJob().id,
+        },
+      });
+      if (itens > 0) runLog.info('registro da conversa atualizado', { itens });
+    } catch (err) {
+      runLog.warn('registro da conversa não gravado — o turno segue', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
 
     // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
     //

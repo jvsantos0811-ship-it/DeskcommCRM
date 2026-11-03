@@ -31,6 +31,7 @@ import {
   promessaSchema,
   type DeclaracaoDoTurno,
 } from "../declaracao";
+import { REGISTRO_INSTRUCTION } from "../registro-da-conversa";
 
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
@@ -52,6 +53,15 @@ export const checkpointContentSchema = z.object({
    * seguem validando.
    */
   declaracao: declaracaoDoTurnoSchema.optional(),
+  /**
+   * PC-019: o registro da conversa deste turno (perguntas feitas, respostas,
+   * licenças, promessas cumpridas). `unknown` DE PROPÓSITO: quem valida é
+   * `lerRegistroDoFechamento` (registro-da-conversa.ts), que é tolerante — um
+   * registro fora do formato não pode recusar o fechamento inteiro e re-tentar
+   * um turno que já respondeu ao cliente. Ele não vai para `lead_checkpoints`:
+   * mora em `registro_da_conversa`, por item.
+   */
+  registro: z.unknown().optional(),
 });
 export type CheckpointContent = z.infer<typeof checkpointContentSchema>;
 
@@ -62,7 +72,7 @@ export type CheckpointContent = z.infer<typeof checkpointContentSchema>;
  * prometer `undefined` onde `select *` entrega `null` — e o `=== undefined` de
  * quem lesse a row seria falso justamente no caso que ele quer pegar.
  */
-export interface LeadCheckpointRow extends Omit<CheckpointContent, 'declaracao'> {
+export interface LeadCheckpointRow extends Omit<CheckpointContent, 'declaracao' | 'registro'> {
   id: string;
   seq: string;
   organization_id: string;
@@ -103,6 +113,7 @@ export const CHECKPOINT_INSTRUCTION =
   'esperando — nunca a pergunta que você acabou de fazer. Se o turno terminou ' +
   'perguntando, a próxima ação é o que fazer COM a resposta quando ela chegar. ' +
   DECLARACAO_INSTRUCTION +
+  REGISTRO_INSTRUCTION +
   ' Sem texto fora do JSON.';
 
 export async function insertCheckpoint(

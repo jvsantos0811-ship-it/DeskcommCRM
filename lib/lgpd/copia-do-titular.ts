@@ -102,6 +102,8 @@ export const O_QUE_FICA = {
   contracts: "os contratos que o escritório enviou a ele e o desfecho de cada um",
   passagens_entre_agentes:
     "a troca do atendimento dele entre assistentes virtuais: quando, o motivo e o resumo do que ele contou",
+  registro_da_conversa:
+    "o que o assistente virtual já perguntou a ele, o resumo do que ele respondeu, as autorizações que deu e o que foi prometido a ele",
   tasks: "o que se combinou fazer para ele",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",

@@ -16933,6 +16933,14 @@ export const DICIONARIO: Traducoes = {
   "Devolvidas pela equipe": { es: "Devueltas por el equipo" },
   "Nenhuma passagem no período.": { es: "Ningún traspaso en el período." },
   "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": { es: "Devuelve al agente la conversación que una persona asumió y dejó parada. La conversación que la IA pasó al equipo solo vuelve con el botón Devolver." },
+  // PC-019 — registro da conversa (card do negócio)
+  "Conversa até aqui": { es: "Conversación hasta aquí" },
+  "Já perguntado e respondido": { es: "Ya preguntado y respondido" },
+  "Licenças": { es: "Permisos" },
+  "Prometido": { es: "Prometido" },
+  "não quis responder": { es: "no quiso responder" },
+  "Cumprida": { es: "Cumplida" },
+  "Não foi possível ler o registro desta conversa.": { es: "No fue posible leer el registro de esta conversación." },
   // PC-018 — trava de repetição (Configurações › IA)
   "Regras que o sistema confere antes de cada mensagem da IA sair, em todos os agentes da empresa. O texto do agente orienta; estas regras garantem.": { es: "Reglas que el sistema verifica antes de que salga cada mensaje de la IA, en todos los agentes de la empresa. El texto del agente orienta; estas reglas garantizan." },
   "Regras que o sistema confere antes de cada mensagem da IA sair, como não repetir pergunta.": { es: "Reglas que el sistema verifica antes de que salga cada mensaje de la IA, como no repetir preguntas." },

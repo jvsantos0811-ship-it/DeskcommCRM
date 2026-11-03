@@ -311,6 +311,15 @@ const DECISOES: Record<string, Decisao> = {
       "cita o cliente (nome, benefício, o que falta) — são apagados na virada de is_anonymized " +
       "pelo gatilho trg_contacts_redige_passagens (fn_redigir_passagens_ao_anonimizar).",
   },
+  registro_da_conversa: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9016 (fork, PC-019): o registro da conversa (temas, o resumo do que a pessoa respondeu, " +
+      "licenças e promessas) é memória de trabalho que cita o cliente; a virada de is_anonymized " +
+      "APAGA as linhas dele pelo gatilho trg_contacts_apaga_registro_da_conversa " +
+      "(fn_apagar_registro_da_conversa_ao_anonimizar). Não há trilha a preservar.",
+  },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",

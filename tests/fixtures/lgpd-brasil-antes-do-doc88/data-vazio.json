@@ -24,6 +24,7 @@
   "proposals": [],
   "contracts": [],
   "passagens_entre_agentes": [],
+  "registro_da_conversa": [],
   "tasks": [],
   "webhook_captures": [],
   "audit_log_extract": [],

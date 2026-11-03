@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Registro da conversa — a IA lembra o que já perguntou, o que o cliente respondeu, as licenças dadas e o que prometeu
+---
+Cada contato ganha um registro da conversa, gravado no fechamento de cada turno da IA (na mesma chamada que já existia, sem custo de modelo a mais): as perguntas que a IA fez e se foram respondidas, recusadas ou ficaram sem resposta, com a resposta resumida; as licenças e consentimentos dados (por exemplo, dados de saúde: sim, com a hora); e as promessas feitas ao cliente, com prazo e situação (pendente, cumprida ou vencida quando o prazo passa sem a equipe falar). Em todo turno — resposta, follow-up ou resposta de caso — qualquer agente da empresa recebe um bloco curto com esse registro, que sobrevive à compactação do histórico e à troca de agente: a especialista vê o que a recepção já perguntou e não repete. A trava de repetição passa a usar o registro para saber se uma pergunta já foi respondida, mesmo em conversa longa. O card do negócio mostra o mesmo registro para a equipe, no bloco "Conversa até aqui". Dado de saúde fica só como tema ("licença de saúde: sim", "afastamento: informado"), nunca diagnóstico, CID ou nome de remédio. Anonimizar o contato apaga o registro dele.

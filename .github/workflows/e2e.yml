@@ -1281,6 +1281,7 @@ jobs:
         qa-l12-inbox.spec.ts
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
+        registro-da-conversa.spec.ts
         regras-da-ia-repeticao.spec.ts
         skills-versao-nova-do-catalogo.spec.ts
         sons-dos-avisos.spec.ts

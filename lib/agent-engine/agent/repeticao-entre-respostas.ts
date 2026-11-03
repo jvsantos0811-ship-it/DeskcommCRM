@@ -43,6 +43,7 @@
 import { z } from 'zod';
 
 import { mudaInformacao, normalizarParaComparacao, similaridadeDice } from './near-dup';
+import { lerRegistro, perguntasRespondidas, type PerguntaRespondida } from './registro-da-conversa';
 import type { Queryable } from '../queue/queue';
 
 // ─── Ajustes por organização (`organizations.settings.conversa.repeticao`) ──
@@ -146,8 +147,43 @@ export interface MensagemDaIa {
 
 export type Repeticao =
   | { tipo: 'mensagem'; anterior: MensagemDaIa }
-  | { tipo: 'pergunta_respondida'; pergunta: string; anterior: MensagemDaIa }
+  | {
+      tipo: 'pergunta_respondida';
+      pergunta: string;
+      anterior: MensagemDaIa;
+      /** PC-019: achada no registro da conversa (então `anterior.id` é o id do item). */
+      fonte?: 'registro';
+    }
   | { tipo: 'pergunta_duas_vezes'; pergunta: string; anterior: MensagemDaIa };
+
+/**
+ * PC-019: uma pergunta da candidata já foi respondida segundo o REGISTRO da
+ * conversa — sem janela de tempo nem de mensagens: é o que sobrevive à
+ * compactação e à troca de agente (a especialista não repete o que a recepção
+ * já perguntou).
+ */
+export async function perguntaJaRespondidaNoRegistro(
+  candidata: string,
+  respondidas: readonly PerguntaRespondida[],
+  mesmaPergunta: Comparador,
+): Promise<Repeticao | null> {
+  if (respondidas.length === 0) return null;
+  for (const pergunta of perguntasDoTexto(candidata)) {
+    for (const r of respondidas) {
+      const casou =
+        (await mesmaPergunta(pergunta, r.texto)) || (r.texto !== r.tema && (await mesmaPergunta(pergunta, r.tema)));
+      if (casou) {
+        return {
+          tipo: 'pergunta_respondida',
+          pergunta,
+          fonte: 'registro',
+          anterior: { id: r.id, body: r.texto, createdAt: r.quando, respondida: true, respostaDoCliente: r.resposta },
+        };
+      }
+    }
+  }
+  return null;
+}
 
 /** (a) A candidata (ou um parágrafo dela) é quase igual a uma mensagem anterior. Puro. */
 export function mensagemParecida(
@@ -252,9 +288,15 @@ export function erroDeEnsinoDaRepeticao(r: Repeticao, fuso: string, followup: bo
   const hora = horaCurta(r.anterior.createdAt, fuso);
   if (r.tipo === 'pergunta_respondida') {
     const resposta = r.anterior.respostaDoCliente ? curto(r.anterior.respostaDoCliente, 80) : '';
+    const comoRespondeu =
+      resposta === 'não quis responder'
+        ? ' e o cliente não quis responder'
+        : resposta
+          ? ` e o cliente respondeu ${JSON.stringify(resposta)}`
+          : ' e o cliente já respondeu';
     return (
       `Você já perguntou ${JSON.stringify(curto(r.pergunta, 120))}${hora ? ` às ${hora}` : ''}` +
-      (resposta ? ` e o cliente respondeu ${JSON.stringify(resposta)}` : ' e o cliente já respondeu') +
+      comoRespondeu +
       '. NÃO pergunte de novo: use o que ele disse e siga para a próxima pergunta. A mensagem NÃO foi enviada.'
     );
   }
@@ -394,8 +436,12 @@ export function criarConferenciaDeRepeticao(
   args: { organizationId: string; contactId: string; desde: Date },
   embed: ((texto: string) => Promise<number[] | null>) | null,
 ): ConferenciaDeRepeticao {
-  let carregado: Promise<{ ajustes: AjustesDeRepeticao; mensagens: MensagemDaIa[]; ultimaDoCliente: string | null }> | null =
-    null;
+  let carregado: Promise<{
+    ajustes: AjustesDeRepeticao;
+    mensagens: MensagemDaIa[];
+    ultimaDoCliente: string | null;
+    respondidas: PerguntaRespondida[];
+  }> | null = null;
   const vetores = new Map<string, Promise<number[] | null>>();
   const vetor = (t: string) => {
     let v = vetores.get(t);
@@ -409,12 +455,16 @@ export function criarConferenciaDeRepeticao(
     async conferir(candidata, opts) {
       carregado ??= (async () => {
         const ajustes = await ajustesDaOrganizacao(db, args.organizationId);
-        if (!ajustes.ligada) return { ajustes, mensagens: [], ultimaDoCliente: null };
+        if (!ajustes.ligada) return { ajustes, mensagens: [], ultimaDoCliente: null, respondidas: [] };
         const h = await historicoDaIaParaOContato(db, { ...args, ajustes });
-        return { ajustes, ...h };
+        // PC-019: o registro da conversa diz o que JÁ foi respondido, fora da janela.
+        const respondidas = await lerRegistro(db, args.organizationId, args.contactId)
+          .then(perguntasRespondidas)
+          .catch(() => [] as PerguntaRespondida[]);
+        return { ajustes, ...h, respondidas };
       })();
-      const { ajustes, mensagens, ultimaDoCliente } = await carregado;
-      if (!ajustes.ligada || mensagens.length === 0) return null;
+      const { ajustes, mensagens, ultimaDoCliente, respondidas } = await carregado;
+      if (!ajustes.ligada || (mensagens.length === 0 && respondidas.length === 0)) return null;
       if (clientePediuParaRepetir(ultimaDoCliente)) return null;
 
       const parecida = mensagemParecida(candidata, mensagens, ajustes.limiarTexto);
@@ -425,6 +475,8 @@ export function criarConferenciaDeRepeticao(
         if (va && vb) return cosseno(va, vb) >= ajustes.limiarPergunta;
         return diceDePerguntas(a, b) >= LIMIAR_DE_PERGUNTA_SEM_EMBEDDING;
       };
+      const peloRegistro = await perguntaJaRespondidaNoRegistro(candidata, respondidas, mesmaPergunta);
+      if (peloRegistro) return peloRegistro;
       return perguntaRepetida(candidata, mensagens, mesmaPergunta, opts?.followup === true ? 1 : 2);
     },
   };
