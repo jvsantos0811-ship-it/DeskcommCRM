@@ -64,6 +64,12 @@ vi.mock("@/hooks/contacts/useCarteiraDoContato", () => ({
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [], isLoading: false }),
 }));
+// PC-014: o cabeçalho lê, com react-query, os agentes para quem a conversa
+// pode ser devolvida. Mockado como os outros: este arquivo mede o botão pessoal.
+vi.mock("@/hooks/inbox/useAgentesParaDevolver", () => ({
+  useAgentesParaDevolver: () => ({ data: { tem_roteador: false, agentes: [] } }),
+}));
+vi.mock("@/components/inbox/DevolverParaAgenteDialog", () => ({ DevolverParaAgenteDialog: () => null }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeSubmenu: () => null }));
