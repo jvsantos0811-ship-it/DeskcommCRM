@@ -3188,6 +3188,9 @@ async function executarTurnoDoAgente(
         fontes: agentConfig?.knowledgeSourceIds ?? [],
         lerMaterialDoTurno: () => evidenciasComerciais.ler().map((e) => e.conteudo),
         chamarModelo: async (sistema, pergunta) => {
+          // Modelo e provider do agente viajam JUNTOS (PR #151): o par sai do
+          // `argsAux`, e o `llmOverride` fica no objeto da chamada.
+          const aux = argsAux(deps.knobs.semFonte?.model);
           const chamada = await runModelCall(
             pool,
             deps.llmCfg,
@@ -3200,7 +3203,8 @@ async function executarTurnoDoAgente(
               messages: [{ role: 'user', content: pergunta }],
               maxOutputTokens: 800,
               reasoning: 'none',
-              ...argsAux(deps.knobs.semFonte?.model),
+              ...(aux.model !== undefined ? { model: aux.model } : {}),
+              ...(aux.llmOverride !== undefined ? { llmOverride: aux.llmOverride } : {}),
             },
             { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
           );
