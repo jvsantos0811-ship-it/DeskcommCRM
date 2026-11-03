@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
-import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
+import { applyFilters, filtersFromParams, filtersToParams, filtroLigado } from "@/lib/kanban/filters";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
@@ -64,6 +64,7 @@ export function PipelinePageClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  const comFiltro = filtroLigado(filters);
   const setFilters = useCallback(
     (next: LeadFilters) => {
       const qs = filtersToParams(next);
@@ -162,6 +163,16 @@ export function PipelinePageClient({
           limite curto) + botão na mesma linha sem quebra empurrava o botão pra
           fora da viewport em telas estreitas. De `sm:` pra cima volta a ser
           uma linha só, como sempre foi. */}
+      {/*
+        O TOPO DO FUNIL: cabeçalho + barra de filtros, num grupo só (03/11/2026,
+        pedido do João com o Venda Tech de referência). Onde há mouse, a barra
+        de filtros fica recolhida e desce quando o mouse passa no topo — o
+        quadro ganha a altura dela no resto do tempo. Fica aberta com foco do
+        teclado dentro dela, com um menu dela aberto e, sempre, com um filtro
+        ligado (recolher esconderia por que o quadro mostra menos negócios). No
+        toque não há hover: ali ela fica sempre à vista.
+      */}
+      <div className="group/topo flex flex-col" data-testid="topo-do-funil">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/*
           O TÍTULO É O SELETOR. Com um funil só, `h1` puro (nada para trocar);
@@ -259,12 +270,28 @@ export function PipelinePageClient({
           leads={data.leads}
         />
       )}
-      <FilterBar
-        filters={filters}
-        onChange={setFilters}
-        leads={data?.leads ?? []}
-        settings={data?.pipeline.settings}
-      />
+      <div
+        data-testid="filtros-do-funil"
+        data-recolhida={comFiltro ? "nunca" : "sem-o-mouse"}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+          comFiltro
+            ? "grid-rows-[1fr]"
+            : "grid-rows-[1fr] [@media(hover:hover)]:grid-rows-[0fr] [@media(hover:hover)]:group-hover/topo:grid-rows-[1fr] [@media(hover:hover)]:focus-within:grid-rows-[1fr] [@media(hover:hover)]:has-[[data-state=open]]:grid-rows-[1fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="pt-3">
+            <FilterBar
+              filters={filters}
+              onChange={setFilters}
+              leads={data?.leads ?? []}
+              settings={data?.pipeline.settings}
+            />
+          </div>
+        </div>
+      </div>
+      </div>
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           {t("Não consegui carregar este funil:")} {formatError(error, t)}

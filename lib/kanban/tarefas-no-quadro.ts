@@ -1,4 +1,4 @@
-import { resumoDasTarefas, type SituacaoDaTarefa, type Tarefa } from "@/lib/tarefas/tipos";
+import { proximasTarefas, resumoDasTarefas, type SituacaoDaTarefa, type Tarefa } from "@/lib/tarefas/tipos";
 import type { Lead } from "@/lib/types/leads";
 
 /** A linha de `crm_tasks` como o quadro a lê — só as colunas que esta regra usa. */
@@ -6,6 +6,9 @@ export interface LinhaDaTarefaNoQuadro {
   lead_id: string | null;
   due_date: string | null;
   status: SituacaoDaTarefa;
+  /** Para o card mostrar a tarefa pelo nome (03/11/2026). Ausentes = só o selo. */
+  id?: string;
+  title?: string;
 }
 
 /**
@@ -31,7 +34,7 @@ export function anexarTarefasAosNegocios(
   linhas: readonly LinhaDaTarefaNoQuadro[],
   agora: Date = new Date(),
 ): Lead[] {
-  const porNegocio = new Map<string, Array<Pick<Tarefa, "due_date" | "status">>>();
+  const porNegocio = new Map<string, LinhaDaTarefaNoQuadro[]>();
   for (const linha of linhas) {
     if (!linha.lead_id) continue;
     const doNegocio = porNegocio.get(linha.lead_id);
@@ -44,6 +47,11 @@ export function anexarTarefasAosNegocios(
     const tarefas = porNegocio.get(lead.id);
     if (!tarefas) return lead;
     const resumo = resumoDasTarefas(tarefas, agora);
-    return resumo.abertas > 0 ? { ...lead, tarefas: resumo } : lead;
+    if (resumo.abertas === 0) return lead;
+    const comNome = tarefas.filter(
+      (t): t is LinhaDaTarefaNoQuadro & Pick<Tarefa, "id" | "title"> => Boolean(t.id && t.title),
+    );
+    const proximas = comNome.length > 0 ? proximasTarefas(comNome, agora) : [];
+    return { ...lead, tarefas: proximas.length > 0 ? { ...resumo, proximas } : resumo };
   });
 }

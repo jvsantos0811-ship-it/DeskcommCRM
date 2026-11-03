@@ -440,7 +440,8 @@ async function withNextActions(
 }
 
 /**
- * Anexa o resumo das tarefas EM ABERTO de cada negócio — o selo do card.
+ * Anexa o resumo das tarefas EM ABERTO de cada negócio — o selo do card e,
+ * desde 03/11/2026, as próximas pelo nome (título e prazo, até duas).
  *
  * Uma leitura de `crm_tasks` para o quadro inteiro, em lotes de ids como as
  * outras: o card não pode custar uma consulta por negócio. Só as abertas vêm do
@@ -462,7 +463,7 @@ async function withTarefas(
   const { data, error } = await buscaEmLotes(leadIds, (lote) =>
     supabase
       .from("crm_tasks")
-      .select("lead_id, due_date, status")
+      .select("id, lead_id, title, due_date, status")
       .eq("organization_id", organizationId)
       .in("lead_id", lote)
       .in("status", ["pending", "in_progress"]),

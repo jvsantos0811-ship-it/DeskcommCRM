@@ -513,6 +513,9 @@ test.describe("filtro por marcador, pela tela", () => {
     await abreQuadro(page, funil, cardMarcado);
     await expect(page.getByRole("group", { name: `Lead: ${cardNeutro}` })).toBeVisible();
 
+    // Sem filtro ligado, a barra de filtros do quadro fica recolhida e desce
+    // com o mouse no topo do funil (03/11/2026) — como quem usa faria.
+    await page.getByTestId("topo-do-funil").hover();
     await page.getByRole("button", { name: "Tag: todas" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: tagDoContato, exact: true })).toBeVisible({
       timeout: 30_000,

@@ -1,12 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 
 import { useT } from "@/hooks/i18n/useT";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { usePreferenciaDoNavegador } from "@/hooks/ui/usePreferenciaDoNavegador";
-import { apiClient } from "@/lib/api/client";
 import { roleAtLeast } from "@/lib/auth/types";
 import { searchable } from "@/lib/navigation/registry";
 import { cn } from "@/lib/utils";
@@ -29,14 +27,13 @@ import { cn } from "@/lib/utils";
  * empresa e cargos. Uma aba que leva a uma tela que o servidor recusaria seria
  * prometer o que não se cumpre.
  *
- * "Ligações" pede mais: a telefonia é módulo opcional e o app não sabe se ela
- * está ligada (ver o comentário de `/app/calls` em `lib/navigation/catalogo.ts`).
- * O sinal usado aqui é ter ao menos um número de telefonia ATIVO cadastrado —
- * sem número não há ligação, e a aba levaria a uma lista vazia para sempre. A
- * consulta só acontece para quem pode abrir Chamadas (gerente+, o mesmo
- * `requireRole("manager")` de `GET /api/v1/phone-numbers`) e é leitura de
- * ambiente: `semDesvioDeSuspensao`, para um 403 de organização suspensa não
- * desviar a página no meio de outra navegação.
+ * "Ligações" aparece para quem pode abrir Chamadas (gerente+, o mesmo
+ * `requireRole("manager")` de `GET /api/v1/phone-numbers`), com ou sem
+ * telefonia ligada. Até 03/11/2026 ela só aparecia com um número ATIVO
+ * cadastrado — e, como nenhuma empresa tinha, a aba nunca aparecia e parecia
+ * que faltava. Decisão do João (03/11): as quatro abas sempre no topo, como no
+ * Venda Tech. Sem número, a própria tela de Chamadas diz o que falta e leva a
+ * Conexões › Telefone.
  *
  * ─── A aba "Funil" lembra o último quadro aberto ────────────────────────────
  *
@@ -79,26 +76,9 @@ function LinkDaAba({ aba, pathname }: { aba: Aba; pathname: string }) {
   );
 }
 
-/**
- * A aba "Ligações" num componente próprio para a consulta só EXISTIR para quem
- * pode abrir Chamadas: quem não pode nem monta este componente, e nenhuma
- * requisição sai do navegador dele.
- */
+/** A aba "Ligações": só para quem pode abrir Chamadas (gerente+). */
 function AbaDeLigacoes({ pathname }: { pathname: string }) {
   const t = useT();
-  const { data: temTelefonia } = useQuery({
-    queryKey: ["abas-do-funil", "telefonia-ativa"],
-    staleTime: 5 * 60_000,
-    retry: false,
-    queryFn: async () => {
-      const res = await apiClient.get<{ data: Array<{ is_active: boolean }> }>(
-        "/api/v1/phone-numbers",
-        { semDesvioDeSuspensao: true },
-      );
-      return (res.data ?? []).some((n) => n.is_active);
-    },
-  });
-  if (temTelefonia !== true) return null;
   return (
     <LinkDaAba
       pathname={pathname}

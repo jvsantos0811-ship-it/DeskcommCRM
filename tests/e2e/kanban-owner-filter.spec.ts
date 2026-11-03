@@ -64,6 +64,9 @@ test("filtro por responsável reflete na URL e esconde leads com dono", async ({
   await expect(page.getByText("Sem responsável").first()).toBeVisible();
 
   // Abre o filtro de responsável e escolhe "Sem responsável".
+  // Sem filtro ligado, a barra de filtros do quadro fica recolhida e desce
+  // com o mouse no topo do funil (03/11/2026) — como quem usa faria.
+  await page.getByTestId("topo-do-funil").hover();
   await page.getByRole("button", { name: /^Responsável:/ }).click();
   await page.getByRole("menuitem", { name: "Sem responsável" }).click();
 

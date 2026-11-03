@@ -14,6 +14,7 @@ import { ScoreSlot } from "./ScoreSlot";
 import { OwnerBadge, ownerInitials } from "./OwnerBadge";
 import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { ContatoNoCard } from "./ContatoNoCard";
+import { TarefasDoCard } from "./TarefasDoCard";
 import { TarefasNoCard } from "./TarefasNoCard";
 import { EtiquetasNoCard } from "./EtiquetasNoCard";
 import { AcoesRapidasDoCard, FAIXA_DAS_ACOES } from "./AcoesRapidasDoCard";
@@ -76,6 +77,9 @@ function formatValor(cents: number | null, currency: string | null): string | nu
  * voltaram à face numa linha fixa de no máximo duas + "+N", telefone e e-mail
  * saíram para o botão "Ligar" e para o pop-up, e as ações (conversa, ligar,
  * responsável, mover, "⋯") aparecem só com o mouse em cima.
+ *
+ * Também a pedido do dono (03/11/2026): as tarefas em aberto aparecem pelo
+ * nome, até duas (atrasadas primeiro), só quando existem — como a linha do valor.
  *
  * Cor só aparece na borda esquerda, e só quando o estado pede (Lei C).
  */
@@ -313,6 +317,10 @@ export function KanbanCard({
             )}
           </div>
 
+          {/* As tarefas em aberto pelo nome (03/11/2026, pedido do dono):
+              atrasadas primeiro, até duas e "+N". Some sem tarefa em aberto. */}
+          <TarefasDoCard tarefas={lead.tarefas} />
+
           {/* A última mensagem, com atalho para o inbox. Fica ANTES do rodapé
               de dono/tempo porque é conteúdo do negócio, não metadado do card —
               e some por inteiro quando não há conversa. */}
@@ -338,7 +346,9 @@ export function KanbanCard({
                   ownerName={card.owner.name}
                   agentVersion={card.owner.agentVersion}
                 />
-                <TarefasNoCard tarefas={lead.tarefas} />
+                {/* O selo de contagem só quando o quadro não trouxe os nomes:
+                    com eles, quem fala é a lista acima. */}
+                {!lead.tarefas?.proximas?.length && <TarefasNoCard tarefas={lead.tarefas} />}
               </div>
               <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
                 {state.showStageAge && age
