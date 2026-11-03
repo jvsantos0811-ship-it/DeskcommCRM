@@ -2,10 +2,11 @@
  * Configurações → IA (Pacote Conversa).
  *
  * As regras que o CRM garante antes de cada mensagem da IA sair, por
- * organização. O prompt orienta; só o CRM garante. Começa com a trava de
- * repetição (PC-018); as próximas regras do pacote entram aqui.
+ * organização. O prompt orienta; só o CRM garante: a trava de repetição
+ * (PC-018) e as frases proibidas (PC-022).
  *
- * Gate = manager+, o mesmo de Distribuição de atendimento.
+ * Gate = manager+, o mesmo de Distribuição de atendimento. A lista de frases
+ * proibidas só o admin muda (o manager vê a lista e a contagem).
  */
 import { redirect } from "next/navigation";
 
@@ -16,9 +17,11 @@ import {
   ajustesParaGravar,
   lerAjustesDeRepeticao,
 } from "@/lib/agent-engine/agent/repeticao-entre-respostas";
+import { FRASES_PADRAO, lerFrasesProibidas } from "@/lib/agent-engine/agent/frases-proibidas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
+import { FrasesProibidasForm, type ContagemDaFraseNaTela } from "./_frases-proibidas-form";
 import { RepeticaoForm } from "./_repeticao-form";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +38,16 @@ export default async function IaSettingsPage() {
   const { data } = await supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle();
   const settings = (data?.settings as Record<string, unknown> | null) ?? {};
   const idioma = user.idioma;
+  const desde = new Date(new Date().getTime() - 28 * 24 * 3600_000).toISOString().slice(0, 10);
+  const { data: contagem } = await supabase
+    .from("frases_proibidas_na_semana")
+    .select("frase, semana, barradas, removidas, enviadas")
+    .eq("organization_id", activeOrg.orgId)
+    .gte("semana", desde)
+    .order("semana", { ascending: false })
+    .limit(400);
+  const podeEditarFrases =
+    (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -50,6 +63,12 @@ export default async function IaSettingsPage() {
       <RepeticaoForm
         inicial={ajustesParaGravar(lerAjustesDeRepeticao(settings))}
         padrao={ajustesParaGravar({ ...AJUSTES_PADRAO_DE_REPETICAO })}
+      />
+      <FrasesProibidasForm
+        inicial={lerFrasesProibidas(settings)}
+        padrao={[...FRASES_PADRAO]}
+        contagem={(contagem ?? []) as ContagemDaFraseNaTela[]}
+        podeEditar={podeEditarFrases}
       />
     </div>
   );

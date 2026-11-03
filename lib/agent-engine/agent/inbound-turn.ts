@@ -243,6 +243,14 @@ import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
 import { aplicarRegistroDoFechamento, blocoDoRegistro } from './registro-da-conversa';
+import {
+  acharFrasesProibidas,
+  contarFrasesProibidas,
+  erroDeEnsinoDasFrases,
+  frasesDaOrganizacao,
+  removerMuletas,
+  type DesfechoDaFrase,
+} from './frases-proibidas';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import {
   contarRepeticaoNaConversa,
@@ -2975,6 +2983,19 @@ async function executarTurnoDoAgente(
         },
       );
   let repeticoesBarradasNoTurno = 0;
+  // PC-022: as frases proibidas da organização (lidas uma vez, na 1ª candidata)
+  // e quantas vezes o turno já barrou por elas.
+  let frasesDaOrg: Promise<string[]> | null = null;
+  let frasesBarradasNoTurno = 0;
+  const registrarFrases = async (frases: string[], desfecho: DesfechoDaFrase): Promise<void> => {
+    try {
+      await contarFrasesProibidas(pool, { organizationId: tenantId, frases, desfecho, fuso: fusoDaOrg });
+    } catch (err) {
+      runLog.warn('contagem das frases proibidas não gravada', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  };
   const registrarRepeticao = async (
     rep: Repeticao,
     desfecho: 'repeticoes_barradas' | 'repeticoes_liberadas' | 'toques_pulados_por_repeticao',
@@ -3583,6 +3604,32 @@ async function executarTurnoDoAgente(
         // correção re-entra por aqui, na janela em memória. Bolhas de UM
         // send_message não se comparam entre si (só candidato contra candidato),
         // então fatiamento legítimo não se autossuprime.
+        // PC-022: FRASES PROIBIDAS da organização. A busca é pura (nenhuma
+        // chamada de modelo quando não acha). 1ª vez no turno → erro de ensino e
+        // o modelo reescreve; se a reescrita ainda tiver, a muleta isolada sai
+        // ("Perfeito!" no começo); senão a mensagem sai como está e fica contada.
+        if (!preview && job !== null && turnoVaiFalarComOLead(liveJob())) {
+          frasesDaOrg ??= frasesDaOrganizacao(pool, tenantId);
+          const achadas = acharFrasesProibidas(body, await frasesDaOrg);
+          if (achadas.length > 0) {
+            if (frasesBarradasNoTurno === 0) {
+              frasesBarradasNoTurno += 1;
+              runLog.info('frase proibida barrada — o modelo reescreve sem ela', { frases: achadas.length });
+              await registrarFrases(achadas, 'barrada');
+              return { ok: false, error: { code: 'frase_proibida', message: erroDeEnsinoDasFrases(achadas) } };
+            }
+            const semMuleta = removerMuletas(body, achadas);
+            if (semMuleta !== null) {
+              body = semMuleta;
+              await registrarFrases(achadas, 'removida');
+            } else {
+              runLog.warn('frase proibida saiu — a reescrita ainda a tinha e não era muleta isolada', {
+                frases: achadas.length,
+              });
+              await registrarFrases(achadas, 'enviada');
+            }
+          }
+        }
         // PC-018: REPETIÇÃO ENTRE TURNOS. Antes do `dupTrava.checar` (que é
         // síncrono até a reserva, de propósito): esta conferência lê o banco e
         // pode pedir embedding, e não pode ficar entre o checar e o reservar.

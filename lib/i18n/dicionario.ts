@@ -16933,6 +16933,16 @@ export const DICIONARIO: Traducoes = {
   "Devolvidas pela equipe": { es: "Devueltas por el equipo" },
   "Nenhuma passagem no período.": { es: "Ningún traspaso en el período." },
   "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": { es: "Devuelve al agente la conversación que una persona asumió y dejó parada. La conversación que la IA pasó al equipo solo vuelve con el botón Devolver." },
+  // PC-022 — frases proibidas (Configurações › IA)
+  "Frases proibidas": { es: "Frases prohibidas" },
+  "Uma frase por linha": { es: "Una frase por línea" },
+  "Frases proibidas salvas.": { es: "Frases prohibidas guardadas." },
+  "Só o administrador da empresa muda esta lista.": { es: "Solo el administrador de la empresa cambia esta lista." },
+  "Só o administrador da empresa muda as frases proibidas.": { es: "Solo el administrador de la empresa cambia las frases prohibidas." },
+  "Quantas vezes apareceram": { es: "Cuántas veces aparecieron" },
+  "Nenhuma frase proibida apareceu nas últimas 4 semanas.": { es: "Ninguna frase prohibida apareció en las últimas 4 semanas." },
+  "Semana de": { es: "Semana del" },
+  "Antes de enviar, o sistema procura estas frases na mensagem da IA, sem diferença de maiúscula, acento ou pontuação (\"sem pressa\" pega \"sem pressa nenhuma\"). Achou: a IA reescreve sem ela. Se ainda ficar e for só uma muleta no começo (\"Perfeito!\"), a frase sai; senão a mensagem sai e fica contada abaixo.": { es: "Antes de enviar, el sistema busca estas frases en el mensaje de la IA, sin diferencia de mayúsculas, acentos ni puntuación (\"sem pressa\" encuentra \"sem pressa nenhuma\"). Si la encuentra, la IA reescribe sin ella. Si aún queda y es solo una muletilla al inicio (\"Perfeito!\"), la frase se quita; si no, el mensaje sale y queda contado abajo." },
   // PC-019 — registro da conversa (card do negócio)
   "Conversa até aqui": { es: "Conversación hasta aquí" },
   "Já perguntado e respondido": { es: "Ya preguntado y respondido" },

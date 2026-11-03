@@ -643,6 +643,13 @@ beforeAll(() => {
           values (v_org, v_contact, 'pergunta', 'rls invariant', 'rls invariant', 'respondida', 'rls');
         end if;
 
+        -- migration 9017 (fork): contagem semanal das frases proibidas.
+        -- Leitura org-scoped sem gate de papel; a escrita so o worker faz.
+        if not exists (select 1 from public.frases_proibidas_na_semana where organization_id = v_org) then
+          insert into public.frases_proibidas_na_semana (organization_id, frase, semana, barradas)
+          values (v_org, 'rls invariant', current_date, 1);
+        end if;
+
         -- migration 9012 (fork): importação do histórico na sessão semeada.
         -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
         if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
@@ -943,6 +950,10 @@ export const TABLES = [
   // Vazar entrega ao vizinho o que cada cliente contou. Leitura org-scoped sem
   // gate de papel; escrita só pelo servidor/worker.
   "registro_da_conversa",
+  // migration 9017 (fork) — contagem semanal das frases proibidas (PC-022):
+  // quais muletas a IA do escritório usa e quanto. Sem texto de cliente, mas é
+  // dado operacional da organização. Leitura org-scoped; escrita só do worker.
+  "frases_proibidas_na_semana",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
