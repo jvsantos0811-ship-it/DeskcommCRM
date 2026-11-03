@@ -16919,6 +16919,16 @@ export const DICIONARIO: Traducoes = {
   "Contato e dados": { es: "Contacto y datos" },
   "Tarefas e linha do tempo": { es: "Tareas y línea de tiempo" },
   Mostrar: { es: "Mostrar" },
+  // PC-018 — trava de repetição (Configurações › IA)
+  "Regras que o sistema confere antes de cada mensagem da IA sair, em todos os agentes da empresa. O texto do agente orienta; estas regras garantem.": { es: "Reglas que el sistema verifica antes de que salga cada mensaje de la IA, en todos los agentes de la empresa. El texto del agente orienta; estas reglas garantizan." },
+  "Regras que o sistema confere antes de cada mensagem da IA sair, como não repetir pergunta.": { es: "Reglas que el sistema verifica antes de que salga cada mensaje de la IA, como no repetir preguntas." },
+  "Regras de repetição salvas.": { es: "Reglas de repetición guardadas." },
+  "Não repetir pergunta nem mensagem": { es: "No repetir preguntas ni mensajes" },
+  "Antes de enviar, a IA confere as últimas mensagens que já mandou para o cliente. Pergunta já respondida, ou feita duas vezes sem resposta, não sai de novo; mensagem quase igual também não. Quando o cliente pede para repetir, repete.": { es: "Antes de enviar, la IA revisa los últimos mensajes que ya envió al cliente. Una pregunta ya respondida, o hecha dos veces sin respuesta, no sale de nuevo; un mensaje casi igual tampoco. Cuando el cliente pide repetir, repite." },
+  "Últimas mensagens conferidas": { es: "Últimos mensajes revisados" },
+  "Até quantas horas para trás": { es: "Hasta cuántas horas atrás" },
+  "Semelhança de mensagem (0,60 a 0,95)": { es: "Similitud de mensaje (0,60 a 0,95)" },
+  "Semelhança de pergunta (0,70 a 0,95)": { es: "Similitud de pregunta (0,70 a 0,95)" },
 };
 
 /**

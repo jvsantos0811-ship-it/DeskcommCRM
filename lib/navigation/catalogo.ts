@@ -945,6 +945,18 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    // Pacote Conversa (PC-018 em diante): as regras que o CRM confere antes de
+    // cada mensagem da IA sair, por organização. SEM `sidebar`: fica no hub,
+    // como Distribuição de atendimento — o menu está no teto de 900px.
+    href: "/app/settings/ia",
+    label: "IA",
+    description: "Regras que o sistema confere antes de cada mensagem da IA sair, como não repetir pergunta.",
+    icon: "Robot",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
     // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
     // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
     // uma vez todos os `ai_decide` de uma organização só existiria como
