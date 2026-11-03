@@ -155,6 +155,10 @@ const envSchema = z.object({
   // Espera de foto, vídeo e documento (quem manda foto costuma escrever a
   // pergunta logo depois). O áudio usa a de texto, contada do fim da transcrição.
   INBOUND_DEBOUNCE_MIDIA_MS: z.coerce.number().int().min(0).max(60_000).default(20_000),
+  // PC-021: quanto o turno espera a transcrição do áudio (ou a leitura da foto)
+  // antes de responder ao resto e dizer que o áudio está sendo ouvido. Quando
+  // o texto chega depois, o worker de mídia pede o turno tardio.
+  INBOUND_ESPERA_TRANSCRICAO_MS: z.coerce.number().int().min(5_000).max(300_000).default(30_000),
   // Resposta obsoleta: o cliente escreveu de novo enquanto o turno pensava → a
   // resposta desatualizada não sai e o turno seguinte responde a tudo junto,
   // enquanto a mensagem mais antiga sem resposta tiver menos que isto. 0 = desliga.

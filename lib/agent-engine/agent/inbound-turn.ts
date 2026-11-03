@@ -696,6 +696,10 @@ const inboundTurnPayloadSchema = z
     channel_session_id: z.string().uuid(),
     inbound_message_id: z.string().uuid(),
     crm_event_id: z.string().uuid(),
+    // PC-021: turno pedido pela transcrição que chegou DEPOIS de a IA já ter
+    // respondido (o áudio passou do teto de espera). Pula a régua de "já
+    // respondida": quem respondeu antes não tinha o texto do áudio.
+    derivacao_tardia: z.boolean().optional(),
   })
   .passthrough();
 
@@ -6743,7 +6747,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       conversationId: payload.conversation_id,
       jobId: job.id,
     };
-    if (await ultimaInboundJaRespondida(pool, alvo)) {
+    if (payload.derivacao_tardia !== true && (await ultimaInboundJaRespondida(pool, alvo))) {
       deps.log.info('turno pulado — outro turno já viu e respondeu a última mensagem do cliente', {
         job_id: job.id,
         conversation_id: payload.conversation_id,

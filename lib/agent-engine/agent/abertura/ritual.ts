@@ -153,10 +153,15 @@ const ROTULO_DO_TIPO: Record<string, string> = {
 };
 
 /** O que entra no lugar de uma mídia que ainda não virou texto. */
+// PC-021, item 4: o áudio sem texto, a esta altura, é o que passou do teto de
+// espera e ainda está sendo transcrito — o turno responde ao resto e diz que vai
+// ouvir; quando o texto chega, o turno tardio responde ao áudio.
+const AUDIO_AINDA_SENDO_TRANSCRITO =
+  '[áudio recebido, ainda sendo transcrito: responda ao resto e diga, com naturalidade, que já vai ouvir o áudio — não invente o que foi dito nele]';
 const MARCADOR_SEM_DERIVADO: Record<string, string> = {
-  audio: '[áudio recebido, sem transcrição]',
-  ptt: '[áudio recebido, sem transcrição]',
-  voice: '[áudio recebido, sem transcrição]',
+  audio: AUDIO_AINDA_SENDO_TRANSCRITO,
+  ptt: AUDIO_AINDA_SENDO_TRANSCRITO,
+  voice: AUDIO_AINDA_SENDO_TRANSCRITO,
   image: '[imagem recebida]',
   video: '[vídeo recebido]',
   document: '[documento recebido]',

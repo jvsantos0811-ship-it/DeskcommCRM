@@ -109,6 +109,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
 }));
 
 import { deriveMessageMedia, MARCADOR_NAO_LIDA } from "@/workers/media-derive-worker";
+import { marcadorDeMidiaNaoEntendida } from "@/lib/messaging/media/nao-entendida";
 import { deriveMediaText } from "@/lib/messaging/media/derive";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 import { resolveOrgLlmConfig, type OrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
@@ -197,6 +198,34 @@ describe("deriveMessageMedia", () => {
     );
   });
 
+  /**
+   * PC-021: o áudio só de ruído (a "alucinação" do transcritor em silêncio) e
+   * a imagem borrada não viram fala nem descrição — o derivado é o marcador, e
+   * o turno pede para repetir ou escrever.
+   */
+  it("áudio só de ruído vira ÁUDIO NÃO ENTENDIDO (ready, com o motivo no metadata)", async () => {
+    vi.mocked(deriveMediaText).mockResolvedValue("Legendas pela comunidade Amara.org");
+    const r = await deriveMessageMedia(eventRow());
+    expect(r.status).toBe("ok");
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_derived_text: "ÁUDIO NÃO ENTENDIDO",
+        media_derived_status: "ready",
+        metadata: expect.objectContaining({ media_nao_entendida: expect.objectContaining({ motivo: "so_ruido" }) }),
+      }),
+    );
+  });
+
+  it("foto que o modelo diz ILEGÍVEL vira MÍDIA NÃO ENTENDIDA (imagem)", async () => {
+    messageRow.type = "image";
+    messageRow.media_mime = "image/jpeg";
+    vi.mocked(deriveMediaText).mockResolvedValue("ILEGÍVEL");
+    await deriveMessageMedia(eventRow());
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ media_derived_text: "MÍDIA NÃO ENTENDIDA (imagem)", media_derived_status: "ready" }),
+    );
+  });
+
   it("pula se já derivado (idempotência)", async () => {
     messageRow.media_derived_status = "ready";
     const r = await deriveMessageMedia(eventRow());
@@ -248,18 +277,39 @@ describe("deriveMessageMedia", () => {
    * camada de texto, extrator falhou, e o agente disse ao cliente que o material
    * "parece ser de distribuidora/promocional".
    */
-  it("a falha permanente entrega ao agente o marcador de mídia não lida", async () => {
+  it("a falha permanente entrega ao agente o marcador de mídia não entendida (PC-021)", async () => {
+    messageRow.type = "image";
+    messageRow.media_mime = "image/jpeg";
+    vi.mocked(deriveMediaText).mockRejectedValue(new Error("vision_503"));
+
+    await deriveMessageMedia(eventRow(4));
+
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        media_derived_text: marcadorDeMidiaNaoEntendida("image"),
+        media_derived_status: "failed",
+      }),
+    );
+  });
+
+  /**
+   * PC-021: PDF sem camada de texto (escaneado) não melhora tentando de novo —
+   * é desfecho, não falha transitória. Na PRIMEIRA tentativa o agente já recebe
+   * "MÍDIA NÃO ENTENDIDA (documento)" e pede para a pessoa escrever.
+   */
+  it("PDF sem texto: marcador de documento não entendido já na 1ª tentativa, sem re-tentar", async () => {
     messageRow.type = "document";
     messageRow.media_mime = "application/pdf";
     vi.mocked(deriveMediaText).mockRejectedValue(
       new Error("pdfjs-dist extracted no text (possibly image-only PDF)"),
     );
 
-    await deriveMessageMedia(eventRow(4));
+    const r = await deriveMessageMedia(eventRow(0));
 
+    expect(r.status).toBe("ok");
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        media_derived_text: MARCADOR_NAO_LIDA,
+        media_derived_text: marcadorDeMidiaNaoEntendida("document"),
         media_derived_status: "failed",
       }),
     );

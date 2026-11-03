@@ -6,6 +6,12 @@
 import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
 
 const MAX_DERIVED_CHARS = 8000;
+/**
+ * PC-021, item 5: áudio é transcrito INTEIRO — 8 mil caracteres cortavam a
+ * nota de voz por volta de 8 minutos. 40 mil cobrem bem mais de meia hora de
+ * fala; o histórico do turno tem orçamento próprio de tokens.
+ */
+const MAX_AUDIO_CHARS = 40_000;
 
 export interface DeriveDeps {
   transcriber: TranscriptionProvider;
@@ -33,5 +39,5 @@ export async function deriveMediaText(
     text = await deps.deriveVideo(buffer, mime);
   }
   // sticker/document-não-pdf (e vídeo sem deriveVideo): sem derivado.
-  return (text ?? "").slice(0, MAX_DERIVED_CHARS);
+  return (text ?? "").slice(0, kind === "audio" ? MAX_AUDIO_CHARS : MAX_DERIVED_CHARS);
 }

@@ -16947,6 +16947,13 @@ export const DICIONARIO: Traducoes = {
   "Devolvidas pela equipe": { es: "Devueltas por el equipo" },
   "Nenhuma passagem no período.": { es: "Ningún traspaso en el período." },
   "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": { es: "Devuelve al agente la conversación que una persona asumió y dejó parada. La conversación que la IA pasó al equipo solo vuelve con el botón Devolver." },
+  // PC-021 — áudio ou imagem não entendidos
+  "Áudio não entendido — a IA pediu para repetir ou escrever.": { es: "Audio no entendido — la IA pidió repetir o escribir." },
+  "Mídias não entendidas": { es: "Medios no entendidos" },
+  "Áudios, fotos e documentos que o sistema não conseguiu entender (a IA pediu para repetir ou escrever), por dia, nos últimos 14 dias.": { es: "Audios, fotos y documentos que el sistema no logró entender (la IA pidió repetir o escribir), por día, en los últimos 14 días." },
+  "Nenhuma mídia deixou de ser entendida nos últimos 14 dias.": { es: "Ningún medio dejó de entenderse en los últimos 14 días." },
+  "Áudios": { es: "Audios" },
+  "Fotos e documentos": { es: "Fotos y documentos" },
   // PC-022 — frases proibidas (Configurações › IA)
   "Frases proibidas": { es: "Frases prohibidas" },
   "Uma frase por linha": { es: "Una frase por línea" },

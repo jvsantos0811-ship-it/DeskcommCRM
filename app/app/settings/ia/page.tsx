@@ -22,6 +22,9 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
 import { FrasesProibidasForm, type ContagemDaFraseNaTela } from "./_frases-proibidas-form";
+import { MidiasNaoEntendidas } from "./_midias-nao-entendidas";
+import { contarPorDia } from "@/lib/messaging/media/nao-entendidas-por-dia";
+import { PREFIXO_AUDIO_NAO_ENTENDIDO, PREFIXO_MIDIA_NAO_ENTENDIDA } from "@/lib/messaging/media/nao-entendida";
 import { RepeticaoForm } from "./_repeticao-form";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +38,13 @@ export default async function IaSettingsPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle();
+  const { data } = await supabase
+    .from("organizations")
+    .select("settings, timezone")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
   const settings = (data?.settings as Record<string, unknown> | null) ?? {};
+  const fuso = (data as { timezone?: string | null } | null)?.timezone || "America/Sao_Paulo";
   const idioma = user.idioma;
   const desde = new Date(new Date().getTime() - 28 * 24 * 3600_000).toISOString().slice(0, 10);
   const { data: contagem } = await supabase
@@ -46,6 +54,30 @@ export default async function IaSettingsPage() {
     .gte("semana", desde)
     .order("semana", { ascending: false })
     .limit(400);
+  // PC-021: as mídias não entendidas (o marcador no derivado), por dia, 14 dias.
+  const desde14 = new Date(new Date().getTime() - 14 * 24 * 3600_000).toISOString();
+  const [audiosNaoEntendidos, outrasNaoEntendidas] = await Promise.all([
+    supabase
+      .from("messages")
+      .select("type, created_at")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("direction", "inbound")
+      .gte("created_at", desde14)
+      .like("media_derived_text", `${PREFIXO_AUDIO_NAO_ENTENDIDO}%`)
+      .limit(2000),
+    supabase
+      .from("messages")
+      .select("type, created_at")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("direction", "inbound")
+      .gte("created_at", desde14)
+      .like("media_derived_text", `${PREFIXO_MIDIA_NAO_ENTENDIDA}%`)
+      .limit(2000),
+  ]);
+  const naoEntendidasPorDia = contarPorDia(
+    [...(audiosNaoEntendidos.data ?? []), ...(outrasNaoEntendidas.data ?? [])] as { type: string; created_at: string }[],
+    fuso,
+  );
   const podeEditarFrases =
     (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
@@ -69,6 +101,20 @@ export default async function IaSettingsPage() {
         padrao={[...FRASES_PADRAO]}
         contagem={(contagem ?? []) as ContagemDaFraseNaTela[]}
         podeEditar={podeEditarFrases}
+      />
+      <MidiasNaoEntendidas
+        linhas={naoEntendidasPorDia}
+        textos={{
+          titulo: traduzir("Mídias não entendidas", idioma),
+          explicacao: traduzir(
+            "Áudios, fotos e documentos que o sistema não conseguiu entender (a IA pediu para repetir ou escrever), por dia, nos últimos 14 dias.",
+            idioma,
+          ),
+          vazio: traduzir("Nenhuma mídia deixou de ser entendida nos últimos 14 dias.", idioma),
+          dia: traduzir("Dia", idioma),
+          audios: traduzir("Áudios", idioma),
+          outras: traduzir("Fotos e documentos", idioma),
+        }}
       />
     </div>
   );

@@ -35,7 +35,16 @@ import {
   type DecisaoDeTranscricao,
   type OrigemDaTranscricao,
 } from "@/lib/messaging/media/escada-de-transcricao";
-import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { idiomasDaTranscricao, type TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import {
+  AUDIO_LONGO_S,
+  avaliarTranscricao,
+  duracaoDoOggOpus,
+  idiomaDoLocale,
+  marcadorDeAudioNaoEntendido,
+  marcadorDeMidiaNaoEntendida,
+} from "@/lib/messaging/media/nao-entendida";
+import { transcritorEmPartes } from "@/lib/messaging/media/audio-longo";
 import { logger } from "@/lib/logger";
 import { validarParProvedorModelo } from "@/lib/ai/par-provedor-modelo";
 import { reagirAConclusaoDeDerivacao } from "@/lib/escalacao/handoff-tecnico";
@@ -171,10 +180,13 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   // 8 minutos com a coluna ainda nula. Agora todo desfecho terminal da
   // derivação é `failed` + a razão, gravada em `metadata.media_derived_motivo`,
   // que é o que o operador lê antes de sair mexendo em Provedores de IA.
-  const markFailed = async (motivo: string) => {
+  // PC-021: o texto que o agente recebe diz QUE tipo de mídia não foi
+  // entendida — "ÁUDIO NÃO ENTENDIDO (duração Ns)" ou "MÍDIA NÃO ENTENDIDA
+  // (tipo)" —, e o turno pede para repetir ou escrever em vez de adivinhar.
+  const markFailed = async (motivo: string, marcador?: string) => {
     await admin.from("messages")
       .update({
-        media_derived_text: MARCADOR_NAO_LIDA,
+        media_derived_text: marcador ?? MARCADOR_NAO_LIDA,
         media_derived_status: "failed",
         metadata: { ...(msg.metadata ?? {}), media_derived_motivo: motivo },
       })
@@ -185,10 +197,14 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       .filter("body", "isdistinct", MENSAGEM_REDIGIDA);
   };
 
+  let duracaoDoAudioS: number | null = null;
   try {
     const dl = await admin.storage.from("whatsapp-media").download(msg.media_storage_path);
     if (dl.error || !dl.data) throw new Error(`storage_download_failed: ${dl.error?.message ?? "no_data"}`);
     const buffer = Buffer.from(await dl.data.arrayBuffer());
+    // PC-021: a duração da nota de voz (lida do próprio OGG/Opus; outro formato
+    // fica sem) — é a régua do "curto demais" e do áudio longo.
+    duracaoDoAudioS = msg.type === "audio" ? duracaoDoOggOpus(buffer) : null;
 
     // Credencial BYOK da org p/ visão (imagem).
     const llmCfg: LlmEdgeConfig = {
@@ -316,7 +332,12 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // vídeo precisam de quem ouça, e uma leitura de foto não pode custar uma
     // resolução de credencial que ninguém pediu (o teste #1591 aperta exatamente
     // isso: o binding de visão resolve, e mais nada).
+    // PC-021, item 1: o idioma da ORGANIZAÇÃO vai sempre ao transcritor (o
+    // `locale` dela, "pt-BR" → "pt"), antes dos da instalação. Sem ele a
+    // detecção sozinha alucina em áudio curto, com ruído ou com sotaque.
+    const idiomas = precisaTranscricao ? await idiomasDaOrganizacao(admin, row.organization_id) : undefined;
     const decisao: DecisaoDeTranscricao = await decidirTranscricao({
+      ...(idiomas !== undefined ? { idiomas } : {}),
       conversa:
         precisaTranscricao && conversa
           ? { provider: conversa.provider, apiKey: conversa.apiKey, modelId: conversa.defaultModel }
@@ -372,7 +393,13 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
     // O 5º argumento é a `base_url` do binding: o factory precisa dela para não
     // cair no endpoint padrão do provedor (ver o comentário lá em cima).
-    const deps = buildDeriveDeps(llm, decisao, row.organization_id, admin, baseUrlDaVisao, chaveEhDaInstalacao, origemDoModelo);
+    const depsBase = buildDeriveDeps(llm, decisao, row.organization_id, admin, baseUrlDaVisao, chaveEhDaInstalacao, origemDoModelo);
+    // PC-021, item 5: áudio longo (acima de 3 min) é transcrito inteiro, em
+    // partes de 2 min — por tempo, nunca cortado num silêncio.
+    const deps =
+      msg.type === "audio" && duracaoDoAudioS !== null && duracaoDoAudioS > AUDIO_LONGO_S
+        ? { ...depsBase, transcriber: transcritorEmPartes(depsBase.transcriber) }
+        : depsBase;
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
 
@@ -385,7 +412,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     if (msg.type === "audio" && !text.trim()) {
       const motivo =
         `o modelo devolveu a transcrição do áudio vazia (${decisao.origem}: ${decisao.motivo})`;
-      await markFailed(motivo);
+      await markFailed(motivo, marcadorDeAudioNaoEntendido(duracaoDoAudioS));
       await avisarMidiaNaoLida(
         msg.organization_id,
         rotuloDoTipo,
@@ -393,6 +420,35 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
         "O provedor respondeu sem texto. Confira o modelo em Provedores de IA: se ele aceita áudio mas devolve vazio, troque por outro modelo com capacidade audio.",
       );
       return { consumer_key, status: "ok", detail: "transcricao_vazia" };
+    }
+
+    // ─── PC-021: áudio só de ruído, curto demais, ou imagem ilegível ───────
+    //
+    // A transcrição "Obrigado por assistir" de um áudio sem fala, ou duas
+    // palavras num áudio de 40 s, não é o que o cliente disse: gravá-la como
+    // fala fazia o agente responder ao que leu. O derivado vira o marcador
+    // ("ÁUDIO NÃO ENTENDIDO (duração Ns)" / "MÍDIA NÃO ENTENDIDA (imagem)") e o
+    // turno pede, com naturalidade, que a pessoa repita ou escreva. É desfecho
+    // de CONTEÚDO, não de configuração: `ready`, sem aviso na Central — a conta
+    // por dia sai das próprias mensagens (Configurações › IA).
+    const avaliacao =
+      msg.type === "audio"
+        ? avaliarTranscricao(text, duracaoDoAudioS)
+        : msg.type === "image" && /^\s*ileg[ií]vel\.?\s*$/i.test(text)
+          ? ({ entendida: false, motivo: "ilegivel" } as const)
+          : ({ entendida: true } as const);
+    const textoFinal = avaliacao.entendida
+      ? text
+      : msg.type === "audio"
+        ? marcadorDeAudioNaoEntendido(duracaoDoAudioS)
+        : marcadorDeMidiaNaoEntendida(msg.type);
+    if (!avaliacao.entendida) {
+      logger.info("[media-derive] mídia não entendida — o turno pede para repetir", {
+        organization_id: msg.organization_id,
+        tipo: msg.type,
+        motivo: avaliacao.motivo,
+        duracao_s: duracaoDoAudioS,
+      });
     }
 
     // ─── LGPD: nunca gravar transcrição em mensagem já redigida (#1991) ────
@@ -409,7 +465,18 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // `NULL <> '...'` é NULL — o `neq` recusaria TODA nota de voz.
     const { data: gravados, error: erroDaGravacao } = await admin
       .from("messages")
-      .update({ media_derived_text: text, media_derived_status: "ready" })
+      .update({
+        media_derived_text: textoFinal,
+        media_derived_status: "ready",
+        ...(avaliacao.entendida
+          ? {}
+          : {
+              metadata: {
+                ...(msg.metadata ?? {}),
+                media_nao_entendida: { motivo: avaliacao.motivo, duracao_s: duracaoDoAudioS },
+              },
+            }),
+      })
       .eq("id", msg.id)
       .eq("organization_id", msg.organization_id)
       .filter("body", "isdistinct", MENSAGEM_REDIGIDA)
@@ -423,7 +490,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // que a falha transitória deixa de ser permanente: a reação corrige o
     // motivo gravado (o banco já o desmentiu), devolve pela MESMA função do
     // botão "Devolver ao automático" e reenfileira o turno tardio.
-    await reagirAConclusaoDeDerivacao(admin, {
+    const reacao = await reagirAConclusaoDeDerivacao(admin, {
       organizationId: msg.organization_id,
       conversationId: msg.conversation_id,
       messageId: msg.id,
@@ -450,6 +517,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       msg.type === "audio" &&
       msg.direction === "inbound" &&
       !ENVIADO_POR_PESSOA.has(msg.sent_via ?? "") &&
+      avaliacao.entendida &&
       text.trim() !== ""
     ) {
       await avaliarPedidosFalados(admin, {
@@ -460,13 +528,46 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
         recebidaEm: msg.created_at ?? null,
       });
     }
+    // ─── PC-021, item 4: o turno já respondeu SEM este áudio ────────────────
+    //
+    // O turno não espera a transcrição para sempre (teto de 30 s, ajustável):
+    // passado isso ele responde ao resto e diz que o áudio está sendo ouvido.
+    // Quando o texto chega, o áudio ainda é a última fala do cliente e uma
+    // resposta da IA já saiu DEPOIS dele: pede o turno tardio, que responde
+    // ao áudio (o turno pula a régua de "já respondida" por este motivo).
+    // Só quando a reação do #2210 não fez nada (ela já reenfileira o turno
+    // quando devolve a conversa — dois pedidos seriam duas respostas).
+    if (
+      msg.type === "audio" &&
+      msg.direction === "inbound" &&
+      !ENVIADO_POR_PESSOA.has(msg.sent_via ?? "") &&
+      reacao?.acao === "nada"
+    ) {
+      await pedirTurnoTardioDoAudio(admin, {
+        organizationId: msg.organization_id,
+        conversationId: msg.conversation_id,
+        messageId: msg.id,
+        recebidaEm: msg.created_at ?? null,
+        requestId: row.id,
+      });
+    }
     return { consumer_key, status: "ok" };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    // PC-021: o marcador diz QUAL mídia não foi entendida.
+    const marcadorDaFalha =
+      msg.type === "audio" ? marcadorDeAudioNaoEntendido(duracaoDoAudioS) : marcadorDeMidiaNaoEntendida(msg.type);
+    // PDF sem texto (só imagem escaneada) não melhora tentando de novo: é
+    // desfecho, não falha transitória — o agente pede que a pessoa escreva.
+    if (msg.type === "document" && /extracted no text/i.test(detail)) {
+      await markFailed(`o documento não tem texto para ler (provavelmente escaneado): ${detail.slice(0, 120)}`, marcadorDaFalha);
+      return { consumer_key, status: "ok", detail: "documento_sem_texto" };
+    }
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
       await markFailed(
         `a derivação da ${rotuloDoTipo} falhou em todas as tentativas: ${detail.slice(0, 200)}`,
+        marcadorDaFalha,
       );
       // ─── E AVISA. Desistir calado era o desfecho mais comum ────────────────
       //
@@ -510,6 +611,88 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       );
     }
     return { consumer_key, status: "error", detail };
+  }
+}
+
+type ClienteAdmin = ReturnType<typeof createAdminClient>;
+
+/**
+ * PC-021, item 1: os idiomas que vão ao transcritor — o da ORGANIZAÇÃO primeiro
+ * (`organizations.locale`, "pt-BR" → "pt"), depois os da instalação
+ * (`TRANSCRIPTION_LANGUAGES`). Falha de leitura = só os da instalação.
+ */
+async function idiomasDaOrganizacao(admin: ClienteAdmin, organizationId: string): Promise<string[]> {
+  const daInstalacao = idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
+  let daOrganizacao: string | null = null;
+  try {
+    const { data } = await admin.from("organizations").select("locale").eq("id", organizationId).maybeSingle();
+    daOrganizacao = idiomaDoLocale((data as { locale?: string | null } | null)?.locale ?? null);
+  } catch {
+    daOrganizacao = null;
+  }
+  return [...new Set([...(daOrganizacao ? [daOrganizacao] : []), ...daInstalacao])];
+}
+
+/**
+ * PC-021, item 4: a transcrição chegou DEPOIS de a IA já ter respondido (o
+ * turno passou do teto de espera e disse que o áudio estava sendo ouvido).
+ * Se o áudio ainda é a última fala do cliente e uma resposta da IA saiu depois
+ * dele, pede o turno tardio — o drain o despacha com `derivacao_tardia`, e ele
+ * responde ao áudio. Nunca lança: a transcrição já está salva.
+ */
+async function pedirTurnoTardioDoAudio(
+  admin: ClienteAdmin,
+  e: { organizationId: string; conversationId: string; messageId: string; recebidaEm: string | null; requestId: string },
+): Promise<void> {
+  if (!e.recebidaEm) return;
+  try {
+    const { data: depois } = await admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", e.organizationId)
+      .eq("conversation_id", e.conversationId)
+      .eq("direction", "inbound")
+      .gt("created_at", e.recebidaEm)
+      .limit(1);
+    if (depois && depois.length > 0) return; // o cliente já falou de novo: o turno dele cobre
+    const { data: respostas } = await admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", e.organizationId)
+      .eq("conversation_id", e.conversationId)
+      .eq("direction", "outbound")
+      .eq("sent_via", "ai")
+      .gt("created_at", e.recebidaEm)
+      .limit(1);
+    if (!respostas || respostas.length === 0) return; // ninguém respondeu sem o áudio: o turno normal cobre
+    const { data: conversa } = await admin
+      .from("conversations")
+      .select("contact_id, channel_session_id")
+      .eq("id", e.conversationId)
+      .eq("organization_id", e.organizationId)
+      .maybeSingle();
+    const c = conversa as { contact_id: string | null; channel_session_id: string | null } | null;
+    if (!c?.contact_id || !c.channel_session_id) return;
+    const { error } = await admin.rpc("emit_event", {
+      p_event_type: "ai_agent.dispatch_requested",
+      p_entity_kind: "message",
+      p_entity_id: e.messageId,
+      p_payload: {
+        organization_id: e.organizationId,
+        conversation_id: e.conversationId,
+        contact_id: c.contact_id,
+        channel_session_id: c.channel_session_id,
+        inbound_message_id: e.messageId,
+        derivacao_tardia: true,
+      },
+      p_metadata: { source: "media-derive-worker", request_id: e.requestId, motivo: "audio_transcrito_depois_da_resposta" },
+      p_organization_id: e.organizationId,
+    });
+    if (error) logger.warn("[media-derive] turno tardio do áudio não pedido", { error: error.message });
+  } catch (err) {
+    logger.warn("[media-derive] turno tardio do áudio não pedido", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -760,7 +943,13 @@ function buildDeriveDeps(
           {
             role: "user",
             content: [
-              { type: "text", text: "Descreva objetivamente esta imagem em 1-2 frases, em português, para um atendente de vendas entender o que o cliente enviou." },
+              {
+                type: "text",
+                text:
+                  "Descreva objetivamente esta imagem em 1-2 frases, em português, para um atendente de vendas entender o que o cliente enviou. " +
+                  // PC-021: foto borrada não vira descrição inventada.
+                  "Se ela estiver borrada, escura ou cortada a ponto de não dar para saber o que é (ou, sendo um documento, de não dar para ler o texto), responda apenas: ILEGÍVEL",
+              },
               // AI SDK v7: file part com mediaType (o antigo image part é deprecated).
               { type: "file", data: buffer, mediaType: mime.split(";")[0]! },
             ],

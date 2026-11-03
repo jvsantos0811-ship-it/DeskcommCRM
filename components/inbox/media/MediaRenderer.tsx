@@ -1,6 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import { DERIVACAO_TERMINADA, MARCADOR_NAO_LIDA } from "@/lib/messaging/media/derivable";
+import { ehMidiaNaoEntendida } from "@/lib/messaging/media/nao-entendida";
 import type { Message } from "@/lib/types/messaging";
 
 import { AudioPlayer } from "./AudioPlayer";
@@ -47,7 +48,12 @@ export function MediaRenderer({
       const pronto = message.media_derived_status === "ready";
       const transcricao = message.media_derived_text?.trim();
       const texto =
-        pronto && transcricao && transcricao !== MARCADOR_NAO_LIDA ? transcricao : null;
+        pronto && transcricao && transcricao !== MARCADOR_NAO_LIDA && !ehMidiaNaoEntendida(transcricao)
+          ? transcricao
+          : null;
+      // PC-021: áudio que o sistema não entendeu (ruído, curto demais, falha) —
+      // o atendente vê o motivo, não um texto como se fosse a fala do cliente.
+      const naoEntendido = !!transcricao && transcricao !== MARCADOR_NAO_LIDA && ehMidiaNaoEntendida(transcricao);
       // O worker não grava "pending": a linha nasce com status null e só o
       // worker muda — terminou quando o status entra em DERIVACAO_TERMINADA
       // (ready/failed/skipped). Null portanto significa "ainda processando",
@@ -79,6 +85,10 @@ export function MediaRenderer({
                 {texto}
               </p>
             </>
+          ) : naoEntendido ? (
+            <p data-testid="audio-nao-entendido" className="text-sm leading-relaxed opacity-70">
+              {t("Áudio não entendido — a IA pediu para repetir ou escrever.")}
+            </p>
           ) : pendente ? (
             <p
               data-testid="transcricao-de-audio-pendente"
