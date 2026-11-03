@@ -1310,6 +1310,7 @@ jobs:
         sons-dos-avisos.spec.ts
         suspensao-administrativa.spec.ts
         telas-de-conversa-compactas.spec.ts
+        registro-da-conversa.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

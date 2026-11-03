@@ -12,6 +12,7 @@ import type { Lead } from "@/lib/types/leads";
 import { ChatDoNegocio } from "./ChatDoNegocio";
 import { ContratosDoNegocio } from "./ContratosDoNegocio";
 import { CartaoDaPassagemNoNegocio } from "./CartaoDaPassagemNoNegocio";
+import { ConversaAteAquiNoNegocio } from "./ConversaAteAquiNoNegocio";
 import { AssinaturaConfirmada } from "./AssinaturaConfirmada";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { ConversaNoDossie } from "./ConversaNoDossie";
@@ -276,6 +277,8 @@ export function LeadDossier({
               </section>
               {/* PC-014: o cartão da passagem entre agentes, fixo logo abaixo do contato. */}
               <CartaoDaPassagemNoNegocio contactId={lead.contact_id} aberto={open} />
+              {/* PC-019: o registro da conversa — perguntado, respondido, licenças e promessas. */}
+              <ConversaAteAquiNoNegocio contactId={lead.contact_id} aberto={open} />
               <section className="py-3">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                   {t("Dados do negócio")}

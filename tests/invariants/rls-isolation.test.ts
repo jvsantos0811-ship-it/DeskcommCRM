@@ -635,6 +635,14 @@ beforeAll(() => {
           values (v_org, v_conv, v_contact, 'ferramenta', 'passou', 'auxilio', 'rls invariant', 'rls invariant');
         end if;
 
+        -- migration 9016 (fork): registro da conversa do contato semeado.
+        -- Leitura org-scoped sem gate de papel; a escrita so o servidor/worker faz.
+        if not exists (select 1 from public.registro_da_conversa where organization_id = v_org) then
+          insert into public.registro_da_conversa
+            (organization_id, contact_id, tipo, tema, chave, status, resposta)
+          values (v_org, v_contact, 'pergunta', 'rls invariant', 'rls invariant', 'respondida', 'rls');
+        end if;
+
         -- migration 9012 (fork): importação do histórico na sessão semeada.
         -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
         if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
@@ -930,6 +938,11 @@ export const TABLES = [
   // está cada caso. Leitura org-scoped sem gate de papel; escrita só pelo
   // servidor/worker.
   "passagens_entre_agentes",
+  // migration 9016 (fork) — registro da conversa por contato (PC-019): o que a
+  // IA perguntou, o resumo do que o cliente respondeu, licenças e promessas.
+  // Vazar entrega ao vizinho o que cada cliente contou. Leitura org-scoped sem
+  // gate de papel; escrita só pelo servidor/worker.
+  "registro_da_conversa",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

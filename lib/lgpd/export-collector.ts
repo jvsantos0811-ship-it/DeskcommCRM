@@ -290,6 +290,23 @@ export interface PassagemEntreAgentesRow {
 }
 
 /**
+ * Registro da conversa dele (fork, 9016, PC-019): o que o assistente perguntou,
+ * o resumo do que ele respondeu (até 80 caracteres; saúde só como "sim" ou
+ * "informado"), as licenças e as promessas. É dado dele; o gatilho da 9016
+ * apaga o registro na anonimização.
+ */
+export interface RegistroDaConversaRow {
+  id: string;
+  tipo: string;
+  tema: string;
+  status: string;
+  resposta: string | null;
+  prazo: string | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+/**
  * Tarefa combinada SOBRE a pessoa (migration 0210).
  *
  * ⚠️ ESTE BLOCO NASCEU COM A OUTRA METADE, e não depois dela. A migration liga o
@@ -711,6 +728,11 @@ export interface ExportPayload {
    * sempre preenche; quem monta um payload à mão (o PDF, os testes) pode omitir.
    */
   passagens_entre_agentes?: PassagemEntreAgentesRow[];
+  /**
+   * Registro da conversa dele (fork, 9016) — ver `RegistroDaConversaRow`.
+   * Opcional no TIPO pelo mesmo motivo de `passagens_entre_agentes`.
+   */
+  registro_da_conversa?: RegistroDaConversaRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
@@ -1634,6 +1656,28 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Registro da conversa (fork, 9016) — contact_id direto. O gatilho da 9016
+  // apaga o registro na anonimização; este bloco é a outra metade.
+  let registro_da_conversa: RegistroDaConversaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("registro_da_conversa")
+      .select("id, tipo, tema, status, resposta, prazo, criado_em, atualizado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("atualizado_em", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] registro da conversa load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("registro_da_conversa", data, 500);
+      registro_da_conversa = data as RegistroDaConversaRow[];
+    }
+  }
+
   // Empresas e pessoas (0448/0449) — ver o comentário do campo `b2b` no tipo.
   // A pessoa vem de `contacts.person_id`; as linhas de planilha casam pelo
   // contato OU pela pessoa, o MESMO escopo da redação da 0449. Erro lança:
@@ -2374,6 +2418,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     proposals,
     contracts,
     passagens_entre_agentes,
+    registro_da_conversa,
     tasks,
     webhook_captures,
     audit_log_extract,
@@ -2570,6 +2615,7 @@ function emptyPayload(
     proposals: [],
     contracts: [],
     passagens_entre_agentes: [],
+    registro_da_conversa: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],
