@@ -292,3 +292,67 @@ test.describe("navegação agrupada", () => {
     await expect(sidebar(page).getByRole("heading", { name: "Atendimento" })).toBeVisible();
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// PC-013 — O TRILHO RECOLHIDO. A barra nasce recolhida em ícones, abre POR CIMA
+// do conteúdo com o mouse (sem empurrar a página), mostra só o menu enxuto, e
+// "Menu completo" fixa a barra aberta com o menu de sempre (cookie "0").
+//
+// As outras specs desta suíte navegam pelo menu completo porque o fixture
+// (`helpers/test.ts`) fixa a barra aberta; este caso apaga o cookie para medir
+// o que um navegador novo vê.
+test.describe("o trilho recolhido (PC-013)", () => {
+  test("nasce recolhido, abre por cima com o mouse e 'Menu completo' volta o menu de sempre", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await context.clearCookies({ name: "sidebar_collapsed" });
+    await loginAdmin(page);
+    await page.goto("/app/inbox");
+
+    const trilho = page.locator("[data-trilho-lateral]");
+    const barra = trilho.locator("aside");
+    await expect(trilho).toBeVisible({ timeout: 30_000 });
+    await page.mouse.move(900, 400);
+    await expect(barra).toHaveAttribute("data-menu-aberto", "false");
+    const fechado = await trilho.evaluate((el) => el.getBoundingClientRect().width);
+    expect(fechado, "o trilho recolhido mede 64px").toBeLessThanOrEqual(65);
+
+    // O menu enxuto: os destinos do dia a dia, sem grupos nem o que ficou atrás
+    // do "Menu completo".
+    const nav = sidebar(page);
+    for (const href of ["/app/inbox", "/app/kanban", "/app/agenda", "/app/contacts", "/app/tasks"]) {
+      await expect(nav.locator(`a[href="${href}"]`), `o trilho perdeu ${href}`).toHaveCount(1);
+    }
+    for (const href of ["/app/webhooks", "/app/radar", "/app/connections"]) {
+      await expect(nav.locator(`a[href="${href}"]`), `${href} não é do menu enxuto`).toHaveCount(0);
+    }
+    await expect(nav.getByRole("heading")).toHaveCount(0);
+
+    // Abre POR CIMA: o conteúdo não se mexe.
+    const xAntes = await page.locator("main").first().evaluate((el) => el.getBoundingClientRect().left);
+    await barra.hover();
+    await expect(barra).toHaveAttribute("data-menu-aberto", "true");
+    await expect
+      .poll(async () => barra.evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(200);
+    const xDepois = await page.locator("main").first().evaluate((el) => el.getBoundingClientRect().left);
+    expect(xDepois, "abrir o trilho empurrou a página").toBe(xAntes);
+    await expect(nav.getByText("Tarefas", { exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(EVIDENCE, "pc013-trilho-aberto.png") });
+
+    // E fecha quando o mouse sai.
+    await page.mouse.move(900, 400);
+    await expect(barra).toHaveAttribute("data-menu-aberto", "false");
+
+    // "Menu completo" fixa a barra aberta, com os grupos de sempre.
+    await barra.hover();
+    await expect(barra).toHaveAttribute("data-menu-aberto", "true");
+    await nav.getByRole("button", { name: "Menu completo" }).click();
+    await expect(sidebar(page).getByRole("heading").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("[data-trilho-lateral]")).toHaveCount(0);
+    const cookie = (await context.cookies()).find((c) => c.name === "sidebar_collapsed");
+    expect(cookie?.value).toBe("0");
+  });
+});

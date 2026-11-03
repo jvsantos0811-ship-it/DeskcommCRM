@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { COOKIE_DA_BARRA_FIXADA, test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -33,6 +33,7 @@ async function customize(page: Page, email: string, only?: string) {
 test("interface por membro atualiza ao vivo, preserva formulário e convite aplica seleção", async ({
   page,
   browser,
+  baseURL,
 }) => {
   test.setTimeout(240_000);
   const suffix = randomUUID().slice(0, 8);
@@ -44,6 +45,12 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
   const memberContext = await browser.newContext();
   const otherContext = await browser.newContext();
   const guestContext = await browser.newContext();
+  // PC-013: contexto aberto à mão nasce com o trilho recolhido (menu enxuto);
+  // esta spec mede o menu COMPLETO por pessoa, então fixa a barra aberta como
+  // o fixture faz nos contextos dele.
+  for (const ctx of [memberContext, otherContext, guestContext]) {
+    if (baseURL) await ctx.addCookies([{ ...COOKIE_DA_BARRA_FIXADA, url: baseURL }]);
+  }
   try {
     for (const email of emails) {
       const { data, error } = await db.auth.admin.createUser({
