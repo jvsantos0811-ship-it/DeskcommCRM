@@ -273,7 +273,11 @@ afterAll(async () => {
 
 
 const FRASE_PADRAO = "Recebi sua mensagem e já estou cuidando disso, um instante.";
-const PROMESSA = "Já registrei seu caso. A equipe vai assumir às 8h e falar com você por aqui.";
+// Sem "registrei": desde o PC-022 a palavra está na lista padrão de frases
+// proibidas, e a 1ª ocorrência no turno volta como erro de ensino (o modelo de
+// verdade reescreve; o dublê daqui não). O que este caso mede é a trava de
+// promessa de humano, não a muleta.
+const PROMESSA = "Abri o seu caso. A equipe vai assumir às 8h e falar com você por aqui.";
 const CLINICA = "Pela foto, você tem uma micose de unha. Passe uma pomada antifúngica.";
 
 async function recusas(conversa: string) {
