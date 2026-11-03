@@ -11,7 +11,7 @@
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import {
   AJUSTES_PADRAO_DE_REPETICAO,
   ajustesParaGravar,
@@ -46,8 +46,8 @@ export default async function IaSettingsPage() {
     .gte("semana", desde)
     .order("semana", { ascending: false })
     .limit(400);
-  const podeEditarFrases =
-    (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  // A mesma régua da rota (PATCH /api/v1/settings/conversa): admin da empresa.
+  const podeEditarFrases = roleAtLeast(activeOrg.role, "admin");
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
