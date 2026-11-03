@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
@@ -22,6 +22,8 @@ function formatError(err: unknown, t: (texto: string) => string): string {
 }
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { CalendarioDoFunil } from "@/components/kanban/CalendarioDoFunil";
+import { AbasDoFunil, CHAVE_ULTIMO_FUNIL } from "@/components/kanban/AbasDoFunil";
+import { gravarPreferencia } from "@/hooks/ui/usePreferenciaDoNavegador";
 import { FilterBar } from "@/components/kanban/FilterBar";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
@@ -103,6 +105,11 @@ export function PipelinePageClient({
     [data?.leads],
   );
   const nomeAtual = data?.pipeline.name ?? initialName;
+  // A aba "Funil" (nas telas de Agenda, Ligações e Recuperação) volta para o
+  // ÚLTIMO quadro aberto neste navegador — é este efeito que o registra.
+  useEffect(() => {
+    gravarPreferencia(CHAVE_ULTIMO_FUNIL, `/app/pipelines/${pipelineId}`);
+  }, [pipelineId]);
   // Um funil só = nada para trocar: o seletor seria ruído permanente.
   const podeTrocar = funis.length > 1;
 
@@ -150,6 +157,7 @@ export function PipelinePageClient({
       data-refetch-divergencias={seguranca.divergencias}
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
+      <AbasDoFunil />
       {/* `flex-col` no mobile: nome de funil comprido (é texto livre, sem
           limite curto) + botão na mesma linha sem quebra empurrava o botão pra
           fora da viewport em telas estreitas. De `sm:` pra cima volta a ser

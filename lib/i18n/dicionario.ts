@@ -6046,6 +6046,10 @@ export const DICIONARIO: Traducoes = {
   Automações: { es: "Automatizaciones" },
   Atividade: { es: "Actividad" },
   Funil: { es: "Embudo" },
+  // PC-013 — abas do funil e ações rápidas do card
+  "Partes do funil": { es: "Partes del embudo" },
+  "Ligações": { es: "Llamadas" },
+  "Mover de etapa": { es: "Mover de etapa" },
   "Todos os funis": { es: "Todos los embudos" },
   "Escolha o funil": { es: "Elige el embudo" },
   "Escolha o funil primeiro": { es: "Elige primero el embudo" },

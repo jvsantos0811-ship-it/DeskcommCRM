@@ -7,6 +7,12 @@ import { EnvelopeSimple, Phone } from "@/lib/ui/icons";
 
 interface Props {
   lead: Pick<Lead, "contact_phone" | "contact_email" | "contact_links">;
+  /**
+   * Só os links (Instagram, site…), sem telefone e e-mail. É como o card do
+   * funil usa desde o PC-013: o telefone virou o botão "Ligar" das ações
+   * rápidas e os dois continuam no pop-up do negócio.
+   */
+  soLinks?: boolean;
 }
 
 /**
@@ -26,10 +32,10 @@ interface Props {
  * estranho por outro caminho (evento em tempo real, cache antigo) não vira
  * `javascript:` clicável.
  */
-export function ContatoNoCard({ lead }: Props) {
+export function ContatoNoCard({ lead, soLinks = false }: Props) {
   const t = useT();
-  const telefone = lead.contact_phone;
-  const email = lead.contact_email;
+  const telefone = soLinks ? undefined : lead.contact_phone;
+  const email = soLinks ? undefined : lead.contact_email;
   const links = (lead.contact_links ?? []).filter(({ href }) => /^https?:\/\//i.test(href));
 
   if (!telefone && !email && links.length === 0) return null;

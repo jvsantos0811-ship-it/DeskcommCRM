@@ -15,6 +15,8 @@ import { OwnerBadge, ownerInitials } from "./OwnerBadge";
 import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { ContatoNoCard } from "./ContatoNoCard";
 import { TarefasNoCard } from "./TarefasNoCard";
+import { EtiquetasNoCard } from "./EtiquetasNoCard";
+import { AcoesRapidasDoCard, FAIXA_DAS_ACOES } from "./AcoesRapidasDoCard";
 
 /** Os dois gestos de seleção que o card sabe relatar. */
 export type GestoDeSelecao = "alterna" | "intervalo";
@@ -47,6 +49,10 @@ interface KanbanCardProps {
   onSelect?: (leadId: string, gesto: GestoDeSelecao) => void;
   /** Abrir o dossiê. Separado de `onSelect`: são gestos e intenções diferentes. */
   onOpen?: (leadId: string) => void;
+  /** Etapas do funil para o botão "Mover de etapa" das ações rápidas (PC-013). */
+  etapas?: ReadonlyArray<{ id: string; name: string }>;
+  /** Move pela mesma mutação do arrasto e do pop-up. */
+  onMover?: (stageId: string) => void;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -61,10 +67,15 @@ function formatValor(cents: number | null, currency: string | null): string | nu
  * O card do Kanban — orçamento FIXO: 5 elementos, 3 faixas, altura constante.
  *
  * As alturas são reservadas em vez de derivadas do conteúdo: título sempre
- * ocupa 2 linhas, valor sempre ocupa a sua linha (com "—" quando não há valor),
- * e a faixa do agente existe mesmo vazia. É isso que faz o board continuar
- * legível quando score, próxima ação e alerta chegarem — o card não cresce com
- * dados, ele TROCA de estado.
+ * ocupa 2 linhas e a faixa do agente existe mesmo vazia. É isso que faz o board
+ * continuar legível quando score, próxima ação e alerta chegarem — o card não
+ * cresce com dados, ele TROCA de estado.
+ *
+ * PC-013 (a pedido do dono): a linha do valor só aparece quando há valor (o
+ * "—" reservado não dizia nada em quase todo card de escritório), as etiquetas
+ * voltaram à face numa linha fixa de no máximo duas + "+N", telefone e e-mail
+ * saíram para o botão "Ligar" e para o pop-up, e as ações (conversa, ligar,
+ * responsável, mover, "⋯") aparecem só com o mouse em cima.
  *
  * Cor só aparece na borda esquerda, e só quando o estado pede (Lei C).
  */
@@ -78,6 +89,8 @@ export function KanbanCard({
   pulseCount = 0,
   onSelect,
   onOpen,
+  etapas,
+  onMover,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
@@ -136,7 +149,10 @@ export function KanbanCard({
           role="group"
           aria-label={`${t("Lead")}: ${card.title}`}
           onClick={handleClick}
-          // Tags saem do card (Lei A): ficam a um hover, sem ocupar altura.
+          // Todas as etiquetas também no `title` do card: a face mostra até duas
+          // e um "+N" (PC-013), e o `title` continua dizendo a lista inteira a
+          // quem para o mouse — é ele que a spec de webhooks lê para provar que
+          // a etiqueta da automação chegou ao card.
           title={card.tags.length > 0 ? `Tags: ${card.tags.join(", ")}` : undefined}
           className={cn(
             "group relative overflow-hidden rounded-lg border border-border bg-surface",
@@ -246,18 +262,17 @@ export function KanbanCard({
                 </button>
               </h3>
             </div>
-            <KanbanCardActions lead={lead} pipelineId={pipelineId} />
           </div>
 
-          {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}
-          <p
-            className={cn(
-              "mt-1 h-5 text-xs font-medium leading-5 tabular-nums",
-              value ? "text-text" : "text-text-muted",
-            )}
-          >
-            {value ?? "—"}
-          </p>
+          {/* ② valor — só quando o negócio TEM valor (PC-013). O "—" reservado
+              ocupava uma linha em quase todo card de escritório, que não põe
+              valor no negócio antes da proposta, para não dizer nada. */}
+          {value && (
+            <p className="mt-1 h-5 text-xs font-medium leading-5 tabular-nums text-text">{value}</p>
+          )}
+
+          {/* As etiquetas, à vista (PC-013): até duas e um "+N". */}
+          <EtiquetasNoCard tags={card.tags} />
 
           {/* ③ a linha do agente — um slot, três estados, nunca três blocos. */}
           <div className="mt-1.5 flex h-6 items-center gap-2 text-xs">
@@ -307,25 +322,53 @@ export function KanbanCard({
             phone={lead.contact_phone}
           />
 
-          {/* Telefone, e-mail e links do contato — some por inteiro quando o
-              negócio não tem nada disso, como a conversa acima. */}
-          <ContatoNoCard lead={lead} />
+          {/* Links do contato (Instagram, site…) — some quando não há. Telefone
+              e e-mail saíram da face do card (PC-013): o telefone virou o botão
+              "Ligar" das ações rápidas, e os dois continuam no pop-up do negócio
+              (`ContatoDoNegocio`). */}
+          <ContatoNoCard lead={lead} soLinks />
 
-          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio */}
-          <div className="mt-1 flex h-6 items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <OwnerBadge
-                ownerKind={card.owner.kind}
-                ownerName={card.owner.name}
-                agentVersion={card.owner.agentVersion}
-              />
-              <TarefasNoCard tarefas={lead.tarefas} />
+          {/* ④ dono (+ selo de tarefas) · ⑤ tempo no estágio, e por cima deles,
+              com o mouse, as ações rápidas. */}
+          <div className="relative">
+            <div className="mt-1 flex h-6 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <OwnerBadge
+                  ownerKind={card.owner.kind}
+                  ownerName={card.owner.name}
+                  agentVersion={card.owner.agentVersion}
+                />
+                <TarefasNoCard tarefas={lead.tarefas} />
+              </div>
+              <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
+                {state.showStageAge && age
+                  ? `${age} ${t("em")} ${card.stageName}`
+                  : `${t("em")} ${card.stageName}`}
+              </span>
             </div>
-            <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-muted">
-              {state.showStageAge && age
-                ? `${age} ${t("em")} ${card.stageName}`
-                : `${t("em")} ${card.stageName}`}
-            </span>
+            {/* AS AÇÕES APARECEM COM O MOUSE E SOMEM QUANDO ELE SAI (PC-013).
+                Onde há mouse, a faixa fica POR CIMA do rodapé (absoluta, sem
+                mudar a altura do card) e só aparece no hover, no foco do
+                teclado ou com um menu dela aberto. No toque não há hover: a
+                faixa vira uma linha própria, sempre visível — esconder seria
+                deixar as ações inalcançáveis (mesma regra do "⋯", que já era
+                assim). */}
+            <div
+              data-testid="acoes-rapidas-do-card"
+              className={cn(
+                FAIXA_DAS_ACOES,
+                "mt-1 justify-end",
+                "[@media(hover:hover)]:absolute [@media(hover:hover)]:-bottom-0.5 [@media(hover:hover)]:right-0 [@media(hover:hover)]:mt-0 [@media(hover:hover)]:pl-2",
+              )}
+            >
+              <AcoesRapidasDoCard
+                lead={lead}
+                pipelineId={pipelineId}
+                etapas={etapas}
+                onMover={onMover}
+              />
+              <KanbanCardActions lead={lead} pipelineId={pipelineId} />
+            </div>
           </div>
         </div>
       )}
