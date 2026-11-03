@@ -72,6 +72,8 @@ import {
 } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
+import { erroDeEnsinoSemFonte, semAsFrasesVetadas, type VetoSemFonte } from '../guardrails/sem-fonte';
+import { contarSemFonteNaConversa, criarConferenciaSemFonte } from '../guardrails/sem-fonte-conferencia';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
@@ -243,6 +245,14 @@ import { criarTravaDeDuplicata } from './near-dup';
 import { vetoReason } from '@/lib/leads/veto-activity';
 import { corposEnviadosDesdeUltimaInbound } from './memoria-envio';
 import { aplicarRegistroDoFechamento, blocoDoRegistro } from './registro-da-conversa';
+import {
+  acharFrasesProibidas,
+  contarFrasesProibidas,
+  erroDeEnsinoDasFrases,
+  frasesDaOrganizacao,
+  removerMuletas,
+  type DesfechoDaFrase,
+} from './frases-proibidas';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import {
   contarRepeticaoNaConversa,
@@ -688,6 +698,10 @@ const inboundTurnPayloadSchema = z
     channel_session_id: z.string().uuid(),
     inbound_message_id: z.string().uuid(),
     crm_event_id: z.string().uuid(),
+    // PC-021: turno pedido pela transcrição que chegou DEPOIS de a IA já ter
+    // respondido (o áudio passou do teto de espera). Pula a régua de "já
+    // respondida": quem respondeu antes não tinha o texto do áudio.
+    derivacao_tardia: z.boolean().optional(),
   })
   .passthrough();
 
@@ -1349,6 +1363,8 @@ export interface InboundTurnKnobs {
    * CUSTO: com enabled, é UMA chamada de modelo auxiliar POR TENTATIVA DE ENVIO (não por turno).
    */
   promiseSemantic?: { enabled: boolean; model?: string };
+  /** PC-020: modelo da conferência "sem fonte, não afirma". */
+  semFonte?: { model?: string };
   /**
    * Onda 5 (Task 5.1) — modelo auxiliar dos turnos `classify`/`decide_timing` do
    * sistema de fluxos de follow-up (lib/agent-engine/agent/followup-flow-classify.ts).
@@ -2975,6 +2991,19 @@ async function executarTurnoDoAgente(
         },
       );
   let repeticoesBarradasNoTurno = 0;
+  // PC-022: as frases proibidas da organização (lidas uma vez, na 1ª candidata)
+  // e quantas vezes o turno já barrou por elas.
+  let frasesDaOrg: Promise<string[]> | null = null;
+  let frasesBarradasNoTurno = 0;
+  const registrarFrases = async (frases: string[], desfecho: DesfechoDaFrase): Promise<void> => {
+    try {
+      await contarFrasesProibidas(pool, { organizationId: tenantId, frases, desfecho, fuso: fusoDaOrg });
+    } catch (err) {
+      runLog.warn('contagem das frases proibidas não gravada', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  };
   const registrarRepeticao = async (
     rep: Repeticao,
     desfecho: 'repeticoes_barradas' | 'repeticoes_liberadas' | 'toques_pulados_por_repeticao',
@@ -3145,6 +3174,84 @@ async function executarTurnoDoAgente(
     },
     deps.jev ?? {},
   );
+  // PC-020: SEM FONTE, NÃO AFIRMA. Uma chamada barata por mensagem que afirma
+  // regra (benefício, prazo, valor, documento…) ou fala do cliente; nenhuma
+  // nas demais. A regra é conferida contra o material do turno MAIS a busca na
+  // base com a própria frase — o "não conferido" por falta de consulta acaba
+  // aqui. Até 2 vetos por turno; no 3º, saem só as frases sem fonte.
+  const conferenciaSemFonte = preview
+    ? null
+    : criarConferenciaSemFonte({
+        db: pool,
+        organizationId: tenantId,
+        contactId: leadId || null,
+        fontes: agentConfig?.knowledgeSourceIds ?? [],
+        lerMaterialDoTurno: () => evidenciasComerciais.ler().map((e) => e.conteudo),
+        chamarModelo: async (sistema, pergunta) => {
+          // Modelo e provider do agente viajam JUNTOS (PR #151): o par sai do
+          // `argsAux`, e o `llmOverride` fica no objeto da chamada.
+          const aux = argsAux(deps.knobs.semFonte?.model);
+          const chamada = await runModelCall(
+            pool,
+            deps.llmCfg,
+            {
+              tenantId,
+              leadId: leadId || null,
+              jobId: job?.id,
+              purpose: 'conferencia_de_fonte',
+              system: sistema,
+              messages: [{ role: 'user', content: pergunta }],
+              maxOutputTokens: 800,
+              reasoning: 'none',
+              ...(aux.model !== undefined ? { model: aux.model } : {}),
+              ...(aux.llmOverride !== undefined ? { llmOverride: aux.llmOverride } : {}),
+            },
+            { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+          );
+          return chamada.result.text;
+        },
+      });
+  let vetosSemFonteNoTurno = 0;
+  const registrarSemFonte = async (vetos: readonly VetoSemFonte[], desfecho: 'vetado' | 'observado' | 'liberado'): Promise<void> => {
+    try {
+      for (const tipo of new Set(vetos.map((v) => v.tipo))) {
+        await contarSemFonteNaConversa(
+          pool,
+          tenantId,
+          input.conversationId,
+          desfecho === 'observado'
+            ? 'sem_fonte_observados'
+            : desfecho === 'liberado'
+              ? 'sem_fonte_liberados'
+              : tipo === 'regra'
+                ? 'sem_fonte_vetos_regra'
+                : 'sem_fonte_vetos_cliente',
+        );
+        if (desfecho === 'vetado') {
+          await emitAgentActivityForContact({
+            pool,
+            organizationId: tenantId,
+            contactId: leadId,
+            type: 'send_vetoed',
+            sourceModule: 'sem_fonte',
+            sourceId: job?.id ?? null,
+            ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+            reason: vetoReason('sem_fonte', tipo),
+            payload: {
+              gate: 'sem_fonte',
+              code: tipo,
+              conversation_id: input.conversationId,
+              vereditos: vetos.filter((v) => v.tipo === tipo).map((v) => v.veredito),
+            },
+          });
+        }
+      }
+    } catch (err) {
+      runLog.warn('registro da conferência de fonte não gravado', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  };
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
@@ -3583,6 +3690,32 @@ async function executarTurnoDoAgente(
         // correção re-entra por aqui, na janela em memória. Bolhas de UM
         // send_message não se comparam entre si (só candidato contra candidato),
         // então fatiamento legítimo não se autossuprime.
+        // PC-022: FRASES PROIBIDAS da organização. A busca é pura (nenhuma
+        // chamada de modelo quando não acha). 1ª vez no turno → erro de ensino e
+        // o modelo reescreve; se a reescrita ainda tiver, a muleta isolada sai
+        // ("Perfeito!" no começo); senão a mensagem sai como está e fica contada.
+        if (!preview && job !== null && turnoVaiFalarComOLead(liveJob())) {
+          frasesDaOrg ??= frasesDaOrganizacao(pool, tenantId);
+          const achadas = acharFrasesProibidas(body, await frasesDaOrg);
+          if (achadas.length > 0) {
+            if (frasesBarradasNoTurno === 0) {
+              frasesBarradasNoTurno += 1;
+              runLog.info('frase proibida barrada — o modelo reescreve sem ela', { frases: achadas.length });
+              await registrarFrases(achadas, 'barrada');
+              return { ok: false, error: { code: 'frase_proibida', message: erroDeEnsinoDasFrases(achadas) } };
+            }
+            const semMuleta = removerMuletas(body, achadas);
+            if (semMuleta !== null) {
+              body = semMuleta;
+              await registrarFrases(achadas, 'removida');
+            } else {
+              runLog.warn('frase proibida saiu — a reescrita ainda a tinha e não era muleta isolada', {
+                frases: achadas.length,
+              });
+              await registrarFrases(achadas, 'enviada');
+            }
+          }
+        }
         // PC-018: REPETIÇÃO ENTRE TURNOS. Antes do `dupTrava.checar` (que é
         // síncrono até a reserva, de propósito): esta conferência lê o banco e
         // pode pedir embedding, e não pode ficar entre o checar e o reservar.
@@ -3634,6 +3767,36 @@ async function executarTurnoDoAgente(
               pergunta_retirada: semPergunta !== null,
             });
             await registrarRepeticao(repeticao, 'repeticoes_liberadas');
+          }
+        }
+        // PC-020: SEM FONTE, NÃO AFIRMA — depois das réguas baratas (frases e
+        // repetição), porque esta pode custar uma chamada de modelo.
+        if (conferenciaSemFonte !== null && job !== null && turnoVaiFalarComOLead(liveJob())) {
+          const semFonte = await conferenciaSemFonte.conferir(body);
+          if (semFonte.falhou) {
+            runLog.warn('conferência de fonte não concluiu — a mensagem segue', {
+              regra: semFonte.quantidade.regra,
+              cliente: semFonte.quantidade.cliente,
+            });
+          }
+          if (semFonte.vetos.length > 0) {
+            if (semFonte.estado === 'observando') {
+              await registrarSemFonte(semFonte.vetos, 'observado');
+            } else if (vetosSemFonteNoTurno < 2) {
+              vetosSemFonteNoTurno += 1;
+              runLog.info('afirmação sem fonte barrada — o modelo reescreve', {
+                vetos: semFonte.vetos.map((v) => `${v.tipo}:${v.veredito}`),
+              });
+              await registrarSemFonte(semFonte.vetos, 'vetado');
+              return { ok: false, error: { code: 'sem_fonte', message: erroDeEnsinoSemFonte(semFonte.vetos) } };
+            } else {
+              const semAsFrases = semAsFrasesVetadas(body, semFonte.vetos);
+              if (semAsFrases !== null) body = semAsFrases;
+              runLog.warn('afirmação sem fonte na 3ª reescrita — sai sem as frases vetadas', {
+                frases_retiradas: semAsFrases !== null,
+              });
+              await registrarSemFonte(semFonte.vetos, 'liberado');
+            }
           }
         }
         const corpoRepetido = dupTrava.checar(body);
@@ -6696,7 +6859,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       conversationId: payload.conversation_id,
       jobId: job.id,
     };
-    if (await ultimaInboundJaRespondida(pool, alvo)) {
+    if (payload.derivacao_tardia !== true && (await ultimaInboundJaRespondida(pool, alvo))) {
       deps.log.info('turno pulado — outro turno já viu e respondeu a última mensagem do cliente', {
         job_id: job.id,
         conversation_id: payload.conversation_id,

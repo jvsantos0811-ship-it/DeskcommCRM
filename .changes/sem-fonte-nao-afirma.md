@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Sem fonte, não afirma — a IA não diz prazo, valor ou regra que não está no material
+---
+Antes de a resposta da IA sair, o sistema separa as frases que afirmam uma regra (benefício, prazo, valor, documento, requisito) ou que atribuem algo ao cliente ("como você comentou…") e confere cada uma: a regra contra o material do escritório (a base de conhecimento ativa do agente) e a fala atribuída contra o que o cliente realmente escreveu ou disse em áudio, e as notas do contato. Se a regra contradiz o material ou não está nele, ou se o cliente não disse aquilo, a mensagem não sai e o agente reescreve — corrigindo pelo material, dizendo que vai confirmar com a equipe, ou sem atribuir ao cliente o que ele não falou. Na terceira tentativa, saem só as frases sem fonte e o resto da mensagem segue. Mensagem que só pergunta ou cumprimenta não paga conferência nenhuma. A conferência usa o modelo mais barato do mesmo provedor do agente (ponto "Não afirmar sem fonte" em Configurações › IA › Provedores; SEM_FONTE_MODEL para fixar outro). Em Configurações › IA, "Sem fonte, não afirma" escolhe entre barrar e reescrever (padrão), só registrar, ou desligar. Cada barrada aparece na linha do tempo do negócio.

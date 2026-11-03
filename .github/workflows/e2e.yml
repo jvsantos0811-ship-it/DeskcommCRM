@@ -1311,6 +1311,9 @@ jobs:
         suspensao-administrativa.spec.ts
         telas-de-conversa-compactas.spec.ts
         registro-da-conversa.spec.ts
+        frases-proibidas.spec.ts
+        midias-nao-entendidas.spec.ts
+        sem-fonte.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

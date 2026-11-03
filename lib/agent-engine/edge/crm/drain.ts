@@ -60,6 +60,8 @@ export interface DrainKnobs {
   debounceTetoMs?: number;
   /** Espera de foto, vídeo e documento na janela deslizante (PC-002). */
   debounceMidiaMs?: number;
+  /** PC-021: quanto o turno espera a transcrição/leitura da mídia (padrão 30 s). */
+  esperaDerivacaoMs?: number;
   /** Evento 'processing' órfão volta a 'pending' após isto. */
   reapTimeoutMs: number;
   /**
@@ -206,7 +208,17 @@ const ESPERA_DERIVACAO_MS = 4_000;
  * o cliente esperando minutos pela primeira resposta. 120s cobre o caso comum
  * de transcrição lenta (como o do Alfran) sem impor essa espera longa.
  */
-const TETO_ESPERA_DERIVACAO_MS = 120_000;
+const TETO_ESPERA_DERIVACAO_MS_ANTIGO = 120_000;
+/**
+ * PC-021 (03/11/2026, decisão do João): o teto PADRÃO passou a 30 s, ajustável
+ * por `INBOUND_ESPERA_TRANSCRICAO_MS` (knob `esperaDerivacaoMs`). O defeito do
+ * Alfran — "não consegui ouvir seu áudio" com a transcrição chegando 18 s
+ * depois — não volta: passado o teto, o turno responde ao resto e diz que o
+ * áudio está sendo ouvido (o marcador da abertura), e quando a transcrição chega
+ * o worker pede o TURNO TARDIO (`derivacao_tardia`), que responde ao áudio.
+ */
+export const TETO_ESPERA_DERIVACAO_MS = 30_000;
+void TETO_ESPERA_DERIVACAO_MS_ANTIGO;
 
 type DesfechoEvento = 'processado' | 'adiar';
 
@@ -519,7 +531,7 @@ async function processEvent(
   const midia = midias.find((m) => !DERIVACAO_TERMINADA.has(m.media_derived_status ?? ''));
   if (midia !== undefined) {
     const esperandoHa = Date.now() - new Date(midia.quando).getTime();
-    if (esperandoHa < TETO_ESPERA_DERIVACAO_MS) {
+    if (esperandoHa < (knobs.esperaDerivacaoMs ?? TETO_ESPERA_DERIVACAO_MS)) {
       log.info('drain: mídia ainda sendo transcrita — turno adiado', {
         event_id: event.id,
         tipo: midia.type,
@@ -572,6 +584,8 @@ async function processEvent(
       channel_session_id: p.channel_session_id,
       inbound_message_id: p.inbound_message_id,
       crm_event_id: event.id,
+      // PC-021: turno tardio do áudio transcrito depois da resposta.
+      ...(p.derivacao_tardia === true ? { derivacao_tardia: true } : {}),
     },
     ...(runAfter !== undefined ? { runAfter } : {}),
   });

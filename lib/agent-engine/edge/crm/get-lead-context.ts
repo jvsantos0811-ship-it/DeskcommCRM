@@ -11,6 +11,7 @@
  *     função pura do conteúdo);
  *   - is_blocked lido DIRETO da fonte (contacts) — não existe mais cache.
  */
+import { ehMidiaNaoEntendida } from '@/lib/messaging/media/nao-entendida';
 import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
@@ -413,6 +414,10 @@ export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
   // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
   // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
   // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
+  // PC-021: mídia que o sistema NÃO entendeu (áudio só de ruído, curto demais,
+  // foto borrada, PDF sem texto, leitura que falhou) ganha outra moldura: a de
+  // "peça para repetir ou escrever" — nunca a de "trate como se tivesse ouvido".
+  if (derived && ehMidiaNaoEntendida(derived)) return frameMidiaNaoEntendida(m.type, m.body, derived);
   return derived
     ? frameMediaBody(m.type, m.body, derived)
     : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
@@ -486,6 +491,26 @@ export function frameMediaBody(type: string, caption: string | null, derived: st
   ];
   if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
   parts.push(`Conteúdo: ${derived}`);
+  return parts.join('\n');
+}
+
+/**
+ * A moldura da mídia que o sistema NÃO conseguiu entender (PC-021). Começa como
+ * toda moldura de mídia (`textoDoClienteNaUltimaMensagem` a reconhece), diz o
+ * que aconteceu com as palavras do marcador ("ÁUDIO NÃO ENTENDIDO (duração
+ * 12s)") e manda pedir, com naturalidade, que a pessoa repita ou escreva —
+ * nunca responder como se tivesse entendido, nunca adivinhar o conteúdo.
+ * @internal exposto p/ teste.
+ */
+export function frameMidiaNaoEntendida(type: string, caption: string | null, derived: string): string {
+  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
+  const repetir = type === 'audio' ? 'mande o áudio de novo' : type === 'image' ? 'mande outra foto' : 'mande de novo';
+  const parts = [
+    `${INICIO_DA_MOLDURA_DE_MIDIA} ele enviou ${noun} que o sistema NÃO conseguiu entender (${derived.trim()}). ` +
+      `Não responda como se tivesse entendido e não adivinhe o conteúdo: peça, com naturalidade e sem culpar a pessoa, ` +
+      `que ela ${repetir} ou escreva o que queria dizer.]`,
+  ];
+  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
   return parts.join('\n');
 }
 

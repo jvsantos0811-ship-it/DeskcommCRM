@@ -69,7 +69,9 @@ test.describe("PC-018 — Configurações › IA: não repetir pergunta nem mens
     await expect(page.getByTestId("repeticao-mensagens")).toHaveValue("6", { timeout: 30_000 });
 
     // Volta ao padrão para não deixar a organização de teste diferente.
-    await page.getByRole("button", { name: "Voltar ao padrão" }).click();
+    // Escopo no formulário da repetição: a tela tem outros "Voltar ao padrão"
+    // (frases proibidas, PC-022, para quem administra).
+    await page.getByTestId("form-repeticao").getByRole("button", { name: "Voltar ao padrão" }).click();
     await page.getByTestId("repeticao-salvar").click();
     await expect(page.getByText("Regras de repetição salvas.")).toBeVisible({ timeout: 15_000 });
     await page.reload();

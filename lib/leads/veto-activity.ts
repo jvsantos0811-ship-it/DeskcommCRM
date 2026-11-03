@@ -66,6 +66,16 @@ export function vetoReason(gate: string, code: string): string {
       "Repetição barrada: o agente ia repetir uma pergunta ou mensagem que já tinha feito, e reescreveu",
     repeticao_followup:
       "Toque pulado por repetição: a retomada repetiria o que já foi dito ao cliente",
+    // PC-020: sem fonte, não afirma.
+    sem_fonte:
+      "Afirmação sem fonte barrada: o agente afirmava uma regra que não está no material, ou algo que o cliente não disse, e reescreveu",
   };
-  return porGate[gate] ?? `Não enviei: bloqueado pela regra "${gate}" (${code})`;
+  // Onde o TIPO do veto muda o que o humano precisa saber (PC-020: regra × cliente).
+  const porGateECodigo: Record<string, string> = {
+    "sem_fonte:regra":
+      "Afirmação sem fonte barrada: o agente afirmava uma regra (prazo, valor, requisito, documento) que não está no material do escritório, e reescreveu",
+    "sem_fonte:cliente":
+      "Afirmação sem fonte barrada: o agente atribuía ao cliente algo que ele não disse, e reescreveu",
+  };
+  return porGateECodigo[`${gate}:${code}`] ?? porGate[gate] ?? `Não enviei: bloqueado pela regra "${gate}" (${code})`;
 }

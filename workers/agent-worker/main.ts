@@ -303,6 +303,7 @@ export async function startWorker(
       debounceMs: env.INBOUND_DEBOUNCE_MS,
       debounceTetoMs: env.INBOUND_DEBOUNCE_TETO_MS,
       debounceMidiaMs: env.INBOUND_DEBOUNCE_MIDIA_MS,
+      esperaDerivacaoMs: env.INBOUND_ESPERA_TRANSCRICAO_MS,
       reapTimeoutMs: env.CRM_EVENT_REAP_TIMEOUT_MS,
       allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
     },

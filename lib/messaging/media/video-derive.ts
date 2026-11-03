@@ -26,7 +26,7 @@ export interface VideoDeriveDeps {
   runFfmpeg?: (args: string[], cwd: string) => Promise<void>;
 }
 
-function defaultRunFfmpeg(args: string[], cwd: string): Promise<void> {
+export function defaultRunFfmpeg(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", ["-nostdin", "-y", ...args], { cwd });
     let stderr = "";
