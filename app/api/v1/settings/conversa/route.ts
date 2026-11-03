@@ -39,7 +39,7 @@ import {
   frasesProibidasSchema,
   lerFrasesProibidas,
 } from "@/lib/agent-engine/agent/frases-proibidas";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { roleAtLeast } from "@/lib/auth/types";
 import {
   ajustesSemFonteSchema,
   ESTADO_PADRAO_SEM_FONTE,
@@ -126,8 +126,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     });
   }
 
-  // A lista de frases é decisão de quem administra a empresa (PC-022).
-  if (parsed.data.frases_proibidas !== undefined && ROLE_RANK[authz.org.role] < ROLE_RANK.admin) {
+  // A lista de frases é decisão de quem administra a empresa (PC-022). Escopo
+  // sobre o papel que o `requireRole` acima já resolveu (com o portão de MFA).
+  if (parsed.data.frases_proibidas !== undefined && !roleAtLeast(authz.org.role, "admin")) {
     return fail("forbidden", t("Só o administrador da empresa muda as frases proibidas."), 403, { requestId });
   }
 
