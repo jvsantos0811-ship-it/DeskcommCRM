@@ -2,8 +2,8 @@
 import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear, List } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -15,6 +15,7 @@ import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/Marca
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
+import { menuEnxuto } from "@/lib/navigation/menu-enxuto";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
@@ -22,6 +23,13 @@ interface SidebarContentProps {
   collapsed: boolean;
   showCollapseControl?: boolean;
   onNavigate?: () => void;
+  /**
+   * O MENU ENXUTO do trilho (PC-013): só os destinos do dia a dia, sem grupos
+   * nem "Ver tudo em…" (`lib/navigation/menu-enxuto.ts`), e um "Menu completo"
+   * que fixa a barra aberta com o menu de sempre. Quem usa é o trilho do
+   * computador (`TrilhoLateral`); o menu do celular continua completo.
+   */
+  enxuto?: boolean;
 }
 
 /**
@@ -36,6 +44,7 @@ export function SidebarContent({
   collapsed,
   showCollapseControl = true,
   onNavigate,
+  enxuto = false,
 }: SidebarContentProps) {
   // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
   // escolha de idioma virar algo visível no primeiro clique.
@@ -53,6 +62,19 @@ export function SidebarContent({
   // Configurações sai da área que rola e vai para o rodapé fixo: medido em
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
   const grupos = todos.filter((g) => g.group.id !== GRUPO_NO_RODAPE);
+  const itensEnxutos = enxuto
+    ? menuEnxuto(
+        user.is_platform_admin && !user.support,
+        activeOrg?.role ?? null,
+        activeOrg?.interface_settings,
+        activeOrg?.modulos_ligados ?? [],
+        activeOrg?.capacidades_ligadas ?? [],
+      )
+    : [];
+  // No trilho, "Fixar o menu aberto" e "Menu completo" fazem a mesma coisa:
+  // gravam a barra aberta (cookie `sidebar_collapsed=0`), e o menu de sempre
+  // volta — com grupos, "Ver tudo em…" e tudo o que o trilho não mostra.
+  const fixarAberto = () => startTransition(() => toggleSidebar(true));
   const rodape = todos.find((g) => g.group.id === GRUPO_NO_RODAPE)?.group.hub;
 
   /**
@@ -218,7 +240,7 @@ export function SidebarContent({
         )}
         {/* Issue #2722 — o controle de recolher mora no ALTO, como no
             mercado: na linha da logo, à direita, quando a barra está aberta. */}
-        {showCollapseControl && !collapsed && (
+        {showCollapseControl && !collapsed && !enxuto && (
           // `shrink-0`: sem isso o botão é o primeiro a ser espremido quando a
           // marca é larga — e ele é o controle, não sobra.
           <div className="ml-auto shrink-0 pl-2">
@@ -233,12 +255,25 @@ export function SidebarContent({
       </div>
       {/* Issue #2722 — no trilho recolhido (64px) não cabe controle ao lado
           do símbolo: ele vira uma faixa imediatamente abaixo da marca. */}
-      {showCollapseControl && collapsed && (
+      {showCollapseControl && collapsed && !enxuto && (
         <div className="border-b px-2 py-1">
           <BotaoDeRecolher
             collapsed
             isPending={isPending}
             onClick={() => startTransition(() => toggleSidebar(collapsed))}
+          />
+        </div>
+      )}
+      {/* No trilho o controle fica SEMPRE nesta faixa, aberto ou fechado:
+          trocar de lugar ao abrir faria todos os ícones pularem uma linha
+          debaixo do mouse. */}
+      {showCollapseControl && enxuto && (
+        <div className="border-b px-2 py-1">
+          <BotaoDeRecolher
+            collapsed
+            isPending={isPending}
+            rotuloAberto={collapsed ? undefined : t("Fixar o menu aberto")}
+            onClick={fixarAberto}
           />
         </div>
       )}
@@ -287,6 +322,53 @@ export function SidebarContent({
         o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
         trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
       */}
+      {enxuto ? (
+        <nav className="flex-1 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+          <ul className="space-y-1">
+            {itensEnxutos.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+              const Icon = item.icon;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    title={collapsed ? t(item.label) : undefined}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={onNavigate}
+                    className={cn(
+                      "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors",
+                      isActive
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                      collapsed && "justify-center px-2",
+                    )}
+                  >
+                    <Icon size={20} weight={isActive ? "fill" : "regular"} aria-hidden className="shrink-0" />
+                    {!collapsed && <span className="truncate">{t(item.label)}</span>}
+                    {item.contador === "casos" && <ContadorDeCasos compacto={collapsed} />}
+                    {item.contador === "fila" && <ContadorDaFila compacto={collapsed} />}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          <div aria-hidden className="mx-2 my-2 border-t" />
+          <button
+            type="button"
+            onClick={fixarAberto}
+            disabled={isPending}
+            title={collapsed ? t("Menu completo") : undefined}
+            aria-label={collapsed ? t("Menu completo") : undefined}
+            className={cn(
+              "flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+              collapsed && "justify-center px-2",
+            )}
+          >
+            <List size={20} aria-hidden className="shrink-0" />
+            {!collapsed && <span className="truncate">{t("Menu completo")}</span>}
+          </button>
+        </nav>
+      ) : (
       <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
@@ -383,6 +465,7 @@ export function SidebarContent({
           );
         })}
       </nav>
+      )}
       <div className="border-t p-2">
         {rodape && (
           <Link
@@ -420,6 +503,7 @@ function BotaoDeRecolher({
   isPending,
   onClick,
   soIcone = false,
+  rotuloAberto,
 }: {
   collapsed: boolean;
   isPending: boolean;
@@ -433,10 +517,15 @@ function BotaoDeRecolher({
    * e o `title` cobre o hover para quem só enxerga o desenho.
    */
   soIcone?: boolean;
+  /**
+   * Trilho aberto pelo mouse (PC-013): o mesmo controle, com rótulo à vista
+   * ("Fixar o menu aberto"), porque há largura para ele.
+   */
+  rotuloAberto?: string;
 }) {
   const t = useT();
   // Um rótulo só para `aria-label` e `title`: os dois nomeiam a MESMA ação.
-  const rotulo = collapsed ? t("Expandir sidebar") : t("Recolher sidebar");
+  const rotulo = rotuloAberto ?? (collapsed ? t("Expandir sidebar") : t("Recolher sidebar"));
   return (
     <button
       type="button"
@@ -444,22 +533,28 @@ function BotaoDeRecolher({
       disabled={isPending}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        (collapsed || soIcone) && "justify-center px-2",
+        (collapsed || soIcone) && !rotuloAberto && "justify-center px-2",
       )}
       aria-label={rotulo}
-      title={collapsed || soIcone ? rotulo : undefined}
+      title={(collapsed || soIcone) && !rotuloAberto ? rotulo : undefined}
     >
       {collapsed ? (
         <CaretDoubleRight size={14} aria-hidden />
       ) : (
         <CaretDoubleLeft size={14} aria-hidden />
       )}
-      {!collapsed && !soIcone && <span>{t("Recolher")}</span>}
+      {rotuloAberto ? (
+        <span className="truncate">{rotuloAberto}</span>
+      ) : (
+        !collapsed && !soIcone && <span>{t("Recolher")}</span>
+      )}
     </button>
   );
 }
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
+  // Recolhida = o TRILHO do PC-013, que abre por cima com o mouse.
+  if (collapsed) return <TrilhoLateral />;
   return (
     <aside
       className={cn(
@@ -497,11 +592,86 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // Marinho nos dois temas (PC-012): o atributo traz os papéis do tema
         // escuro e `lateral-marinho` (globals.css) troca as superfícies.
         "lateral-marinho text-foreground",
-        collapsed ? "w-16" : "w-60",
+        "w-60",
       )}
       data-theme="dark"
     >
-      <SidebarContent collapsed={collapsed} />
+      <SidebarContent collapsed={false} />
     </aside>
+  );
+}
+
+/** Espera antes de abrir (o mouse que só atravessa a barra não a abre). */
+const ESPERA_PARA_ABRIR_MS = 120;
+/** Espera antes de fechar (tremer o mouse na borda não fecha). */
+const ESPERA_PARA_FECHAR_MS = 220;
+
+/**
+ * O TRILHO LATERAL (PC-013) — a barra recolhida em ícones que ABRE POR CIMA do
+ * conteúdo quando o mouse passa, e fecha quando ele sai.
+ *
+ * ─── Ocupa o lugar do trilho, flutua só a parte aberta ─────────────────────
+ *
+ * O `div` de fora é `sticky top-0 h-dvh shrink-0` e mede sempre 64px: é ele que
+ * ocupa a coluna da casca, como a barra sempre ocupou (cercas
+ * `barra-lateral-nao-flutua` e `barra-lateral-nao-perde-o-sticky`). O `aside`
+ * de dentro é absoluto e cresce para 240px POR CIMA da página — abrir não
+ * empurra o quadro do funil nem o Inbox, e fechar não os faz pular de volta.
+ *
+ * ─── Teclado ────────────────────────────────────────────────────────────────
+ *
+ * Foco dentro da barra abre na hora (Tab chega nos ícones e os rótulos
+ * aparecem); o foco que sai fecha.
+ *
+ * ─── O que ele mostra ──────────────────────────────────────────────────────
+ *
+ * O menu enxuto (`menuEnxuto`), com o mesmo "Configurações" no rodapé. "Menu
+ * completo" e "Fixar o menu aberto" gravam a barra aberta, e quem prefere o
+ * menu de sempre fica com ele — a escolha é por navegador, no mesmo cookie de
+ * antes (`sidebar_collapsed`).
+ */
+function TrilhoLateral() {
+  const [aberto, setAberto] = useState(false);
+  const relogio = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const agendar = (valor: boolean, ms: number) => {
+    if (relogio.current) clearTimeout(relogio.current);
+    relogio.current = null;
+    if (ms === 0) {
+      setAberto(valor);
+      return;
+    }
+    relogio.current = setTimeout(() => {
+      relogio.current = null;
+      setAberto(valor);
+    }, ms);
+  };
+  useEffect(
+    () => () => {
+      if (relogio.current) clearTimeout(relogio.current);
+    },
+    [],
+  );
+
+  return (
+    <div className="sticky top-0 z-30 h-dvh w-16 shrink-0" data-trilho-lateral>
+      <aside
+        onMouseEnter={() => agendar(true, ESPERA_PARA_ABRIR_MS)}
+        onMouseLeave={() => agendar(false, ESPERA_PARA_FECHAR_MS)}
+        onFocus={() => agendar(true, 0)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) agendar(false, 0);
+        }}
+        className={cn(
+          "absolute inset-y-0 left-0 flex flex-col overflow-hidden border-r bg-card transition-[width,box-shadow] duration-base",
+          "lateral-marinho text-foreground",
+          aberto ? "w-60 shadow-2xl" : "w-16",
+        )}
+        data-theme="dark"
+        data-menu-aberto={aberto ? "true" : "false"}
+      >
+        <SidebarContent collapsed={!aberto} enxuto />
+      </aside>
+    </div>
   );
 }
