@@ -127,8 +127,6 @@ function luminancia(cor: string): number {
 }
 
 test.describe("ajustes do funil pela tela (03/11/2026)", () => {
-  test.describe.configure({ mode: "serial" });
-
   test.beforeAll(async () => {
     await cenario();
   });
@@ -160,8 +158,10 @@ test.describe("ajustes do funil pela tela (03/11/2026)", () => {
     await expect(page.getByPlaceholder("Buscar por título…")).toBeVisible();
     await captura(page, "2-filtros-com-o-mouse");
 
-    // Com um filtro ligado, fica à vista mesmo sem o mouse.
-    await page.goto(`/app/pipelines/${semeado.pipeline}?overdue=1`);
+    // Com um filtro ligado, fica à vista mesmo sem o mouse. A busca pelo
+    // título mantém o card na tela (o "Apenas atrasados" filtra NEGÓCIO
+    // atrasado, não tarefa — e este negócio não está).
+    await page.goto(`/app/pipelines/${semeado.pipeline}?q=${encodeURIComponent(semeado.titulo)}`);
     await expect(card).toBeVisible({ timeout: 30_000 });
     await page.mouse.move((caixa?.x ?? 0) + 200, (caixa?.y ?? 0) + (caixa?.height ?? 0) + 320);
     await expect.poll(() => alturaDosFiltros(page), { timeout: 10_000 }).toBeGreaterThan(30);
