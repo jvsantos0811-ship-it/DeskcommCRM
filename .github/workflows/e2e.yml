@@ -184,7 +184,7 @@ jobs:
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5, 6]
+        parte: [1, 2, 3, 4, 5, 6, 7]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -1275,22 +1275,45 @@ jobs:
         mapas-em-provedores.spec.ts
         modulo-de-dados-na-ficha-do-contato.spec.ts
         painel-de-configuracao-da-instalacao.spec.ts
-        passagem-entre-agentes.spec.ts
         protecao-de-envio-nao-congela-o-padrao.spec.ts
         prova-painel-provedores.spec.ts
         qa-l12-inbox.spec.ts
         recursos-opcionais.spec.ts
         redes-sociais-volta-nao-desloga.spec.ts
+        skills-versao-nova-do-catalogo.spec.ts
+
+      # ─── PARTE 7 — nasceu em 2026-11-03 (fork), porque a 6 passou do teto ───
+      #
+      # Medido no PR #29 do fork (run 41661080858, job 126005653938): a parte 6
+      # somou 1282s de casos e foi CORTADA pelo relógio aos 1313s de suíte, com
+      # `suspensao-administrativa` e `telas-de-conversa-compactas` ainda por
+      # rodar — o retry de um caso vermelho bastou para passar do teto. Por
+      # spec, naquele run: inbox-busca-e-filtros 220s, prova-painel-provedores
+      # 236s, agenda-presenca-recuperacao 162s, integracao-dados-fontes-liberadas
+      # 144s, sons-dos-avisos 77s, passagem-entre-agentes 40s.
+      #
+      # Saem da 6 para cá as specs que semeiam o próprio dado (service role) e
+      # não dependem de estado deixado por vizinha: as do fork (passagem entre
+      # agentes, regras da IA, telas de conversa compactas) e três que já
+      # tinham sido movidas para a 6 por serem independentes
+      # (integracao-dados-fontes-liberadas, sons-dos-avisos,
+      # suspensao-administrativa). Os agentes publicados que
+      # `passagem-entre-agentes` semeia (e arquiva no fim) deixam de dividir o
+      # banco com `prova-painel-provedores`, que mede "instalação sem agente
+      # publicado".
+      #
+      # PREVISÃO, não medida: parte 6 ~1000s de casos, parte 7 ~400s.
+      SPECS_PARTE_7: >-
+        integracao-dados-fontes-liberadas.spec.ts
+        passagem-entre-agentes.spec.ts
+        regras-da-ia-repeticao.spec.ts
+        sons-dos-avisos.spec.ts
+        suspensao-administrativa.spec.ts
+        telas-de-conversa-compactas.spec.ts
+        registro-da-conversa.spec.ts
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
         sem-fonte.spec.ts
-        registro-da-conversa.spec.ts
-        regras-da-ia-repeticao.spec.ts
-        skills-versao-nova-do-catalogo.spec.ts
-        sons-dos-avisos.spec.ts
-        suspensao-administrativa.spec.ts
-        integracao-dados-fontes-liberadas.spec.ts
-        telas-de-conversa-compactas.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
@@ -2104,6 +2127,7 @@ jobs:
             4) LISTA="$SPECS_PARTE_4" ;;
             5) LISTA="$SPECS_PARTE_5" ;;
             6) LISTA="$SPECS_PARTE_6" ;;
+            7) LISTA="$SPECS_PARTE_7" ;;
             *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
           esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
@@ -2429,7 +2453,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; bloco SPECS_PARTE_4; bloco SPECS_PARTE_5; bloco SPECS_PARTE_6; bloco SPECS_PARTE_7; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.
