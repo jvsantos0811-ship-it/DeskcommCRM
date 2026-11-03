@@ -1234,6 +1234,9 @@ export const AUDIT_ACTIONS = [
   // rascunho do prompt de um agente. NÃO é publicação: é o pedido, com o
   // motivo; quem publica é uma pessoa, na tela do agente (`ai_agent.published`).
   "ai_agent.publicacao_pedida",
+  // Pacote Conversa (PC-018 em diante): as regras da IA na conversa da
+  // organização (Configurações › IA). Metadata com as chaves alteradas.
+  "settings.conversa_atualizada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
