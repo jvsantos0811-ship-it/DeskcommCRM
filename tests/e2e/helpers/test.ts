@@ -118,10 +118,26 @@ function esperarARevelacaoNasCargas(page: Page): void {
   embrulharANavegacao(page, () => esperarARevelacao(page));
 }
 
+/**
+ * A BARRA LATERAL FIXADA ABERTA (PC-013).
+ *
+ * Desde o PC-013 a barra do app nasce recolhida num trilho que abre por cima
+ * com o mouse e mostra só o menu enxuto (`lib/navigation/menu-enxuto.ts`). As
+ * specs desta suíte navegam pelo MENU COMPLETO — grupos, "Ver tudo em…",
+ * contadores, a dobra de 900px — que continua existindo para quem fixa a barra
+ * aberta (cookie `sidebar_collapsed=0`, o mesmo de "Fixar o menu aberto"). O
+ * fixture fixa a barra aberta em todo contexto que ele cria, e quem mede o
+ * trilho recolhido apaga o cookie (`navegacao.spec.ts`, "o trilho recolhido").
+ * Contexto aberto à mão com `browser.newContext()` não passa por aqui e nasce
+ * com o trilho — como o navegador de quem acabou de instalar.
+ */
+export const COOKIE_DA_BARRA_FIXADA = { name: "sidebar_collapsed", value: "0" } as const;
+
 export const test = base.extend({
   // Sem JavaScript os reveladores não rodam e a caixa fica por definição.
-  context: async ({ context, javaScriptEnabled }, usar) => {
+  context: async ({ context, javaScriptEnabled, baseURL }, usar) => {
     if (javaScriptEnabled !== false) context.on("page", esperarARevelacaoNasCargas);
+    if (baseURL) await context.addCookies([{ ...COOKIE_DA_BARRA_FIXADA, url: baseURL }]);
     await usar(context);
   },
   page: async ({ page, javaScriptEnabled }, usar) => {

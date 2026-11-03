@@ -257,8 +257,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   // Read sidebar collapsed state SSR to avoid flash.
+  //
+  // PC-013: a barra NASCE RECOLHIDA, no trilho que abre por cima com o mouse e
+  // mostra o menu enxuto. Só quem escolheu "Fixar o menu aberto" (ou "Menu
+  // completo") — cookie "0" — vê a barra aberta com o menu de sempre. Quem já
+  // tinha recolhido ("1") continua recolhido.
   const store = await cookies();
-  const collapsed = store.get("sidebar_collapsed")?.value === "1";
+  const collapsed = store.get("sidebar_collapsed")?.value !== "0";
 
   const impersonating = user.support ? {
     tenantId: user.support.organization_id, tenantName: user.support.name,
