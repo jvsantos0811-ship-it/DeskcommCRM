@@ -98,6 +98,25 @@ export function primeiroMarcador(tag: LeadFilters["tag"]): string | undefined {
  * O `modo` só sai quando é `ou` — `e` é o padrão, e um `?tag=vip` de hoje não
  * ganha um `&modo=e` colado nele.
  */
+/**
+ * Há algum filtro ligado? Decide se a barra de filtros do quadro fica à vista
+ * mesmo sem o mouse em cima (03/11/2026): recolher a barra com um filtro ligado
+ * esconderia por que o quadro mostra menos negócios do que tem.
+ */
+export function filtroLigado(f: LeadFilters): boolean {
+  return Boolean(
+    (f.owner && f.owner !== "any") ||
+      (f.status && f.status !== "all") ||
+      marcadoresDoFiltro(f.tag).length > 0 ||
+      f.search?.trim() ||
+      f.overdueOnly ||
+      f.lostReason ||
+      f.lostCategory ||
+      f.valueCentsMin != null ||
+      f.valueCentsMax != null,
+  );
+}
+
 export function filtersFromParams(
   sp: { get(key: string): string | null; getAll?: (key: string) => string[] },
 ): LeadFilters {

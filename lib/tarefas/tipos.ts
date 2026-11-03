@@ -119,10 +119,49 @@ export function estaAtrasada(
   return new Date(tarefa.due_date).getTime() < agora.getTime();
 }
 
+/** Uma tarefa em aberto como o card do funil a mostra (03/11/2026). */
+export interface TarefaNoCard {
+  id: string;
+  titulo: string;
+  /** ISO-8601; nulo = sem prazo. */
+  prazo: string | null;
+  atrasada: boolean;
+}
+
 /** O que o selo do card conta: o que ainda pede ação, e quanto disso já venceu. */
 export interface ResumoDasTarefas {
   abertas: number;
   atrasadas: number;
+  /**
+   * As próximas em aberto, para o card mostrar pelo nome: até
+   * `TAREFAS_NO_CARD`, atrasadas primeiro, depois o prazo mais próximo, e as
+   * sem prazo por último. Ausente quem montou o resumo não leu os títulos.
+   */
+  proximas?: TarefaNoCard[];
+}
+
+/** Quantas tarefas o card do funil mostra pelo nome (o resto vira "+N"). */
+export const TAREFAS_NO_CARD = 2;
+
+/**
+ * As próximas tarefas em aberto, na ordem em que pedem ação: atrasadas (a mais
+ * antiga primeiro), depois as com prazo (a mais próxima primeiro), e as sem
+ * prazo por último. Pura.
+ */
+export function proximasTarefas(
+  tarefas: readonly Pick<Tarefa, "id" | "title" | "due_date" | "status">[],
+  agora: Date = new Date(),
+  limite: number = TAREFAS_NO_CARD,
+): TarefaNoCard[] {
+  return tarefas
+    .filter((t) => !estaEncerrada(t))
+    .map((t) => ({ id: t.id, titulo: t.title, prazo: t.due_date, atrasada: estaAtrasada(t, agora) }))
+    .sort((a, b) => {
+      if (a.atrasada !== b.atrasada) return a.atrasada ? -1 : 1;
+      if (a.prazo === null || b.prazo === null) return a.prazo === b.prazo ? 0 : a.prazo === null ? 1 : -1;
+      return new Date(a.prazo).getTime() - new Date(b.prazo).getTime();
+    })
+    .slice(0, limite);
 }
 
 /**

@@ -1314,6 +1314,7 @@ jobs:
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
         sem-fonte.spec.ts
+        funil-ajustes-do-joao.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

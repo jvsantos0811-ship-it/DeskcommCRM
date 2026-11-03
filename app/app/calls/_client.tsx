@@ -1,5 +1,6 @@
 "use client";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { AbasDoFunil } from "@/components/kanban/AbasDoFunil";
 import { useCallsQuery, useDialCall, type CallRow } from "@/hooks/calls/useCallsQuery";
+import { usePhoneNumbers } from "@/hooks/telefonia/usePhoneNumbers";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 function fmtDate(iso: string | null, idioma: string): string {
@@ -133,6 +135,10 @@ export function CallsClient() {
   // reprova `toLocaleString("pt-BR")` fixo.
   const idioma = useTagDeIdioma();
   const { data: calls, isLoading } = useCallsQuery();
+  const numeros = usePhoneNumbers();
+  // A aba Ligações aparece mesmo sem telefonia (decisão de 03/11/2026): sem
+  // número ATIVO, a tela diz o que falta e leva aonde se conecta.
+  const semTelefonia = numeros.isSuccess && !(numeros.data ?? []).some((n) => n.is_active);
   const [selected, setSelected] = useState<CallRow | null>(null);
 
   return (
@@ -147,6 +153,20 @@ export function CallsClient() {
         </div>
         <DialerDialog />
       </header>
+
+      {semTelefonia && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4" data-testid="ligacoes-sem-telefonia">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold">{t("Nenhum número de telefone conectado")}</p>
+            <p className="text-sm text-muted-foreground">
+              {t("Para fazer e receber ligações pelo CRM, conecte um número em Conexões › Telefone.")}
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href="/app/connections?aba=telefonia">{t("Conectar um número")}</Link>
+          </Button>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         {isLoading ? (

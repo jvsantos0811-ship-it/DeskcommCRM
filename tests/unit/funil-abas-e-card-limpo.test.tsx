@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,9 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *  - LIGAR: o `tel:` só leva dígitos e o "+" — um telefone com espaço, traço ou
  *    parêntese viraria um link que o discador não entende.
  *  - ABAS: cada aba segue a régua do menu (papel e telas da empresa). "Ligações"
- *    só existe para gerente com número de telefonia ATIVO — e quem não pode ver
- *    a aba não dispara a consulta (a requisição sairia do navegador de todo
- *    atendente para responder 403).
+ *    existe para gerente+, com ou sem telefonia (decisão de 03/11/2026: as
+ *    quatro abas sempre no topo); sem número, a tela de Chamadas explica.
  *  - A aba "Funil" volta ao último quadro aberto, e só aceita caminho de quadro:
  *    o valor vem do navegador, e um link montado a partir de texto arbitrário
  *    seria uma porta aberta.
@@ -97,13 +96,14 @@ describe("ligar pelo card", () => {
 });
 
 describe("abas do funil", () => {
-  it("gerente com número de telefonia ativo vê as quatro abas, na ordem", async () => {
-    apiGet.mockResolvedValue({ data: [{ is_active: true }] });
+  it("gerente vê as quatro abas, na ordem — com ou sem telefonia, e sem consulta", () => {
+    // Decisão de 03/11/2026: Ligações sempre no topo para quem abre Chamadas.
+    // Sem número, quem explica o que falta é a própria tela de Chamadas.
     comConsulta(<AbasDoFunil />);
-    await waitFor(() => expect(screen.getByTestId("aba-do-funil-ligacoes")).toBeInTheDocument());
+    expect(screen.getByTestId("aba-do-funil-ligacoes")).toBeInTheDocument();
     const nomes = screen.getAllByRole("link").map((l) => l.textContent);
     expect(nomes).toEqual(["Funil", "Agenda", "Ligações", "Recuperação"]);
-    expect(apiGet).toHaveBeenCalledWith("/api/v1/phone-numbers", { semDesvioDeSuspensao: true });
+    expect(apiGet).not.toHaveBeenCalled();
   });
 
   it("a aba da tela atual é a marcada", () => {
@@ -113,14 +113,7 @@ describe("abas do funil", () => {
     expect(screen.getByTestId("aba-do-funil-funil")).not.toHaveAttribute("aria-current");
   });
 
-  it("sem número ATIVO, não há aba de Ligações", async () => {
-    apiGet.mockResolvedValue({ data: [{ is_active: false }] });
-    comConsulta(<AbasDoFunil />);
-    await waitFor(() => expect(apiGet).toHaveBeenCalled());
-    expect(screen.queryByTestId("aba-do-funil-ligacoes")).toBeNull();
-  });
-
-  it("atendente não vê Ligações e nem dispara a consulta", () => {
+  it("atendente não vê Ligações", () => {
     ROLE.atual = "agent";
     comConsulta(<AbasDoFunil />);
     expect(screen.queryByTestId("aba-do-funil-ligacoes")).toBeNull();

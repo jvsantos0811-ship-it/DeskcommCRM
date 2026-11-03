@@ -6,7 +6,9 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { X } from "lucide-react";
+
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
 import { ChatDoNegocio } from "./ChatDoNegocio";
@@ -130,6 +132,9 @@ export function LeadDossier({
         // a conversa. Escolhido no lugar de um botão "tela cheia": é só tamanho,
         // sem estado novo, e a conversa já ganha a largura sem um clique a mais.
         className="flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[1800px] flex-col gap-0 overflow-hidden p-0"
+        // O X mora no cabeçalho marinho (abaixo), no tema dele: o padrão do
+        // diálogo é escuro e sumia em cima do marinho (03/11/2026).
+        fecharNoCabecalho
         data-popup-do-negocio
         data-modo-foco={modoFoco ? "true" : "false"}
         // O Esc do modo foco sai do foco, e NÃO fecha o card.
@@ -149,7 +154,7 @@ export function LeadDossier({
             a mesma da barra lateral — `data-theme="dark"` traz os papéis de
             texto e `lateral-marinho` (globals.css) as superfícies. */}
         <div
-          className="lateral-marinho flex min-h-11 items-center gap-x-3 gap-y-1 border-b border-border bg-surface py-1.5 pr-12 pl-4 text-text"
+          className="lateral-marinho flex min-h-11 items-center gap-x-3 gap-y-1 border-b border-border bg-surface py-1.5 pr-2 pl-4 text-text"
           data-testid="cabecalho-do-negocio"
           data-theme="dark"
         >
@@ -195,6 +200,13 @@ export function LeadDossier({
           {lead.conversa && (
             <BotaoModoFoco ligado={modoFoco} onAlternar={alternarFoco} className="shrink-0" />
           )}
+          <DialogClose
+            data-testid="fechar-o-negocio"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-text hover:bg-surface-elevated focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <X className="h-4 w-4" aria-hidden />
+            <span className="sr-only">{t("Fechar")}</span>
+          </DialogClose>
         </div>
         {etapas && etapas.length > 0 && !modoFoco && (
           <div className="border-b border-border px-4 py-1.5">

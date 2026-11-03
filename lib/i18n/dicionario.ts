@@ -16956,6 +16956,15 @@ export const DICIONARIO: Traducoes = {
   "Devolvidas pela equipe": { es: "Devueltas por el equipo" },
   "Nenhuma passagem no período.": { es: "Ningún traspaso en el período." },
   "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.": { es: "Devuelve al agente la conversación que una persona asumió y dejó parada. La conversación que la IA pasó al equipo solo vuelve con el botón Devolver." },
+  // Ajustes do funil (03/11/2026): tarefas no card e aba Ligações
+  "Tarefas em aberto": { es: "Tareas abiertas" },
+  "tarefa": { es: "tarea" },
+  "tarefas": { es: "tareas" },
+  "sem prazo": { es: "sin plazo" },
+  "amanhã": { es: "mañana" },
+  "Nenhum número de telefone conectado": { es: "Ningún número de teléfono conectado" },
+  "Para fazer e receber ligações pelo CRM, conecte um número em Conexões › Telefone.": { es: "Para hacer y recibir llamadas desde el CRM, conecta un número en Conexiones › Teléfono." },
+  "Conectar um número": { es: "Conectar un número" },
   // PC-020 — sem fonte, não afirma
   "Conferência de fonte salva.": { es: "Verificación de fuente guardada." },
   "Barrar e reescrever (recomendado)": { es: "Bloquear y reescribir (recomendado)" },

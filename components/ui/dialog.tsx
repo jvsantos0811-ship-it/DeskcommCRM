@@ -36,8 +36,15 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    /**
+     * Quem desenha o próprio "X" (com `DialogClose`) dentro do cabeçalho. É o
+     * caso do card do negócio: o cabeçalho é marinho, e o X padrão — escuro,
+     * fora do tema do cabeçalho — sumia em cima dele (03/11/2026).
+     */
+    fecharNoCabecalho?: boolean;
+  }
+>(({ className, children, fecharNoCabecalho = false, ...props }, ref) => {
   const t = useT();
   return (
     <DialogPortal>
@@ -73,10 +80,12 @@ const DialogContent = React.forwardRef<
           `docs/design-system/screen-flow/07-responsive-strategy.md`, sem
           redesenhar os ~27 diálogos. `lg:m-0 lg:p-0` devolve o desktop idêntico.
         */}
+        {!fecharNoCabecalho && (
         <DialogPrimitive.Close className="absolute top-4 right-4 -m-3.5 rounded-sm p-3.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground lg:m-0 lg:p-0">
           <X className="h-4 w-4" />
           <span className="sr-only">{t("Fechar")}</span>
         </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
