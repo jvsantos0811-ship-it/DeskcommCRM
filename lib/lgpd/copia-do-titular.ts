@@ -100,6 +100,8 @@ export const O_QUE_FICA = {
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   contracts: "os contratos que o escritório enviou a ele e o desfecho de cada um",
+  passagens_entre_agentes:
+    "a troca do atendimento dele entre assistentes virtuais: quando, o motivo e o resumo do que ele contou",
   tasks: "o que se combinou fazer para ele",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",

@@ -363,7 +363,8 @@ const DA_EMPRESA: RecursoOpcional[] = [
   {
     id: "ia_volta_sozinha",
     nome: "A IA volta sozinha sem resposta da equipe",
-    oQueFaz: "Devolve a conversa ao agente depois de um tempo sem resposta de uma pessoa.",
+    oQueFaz:
+      "Devolve ao agente a conversa que uma pessoa assumiu e deixou parada. A conversa que a IA passou para a equipe só volta pelo botão Devolver.",
     nivel: "organizacao",
     padrao: "desligado",
     quemDecide: "manager",

@@ -48,11 +48,17 @@ import type pg from 'pg';
  * saía "done" sem erro nenhum, e nenhum turno rodava. Medido em produção
  * (2026-09-14): 6 mensagens ao longo de 7h, zero resposta, zero job novo — só o
  * coalescing silencioso repetido no mesmo job com `held_run_after` no payload.
+ *
+ * O turno do DESTINO de uma passagem entre agentes (`payload.passagem_id`,
+ * PC-014) também fica de fora: ele abre dizendo que o cliente não escreveu nada
+ * novo. A mensagem que chega nesses segundos abre o próprio turno — e o da
+ * passagem, ao ver mensagem nova, sai sem falar.
  */
 const SQL_JOB_PARA_COALESCER = `select id from job_queue
  where organization_id = $1 and contact_id = $2
    and kind = 'inbound_turn' and status = 'pending' and run_after > now()
    and not (payload ? 'held_run_after')
+   and not (payload ? 'passagem_id')
  limit 1`;
 
 /** O que fazer com a mensagem que acabou de chegar. */
@@ -155,6 +161,7 @@ const SQL_DESLIZAR = `update job_queue j
            where organization_id = $1 and contact_id = $2
              and kind = 'inbound_turn' and status = 'pending' and run_after > now()
              and not (payload ? 'held_run_after')
+             and not (payload ? 'passagem_id')
            order by created_at
            limit 1)
     and j.status = 'pending' and j.run_after > now()

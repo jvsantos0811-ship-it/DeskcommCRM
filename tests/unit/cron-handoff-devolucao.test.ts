@@ -174,17 +174,22 @@ function chamar(segredo = SEGREDO): Promise<Response> {
   );
 }
 
+/**
+ * Uma conversa que uma pessoa ASSUMIU da fila e deixou parada. Desde o PC-014
+ * (regra do João de 03/11/2026) a conversa PASSADA para a equipe
+ * (`last_handoff_at` preenchido) não volta sozinha — só pelo clique.
+ */
 function conversa(id: string, minutosParada: number): Record<string, unknown> {
   return {
     id,
     organization_id: ORG,
     channel_session_id: SESSAO,
-    status: "pending",
+    status: "claimed",
     assignee_kind: "user",
-    assigned_to_user_id: null,
-    assigned_at: null,
-    bot_silenced_until: "infinity",
-    last_handoff_at: min(minutosParada),
+    assigned_to_user_id: "11111111-1111-4111-8111-111111111111",
+    assigned_at: min(minutosParada),
+    bot_silenced_until: null,
+    last_handoff_at: null,
     last_outbound_at: null,
     status_changed_at: min(minutosParada),
     is_group: false,

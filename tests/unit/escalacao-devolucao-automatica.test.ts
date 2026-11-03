@@ -20,6 +20,11 @@ import {
  *   3. Sessão sem agente publicado não recebe devolução: seria tirar a conversa
  *      da fila humana para deixá-la muda.
  *   4. Organização sem prazo = IA-06 de sempre. É o padrão de quem já instalou.
+ *   5. (PC-014, regra do João de 03/11/2026) Conversa PASSADA para a equipe
+ *      (`last_handoff_at` preenchido) nunca volta sozinha: só pelo clique em
+ *      "Devolver para a IA". O prazo vale para a conversa que uma pessoa
+ *      ASSUMIU da fila (sem passagem) e deixou parada — é a que os casos
+ *      abaixo usam como base.
  */
 
 const ORG = "22222222-2222-4222-8222-222222222222";
@@ -32,12 +37,12 @@ function conversa(sobrescreve: Partial<ConversaEmHandoff> = {}): ConversaEmHando
     id: "44444444-4444-4444-8444-444444444444",
     organization_id: ORG,
     channel_session_id: SESSAO,
-    status: "pending",
+    status: "claimed",
     assignee_kind: "user",
-    assigned_to_user_id: null,
-    assigned_at: null,
-    bot_silenced_until: "infinity",
-    last_handoff_at: min(90),
+    assigned_to_user_id: "11111111-1111-4111-8111-111111111111",
+    assigned_at: min(90),
+    bot_silenced_until: null,
+    last_handoff_at: null,
     last_outbound_at: null,
     status_changed_at: min(90),
     ...sobrescreve,
@@ -76,37 +81,60 @@ describe("ultimoSinalHumanoMs — de onde o relógio conta", () => {
 
   it("sem nenhum carimbo cai no status_changed_at; sem esse também, é null", () => {
     expect(
-      ultimoSinalHumanoMs(conversa({ last_handoff_at: null, status_changed_at: min(70) })),
+      ultimoSinalHumanoMs(conversa({ assigned_at: null, status_changed_at: min(70) })),
     ).toBe(AGORA - 70 * 60_000);
     expect(
-      ultimoSinalHumanoMs(conversa({ last_handoff_at: null, status_changed_at: null })),
+      ultimoSinalHumanoMs(conversa({ assigned_at: null, status_changed_at: null })),
     ).toBeNull();
   });
 });
 
 describe("avaliarDevolucao — quem vence", () => {
-  it("handoff formal parado há mais que o prazo: devolve, e diz o prazo", () => {
-    expect(avaliarDevolucao(conversa({ last_handoff_at: min(61) }), selecao(60))).toEqual({
+  it("assumida e parada há mais que o prazo: devolve, e diz o prazo", () => {
+    expect(avaliarDevolucao(conversa({ assigned_at: min(61) }), selecao(60))).toEqual({
       devolver: true,
       minutos: 60,
     });
   });
 
+  it("PC-014: passada para a equipe NUNCA volta sozinha, nem muito depois do prazo", () => {
+    const passada = conversa({
+      status: "pending",
+      assigned_to_user_id: null,
+      assigned_at: null,
+      bot_silenced_until: "infinity",
+      last_handoff_at: min(5000),
+    });
+    expect(avaliarDevolucao(passada, selecao(60))).toEqual({
+      devolver: false,
+      motivo: "passada_para_a_equipe",
+    });
+    // Mesmo com uma pessoa assumindo depois da passagem: segue com a pessoa.
+    expect(
+      avaliarDevolucao(conversa({ last_handoff_at: min(5000), assigned_at: min(4000) }), selecao(60)),
+    ).toEqual({ devolver: false, motivo: "passada_para_a_equipe" });
+  });
+
+  it("PC-014: passagem de um atendimento JÁ ENCERRADO (antes da reabertura) não segura a conversa", () => {
+    const reaberta = conversa({ last_handoff_at: min(4000), service_started_at: min(70), assigned_at: min(70) });
+    expect(avaliarDevolucao(reaberta, selecao(60))).toEqual({ devolver: true, minutos: 60 });
+  });
+
   it("dentro do prazo: não devolve — inclusive no minuto exato anterior", () => {
-    expect(avaliarDevolucao(conversa({ last_handoff_at: min(59) }), selecao(60))).toEqual({
+    expect(avaliarDevolucao(conversa({ assigned_at: min(59) }), selecao(60))).toEqual({
       devolver: false,
       motivo: "dentro_do_prazo",
     });
   });
 
-  it("a pessoa respondeu há pouco: o relógio reinicia, mesmo com a passagem antiga", () => {
-    const c = conversa({ last_handoff_at: min(200), last_outbound_at: min(15) });
+  it("a pessoa respondeu há pouco: o relógio reinicia, mesmo assumida há muito", () => {
+    const c = conversa({ assigned_at: min(200), last_outbound_at: min(15) });
     expect(avaliarDevolucao(c, selecao(60))).toEqual({ devolver: false, motivo: "dentro_do_prazo" });
   });
 
   it("organização sem prazo: nunca (IA-06 de sempre)", () => {
     const sel = { ...selecao(60), prazoPorOrg: new Map<string, number>() };
-    expect(avaliarDevolucao(conversa({ last_handoff_at: min(500) }), sel)).toEqual({
+    expect(avaliarDevolucao(conversa({ assigned_at: min(500) }), sel)).toEqual({
       devolver: false,
       motivo: "sem_prazo",
     });
@@ -137,7 +165,7 @@ describe("avaliarDevolucao — quem vence", () => {
   });
 
   it("conversa encerrada não é devolvida", () => {
-    expect(avaliarDevolucao(conversa({ status: "closed", last_handoff_at: min(500) }), selecao(60))).toEqual({
+    expect(avaliarDevolucao(conversa({ status: "closed", assigned_at: min(500) }), selecao(60))).toEqual({
       devolver: false,
       motivo: "status_nao_devolvivel",
     });
@@ -145,14 +173,14 @@ describe("avaliarDevolucao — quem vence", () => {
 
   it("sessão sem agente publicado: não devolve para ninguém", () => {
     const sel = { ...selecao(60), sessoesComAgente: new Map<string, Set<string>>() };
-    expect(avaliarDevolucao(conversa({ last_handoff_at: min(500) }), sel)).toEqual({
+    expect(avaliarDevolucao(conversa({ assigned_at: min(500) }), sel)).toEqual({
       devolver: false,
       motivo: "sessao_sem_agente",
     });
   });
 
   it("sem relógio nenhum: não devolve às cegas", () => {
-    const c = conversa({ last_handoff_at: null, status_changed_at: null });
+    const c = conversa({ assigned_at: null, status_changed_at: null });
     expect(avaliarDevolucao(c, selecao(60))).toEqual({ devolver: false, motivo: "sem_relogio" });
   });
 });
@@ -173,14 +201,16 @@ describe("selecionarVencidas — o lote", () => {
       agoraMs: AGORA,
     };
     const lote = [
-      conversa({ id: "a", last_handoff_at: min(61) }),
-      conversa({ id: "b", last_handoff_at: min(30) }),
+      conversa({ id: "a", assigned_at: min(61) }),
+      conversa({ id: "b", assigned_at: min(30) }),
       conversa({
         id: "c",
         organization_id: OUTRA,
         channel_session_id: OUTRA_SESSAO,
-        last_handoff_at: min(30),
+        assigned_at: min(30),
       }),
+      // passada para a equipe, vencida há muito: fica com a pessoa (PC-014)
+      conversa({ id: "d", assigned_to_user_id: null, assigned_at: null, bot_silenced_until: "infinity", last_handoff_at: min(500) }),
     ];
     expect(selecionarVencidas(lote, sel).map((v) => [v.conversa.id, v.minutos])).toEqual([
       ["a", 60],

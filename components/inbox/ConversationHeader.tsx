@@ -52,6 +52,8 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
+import { DevolverParaAgenteDialog } from "@/components/inbox/DevolverParaAgenteDialog";
+import { useAgentesParaDevolver } from "@/hooks/inbox/useAgentesParaDevolver";
 import { SnoozeSubmenu } from "@/components/inbox/SnoozeButton";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
@@ -130,6 +132,8 @@ export function ConversationHeader({
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
+  // PC-014: num número com roteador, "Devolver" pede o agente e uma linha.
+  const [devolverParaAgenteOpen, setDevolverParaAgenteOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloParaAEquipe(c, t);
@@ -221,6 +225,7 @@ export function ConversationHeader({
    * pior que não oferecer nenhuma.
    */
   const podeDevolver = travaVigente;
+  const agentesParaDevolver = useAgentesParaDevolver(conversation.id, podeDevolver);
   /**
    * PAUSAR só aparece quando pausar é um gesto DIFERENTE de assumir.
    *
@@ -419,14 +424,21 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
-            disabled={retomar.isPending}
+            // PC-014: enquanto a lista do roteador não chegou, o clique não sabe
+            // se abre a escolha do agente ou devolve direto — clicar cedo
+            // devolvia sem escolher (medido no e2e). Espera a lista.
+            disabled={retomar.isPending || agentesParaDevolver.isLoading}
             data-testid="devolver-ao-automatico"
             title={
               motivo === "contato_travado"
                 ? t("Religa o atendimento automático para este cliente — vale para todas as conversas dele.")
                 : t("Devolve esta conversa ao atendimento automático.")
             }
-            onClick={() => retomar.mutate({ conversation_id: conversation.id })}
+            onClick={() =>
+              agentesParaDevolver.data?.tem_roteador
+                ? setDevolverParaAgenteOpen(true)
+                : retomar.mutate({ conversation_id: conversation.id })
+            }
           >
             {/* O rótulo completo aparece UMA vez: é o nome do botão para quem
                 usa leitor de tela, e a frase que a Central e o resumo da
@@ -557,6 +569,20 @@ export function ConversationHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {agentesParaDevolver.data?.tem_roteador && (
+        <DevolverParaAgenteDialog
+          open={devolverParaAgenteOpen}
+          onOpenChange={setDevolverParaAgenteOpen}
+          agentes={agentesParaDevolver.data.agentes}
+          enviando={retomar.isPending}
+          onConfirmar={(escolha) =>
+            retomar.mutate(
+              { conversation_id: conversation.id, ...escolha },
+              { onSuccess: () => setDevolverParaAgenteOpen(false) },
+            )
+          }
+        />
+      )}
       <ReassignDialog
         conversationId={conversation.id}
         open={reassignOpen}

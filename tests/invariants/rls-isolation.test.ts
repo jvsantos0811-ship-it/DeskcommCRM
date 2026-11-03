@@ -626,6 +626,15 @@ beforeAll(() => {
             from public.crm_leads where organization_id = v_org limit 1;
         end if;
 
+        -- migration 9015 (fork): passagem da conversa entre agentes, presa à
+        -- conversa e ao contato semeados. Leitura org-scoped sem gate de papel;
+        -- a escrita so o servidor/worker faz (authenticated so tem SELECT).
+        if not exists (select 1 from public.passagens_entre_agentes where organization_id = v_org) then
+          insert into public.passagens_entre_agentes
+            (organization_id, conversation_id, contact_id, origem, desfecho, intencao, motivo, cartao)
+          values (v_org, v_conv, v_contact, 'ferramenta', 'passou', 'auxilio', 'rls invariant', 'rls invariant');
+        end if;
+
         -- migration 9012 (fork): importação do histórico na sessão semeada.
         -- Leitura org-scoped sem gate de papel; a escrita só o servidor faz.
         if not exists (select 1 from public.importacoes_de_historico where organization_id = v_org) then
@@ -915,6 +924,12 @@ export const TABLES = [
   // estado e contagens, mas dizem quantos contatos o escritório tem e quando os
   // trouxe. Leitura org-scoped sem gate de papel; escrita só pelo servidor.
   "importacoes_de_historico",
+  // migration 9015 (fork) — passagem da conversa entre agentes do roteador:
+  // de quem para quem, motivo e o cartão da passagem (nome, benefício, o que
+  // falta). Vazar entrega ao vizinho com quem o escritório conversa e em que pé
+  // está cada caso. Leitura org-scoped sem gate de papel; escrita só pelo
+  // servidor/worker.
+  "passagens_entre_agentes",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

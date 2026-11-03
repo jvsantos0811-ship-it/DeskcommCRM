@@ -216,6 +216,12 @@ export async function resolveTurnAgent(
     signalMessageId?: string | null;
     stickyAgentId: string | null;
     stickyIntent: string | null;
+    /**
+     * PC-014: o agente ativo chegou por uma passagem (ferramenta ou devolução da
+     * equipe). Vale como grudado mesmo num roteador sem `sticky`: a mensagem
+     * seguinte com intenção "nenhuma" fica com ele (regra 2).
+     */
+    stickyPelaPassagem?: boolean;
     /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
     recentMessages?: ClassifierContextMessage[];
   },
@@ -338,7 +344,7 @@ export async function resolveTurnAgent(
     // sticky elegível: config liga sticky E o agente ainda é membro do router
     // (membro removido ⇒ trata como sem sticky, decisão segura — ver report).
     const stickyMember =
-      router.sticky && input.stickyAgentId !== null
+      (router.sticky || input.stickyPelaPassagem === true) && input.stickyAgentId !== null
         ? router.members.find((m) => m.agentId === input.stickyAgentId)
         : undefined;
 
@@ -509,8 +515,29 @@ export async function resolveConversationTurn(
       .reverse();
   }
 
+  // PC-014: a passagem mais recente que de fato passou foi para o agente ativo?
+  // Então ele está grudado pela passagem. Falha de leitura = sem a aderência
+  // forçada (a régua de sempre segue valendo).
+  const ativo = rows[0]?.active_ai_agent_id ?? null;
+  let stickyPelaPassagem = false;
+  if (ativo !== null) {
+    try {
+      const { rows: passagem } = await db.query<{ para_agente_id: string | null }>(
+        `select para_agente_id from passagens_entre_agentes
+          where organization_id = $1 and conversation_id = $2 and desfecho = 'passou'
+            and origem in ('ferramenta', 'equipe')
+          order by created_at desc limit 1`,
+        [input.tenantId, input.conversationId],
+      );
+      stickyPelaPassagem = passagem[0]?.para_agente_id === ativo;
+    } catch {
+      stickyPelaPassagem = false;
+    }
+  }
+
   return resolveTurnAgent(db, llmCfg, {
     ...input,
+    stickyPelaPassagem,
     signal,
     signalBody,
     signalMessageId: signalRow?.id ?? null,

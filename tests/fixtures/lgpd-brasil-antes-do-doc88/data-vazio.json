@@ -23,6 +23,7 @@
   "sales": [],
   "proposals": [],
   "contracts": [],
+  "passagens_entre_agentes": [],
   "tasks": [],
   "webhook_captures": [],
   "audit_log_extract": [],

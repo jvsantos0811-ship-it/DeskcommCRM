@@ -40,6 +40,12 @@
  *   `atendimento-manual.ts`): tem prazo próprio e vence sozinha. Aqui só entra
  *   quem está com humano de forma durável: `'infinity'`, `assignee_kind='user'`
  *   ou `assigned_to_user_id` preenchido.
+ * - **Conversa PASSADA para a equipe** (`last_handoff_at` preenchido: a IA ou o
+ *   sistema passou o atendimento a uma pessoa). Regra do João, 03/11/2026
+ *   (PC-014): o lead passado fica com a pessoa e só volta para um agente quando
+ *   alguém clica "Devolver para a IA" — nunca sozinho. O prazo continua valendo
+ *   para a conversa que uma pessoa assumiu sem passagem (ela pegou da fila) e
+ *   deixou parada.
  */
 
 /** Piso e teto do prazo, em minutos. Abaixo de 5 a IA volta no meio da digitação. */
@@ -61,6 +67,11 @@ export interface ConversaEmHandoff {
   last_handoff_at: string | null;
   last_outbound_at: string | null;
   status_changed_at: string | null;
+  /**
+   * Início do atendimento em curso (a reabertura e a demanda nova o renovam).
+   * Uma passagem ANTERIOR a ele é de um episódio já encerrado (PC-014).
+   */
+  service_started_at?: string | null;
 }
 
 /**
@@ -81,6 +92,17 @@ export function estaComHumanoDuravel(c: ConversaEmHandoff): boolean {
   if (c.assigned_to_user_id !== null) return true;
   if (c.assignee_kind === "user") return true;
   return c.bot_silenced_until === "infinity";
+}
+
+/**
+ * PC-014: a conversa foi PASSADA para a equipe no atendimento em curso? A
+ * passagem de um episódio já encerrado (antes da reabertura) não conta.
+ */
+export function foiPassadaNesteAtendimento(c: ConversaEmHandoff): boolean {
+  const passagem = epoch(c.last_handoff_at);
+  if (passagem === null) return false;
+  const inicio = epoch(c.service_started_at ?? null);
+  return inicio === null || passagem >= inicio;
 }
 
 function epoch(iso: string | null): number | null {
@@ -122,7 +144,9 @@ export type MotivoDeNaoDevolver =
   | "status_nao_devolvivel"
   | "sessao_sem_agente"
   | "sem_relogio"
-  | "dentro_do_prazo";
+  | "dentro_do_prazo"
+  /** PC-014: passada para a equipe só volta pelo clique em "Devolver para a IA". */
+  | "passada_para_a_equipe";
 
 export function avaliarDevolucao(
   c: ConversaEmHandoff,
@@ -131,6 +155,7 @@ export function avaliarDevolucao(
   const minutos = sel.prazoPorOrg.get(c.organization_id);
   if (minutos === undefined) return { devolver: false, motivo: "sem_prazo" };
   if (!estaComHumanoDuravel(c)) return { devolver: false, motivo: "nao_esta_com_humano" };
+  if (foiPassadaNesteAtendimento(c)) return { devolver: false, motivo: "passada_para_a_equipe" };
   if (!STATUS_DEVOLVIVEIS.has(c.status ?? "")) {
     return { devolver: false, motivo: "status_nao_devolvivel" };
   }

@@ -141,7 +141,7 @@ export async function devolverHandoffsVencidos(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, channel_session_id, status, assignee_kind, assigned_to_user_id, assigned_at, bot_silenced_until, last_handoff_at, last_outbound_at, status_changed_at",
+      "id, organization_id, channel_session_id, status, assignee_kind, assigned_to_user_id, assigned_at, bot_silenced_until, last_handoff_at, last_outbound_at, status_changed_at, service_started_at",
     )
     .in("organization_id", orgIds)
     .in("status", ["open", "pending", "claimed", "ai_handling"])

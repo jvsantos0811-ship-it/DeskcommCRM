@@ -1234,6 +1234,14 @@ export const AUDIT_ACTIONS = [
   // rascunho do prompt de um agente. NÃO é publicação: é o pedido, com o
   // motivo; quem publica é uma pessoa, na tela do agente (`ai_agent.published`).
   "ai_agent.publicacao_pedida",
+  // PC-014: a conversa trocou de agente do roteador pela ferramenta
+  // `passar_para_agente` (worker) — metadata com a passagem, de quem, para quem
+  // e a intenção; nunca o cartão (texto do cliente fica na tabela da passagem).
+  "ai.agent_passagem",
+  // PC-014: uma pessoa devolveu a conversa para a IA escolhendo o agente e
+  // escrevendo em uma linha o que fez. Metadata com o agente; a linha fica na
+  // tabela da passagem.
+  "conversation.devolvida_ao_agente",
   // Pacote Conversa (PC-018 em diante): as regras da IA na conversa da
   // organização (Configurações › IA). Metadata com as chaves alteradas.
   "settings.conversa_atualizada",

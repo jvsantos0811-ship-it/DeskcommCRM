@@ -11,6 +11,7 @@ import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
 import { ChatDoNegocio } from "./ChatDoNegocio";
 import { ContratosDoNegocio } from "./ContratosDoNegocio";
+import { CartaoDaPassagemNoNegocio } from "./CartaoDaPassagemNoNegocio";
 import { AssinaturaConfirmada } from "./AssinaturaConfirmada";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { ConversaNoDossie } from "./ConversaNoDossie";
@@ -273,6 +274,8 @@ export function LeadDossier({
                 </h3>
                 <ContatoDoNegocio contactId={lead.contact_id} pipelineId={pipelineId} leadId={lead.id} />
               </section>
+              {/* PC-014: o cartão da passagem entre agentes, fixo logo abaixo do contato. */}
+              <CartaoDaPassagemNoNegocio contactId={lead.contact_id} aberto={open} />
               <section className="py-3">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                   {t("Dados do negócio")}

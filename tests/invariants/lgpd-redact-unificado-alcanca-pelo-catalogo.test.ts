@@ -302,6 +302,15 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "0494 (#1964): a LINHA e o estágio ficam (é o estado do negócio), mas next_action (texto) e qualification (jsonb) — texto livre que cita a pessoa — são zerados na virada de is_anonymized pelo gatilho fn_redigir_conversas_ao_anonimizar (a porta da 0391 que a app já usava em lib/lgpd/cascata.ts passo 7).",
   },
+  passagens_entre_agentes: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9015 (fork, PC-014): a LINHA fica (de quem para quem, origem, desfecho, horários: é a " +
+      "trilha do painel de passagens), mas motivo e cartão — texto do agente ou da pessoa que " +
+      "cita o cliente (nome, benefício, o que falta) — são apagados na virada de is_anonymized " +
+      "pelo gatilho trg_contacts_redige_passagens (fn_redigir_passagens_ao_anonimizar).",
+  },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",
