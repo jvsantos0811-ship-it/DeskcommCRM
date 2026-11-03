@@ -424,7 +424,10 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
-            disabled={retomar.isPending}
+            // PC-014: enquanto a lista do roteador não chegou, o clique não sabe
+            // se abre a escolha do agente ou devolve direto — clicar cedo
+            // devolvia sem escolher (medido no e2e). Espera a lista.
+            disabled={retomar.isPending || agentesParaDevolver.isLoading}
             data-testid="devolver-ao-automatico"
             title={
               motivo === "contato_travado"
