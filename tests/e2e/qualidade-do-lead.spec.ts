@@ -176,6 +176,9 @@ async function cenario(): Promise<void> {
       contact_id: d.contato,
       owner_kind: "user",
       owner_user_id: creds.users.manager!.id,
+      // As DUAS linhas com as mesmas chaves: num insert de várias linhas o
+      // PostgREST preenche com nulo a chave que falta numa delas.
+      custom_fields: {},
       created_at: horasAtras(60),
     },
   ]);
