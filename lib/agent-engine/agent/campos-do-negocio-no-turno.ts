@@ -13,6 +13,11 @@
  *   - Data do acidente: PENDENTE — (vazio)
  *   - Observação: texto livre              ← campo sem status
  *
+ * v3 §1.2: quando o escritório tem tipos de lead no catálogo
+ * (`catalog_products.tipo_de_lead`), o bloco termina com a linha dos nomes —
+ * é por ela que a IA grava o interesse (`custom_fields.servico`) com o nome
+ * exato. Sem nenhum tipo cadastrado, a linha não aparece.
+ *
  * Vai no SUFIXO por-lead do turno (volátil), nunca no prefixo cacheável.
  * Contato sem negócio aberto, ou com mais de um (ambíguo): bloco vazio — o
  * mesmo critério de "qual negócio deste contato" do espelho do funil.
@@ -22,6 +27,7 @@ import { resolveActiveLeadForContact } from '@/lib/leads/active-lead';
 import { camposDoFunil, escopoDoCampo } from '@/lib/leads/campos-do-funil';
 import { statusDosCampos } from '@/lib/leads/status-dos-campos';
 import { camposVisiveis } from '@/lib/schemas/mostrar-quando';
+import { linhaDosTiposDeLead } from '@/lib/leads/tipo-de-lead';
 
 interface LinhaDoNegocio {
   id: string;
@@ -34,6 +40,7 @@ interface LinhaDoNegocio {
   status_dos_campos: unknown;
   etapa: string | null;
   settings: Record<string, unknown> | null;
+  tipos_de_lead: string[] | null;
 }
 
 function textoDoValor(v: unknown): string {
@@ -51,6 +58,7 @@ export function formatarCamposDoNegocio(negocio: {
   settings: Record<string, unknown> | null;
   custom_fields: Record<string, unknown> | null;
   status_dos_campos: unknown;
+  tipos_de_lead?: readonly string[] | null;
 }): string {
   const valores = negocio.custom_fields ?? {};
   const campos = camposDoFunil(negocio.settings).filter((c) => escopoDoCampo(c) === 'negocio');
@@ -65,12 +73,18 @@ export function formatarCamposDoNegocio(negocio: {
       }
       return `- ${c.label}: ${dado}`;
     });
-  if (linhas.length === 0) return '';
+  const tipos = linhaDosTiposDeLead(negocio.tipos_de_lead ?? []);
+  if (linhas.length === 0 && tipos === '') return '';
   return [
     `## Campos do negócio (etapa atual: ${negocio.etapa ?? 'sem etapa'})`,
-    'Formato: nome: status — dado. Status: CONFIRMADO, NEGADO, NAO_SE_APLICA (respondido); ' +
-      'NAO_SABE, PENDENTE, CONTRADITORIO (ainda não respondido — pergunte antes de avançar a etapa).',
-    ...linhas,
+    ...(linhas.length > 0
+      ? [
+          'Formato: nome: status — dado. Status: CONFIRMADO, NEGADO, NAO_SE_APLICA (respondido); ' +
+            'NAO_SABE, PENDENTE, CONTRADITORIO (ainda não respondido — pergunte antes de avançar a etapa).',
+          ...linhas,
+        ]
+      : []),
+    ...(tipos === '' ? [] : [tipos]),
   ].join('\n');
 }
 
@@ -85,7 +99,10 @@ export async function blocoDosCamposDoNegocio(
     const { rows } = await db.query<LinhaDoNegocio>(
       `select l.id, l.organization_id, l.pipeline_id, l.status, l.created_at::text,
               l.last_activity_at::text, l.custom_fields, l.status_dos_campos,
-              s.name as etapa, p.settings
+              s.name as etapa, p.settings,
+              (select array_agg(c.nome order by c.nome)
+                 from catalog_products c
+                where c.organization_id = l.organization_id and c.tipo_de_lead and c.ativo) as tipos_de_lead
          from crm_leads l
          left join crm_stages s on s.id = l.stage_id
          left join crm_pipelines p on p.id = l.pipeline_id

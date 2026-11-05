@@ -5,6 +5,12 @@ export interface PipelineVocabulary {
   deal?: string;
   won?: string;
   lost?: string;
+  /**
+   * v3 §1.4: como o funil chama o INTERESSE do lead (`custom_fields.servico`) —
+   * Benefício no escritório, Procedimento na clínica, Serviço no resto. Ausente
+   * = "Interesse" (`rotuloDoInteresse`).
+   */
+  interesse?: string;
 }
 
 export interface Pipeline {

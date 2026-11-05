@@ -29,6 +29,7 @@ import { estadoEfetivoDaTarefa, TAREFA_DA_CONFERENCIA_DE_CAMPO } from "@/lib/ai/
 import type { DependenciasDoPonto } from "@/lib/ai/decisao/ponto";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { CHAVE_DO_INTERESSE, resolverInteresse, type TipoDeLead } from "@/lib/leads/tipo-de-lead";
 import { scrubMessage } from "@/lib/sentry/scrub";
 
 import type { McpContext } from "./types";
@@ -216,4 +217,62 @@ export async function conferirCamposPersonalizados(
     estado: r.estado,
     ...(r.error_code === undefined ? {} : { error_code: r.error_code }),
   };
+}
+
+/**
+ * O INTERESSE DO NEGÓCIO (v3, seção 1) — `custom_fields.servico` só aceita o
+ * nome de um tipo de lead ativo da organização (`catalog_products.tipo_de_lead`).
+ *
+ * Vale para QUALQUER origem que passa pela ferramenta (o agente de IA e quem
+ * mais chamar `crm_update_lead`/`crm_create_lead` pelo MCP): o valor é
+ * normalizado (sem maiúscula, acento nem pontuação) e gravado com o nome EXATO
+ * do catálogo — é por esse nome que o gatilho da migration 9018 acha o preço.
+ * Sem correspondência, só esta chave sai da escrita e volta como erro de ensino,
+ * com os nomes válidos.
+ *
+ * Organização SEM nenhum tipo de lead cadastrado: a chave passa como veio. O
+ * `servico` já existia como campo livre do funil (follow-up interpola
+ * `{servico}`), e recusar tudo numa empresa que ainda não montou o catálogo
+ * tiraria da IA um dado que ela gravava antes desta regra.
+ *
+ * Fail-open, como a conferência: leitura do catálogo que falha deixa a chave
+ * passar como veio.
+ */
+export async function conferirInteresse(
+  ctx: Pick<McpContext, "supabase" | "organizationId">,
+  campos: Record<string, unknown> | undefined,
+): Promise<{ custom_fields?: Record<string, unknown>; recusados: CampoRecusadoDoInteresse[] }> {
+  if (campos === undefined || !(CHAVE_DO_INTERESSE in campos)) return { custom_fields: campos, recusados: [] };
+  const valor = campos[CHAVE_DO_INTERESSE];
+  // `null` apaga o interesse — não há nome a conferir.
+  if (valor === null) return { custom_fields: campos, recusados: [] };
+  let tipos: TipoDeLead[];
+  try {
+    const { data, error } = await ctx.supabase
+      .from("catalog_products")
+      .select("nome")
+      .eq("organization_id", ctx.organizationId)
+      .eq("tipo_de_lead", true)
+      .eq("ativo", true)
+      .order("nome")
+      .limit(200);
+    if (error) return { custom_fields: campos, recusados: [] };
+    tipos = (data ?? []) as TipoDeLead[];
+  } catch {
+    return { custom_fields: campos, recusados: [] };
+  }
+  if (tipos.length === 0) return { custom_fields: campos, recusados: [] };
+  const r = resolverInteresse(valor, tipos);
+  if (r.ok) return { custom_fields: { ...campos, [CHAVE_DO_INTERESSE]: r.nome }, recusados: [] };
+  const { [CHAVE_DO_INTERESSE]: _fora, ...resto } = campos;
+  return {
+    custom_fields: resto,
+    recusados: [{ campo: CHAVE_DO_INTERESSE, motivo: "tipo_de_lead_desconhecido", mensagem: r.mensagem }],
+  };
+}
+
+export interface CampoRecusadoDoInteresse {
+  campo: string;
+  motivo: "tipo_de_lead_desconhecido";
+  mensagem: string;
 }

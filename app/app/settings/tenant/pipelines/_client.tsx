@@ -324,6 +324,8 @@ function PipelineEditor({
   const [deal, setDeal] = useState(v.deal ?? "Deal");
   const [won, setWon] = useState(v.won ?? "Ganho");
   const [lost, setLost] = useState(v.lost ?? "Perdido");
+  // v3 §1.4: como este funil chama o interesse do lead. Vazio = "Interesse".
+  const [interesse, setInteresse] = useState(v.interesse ?? "");
   const [reasonsText, setReasonsText] = useState(readLostReasons(pipeline.settings).join(", "));
   const [wonReasonsText, setWonReasonsText] = useState(readWonReasons(pipeline.settings).join(", "));
   const [categorias, setCategorias] = useState<Record<string, string>>(() =>
@@ -411,7 +413,7 @@ function PipelineEditor({
       .filter((s2) => s2.length > 0);
 
     const patch: PipelineConfigPatch = {
-      vocabulary: { lead, deal, won, lost },
+      vocabulary: { lead, deal, won, lost, interesse: interesse.trim() },
       fields: ok,
       lost_reasons: motivosComCategoria,
       won_reasons: wonReasons,
@@ -453,6 +455,29 @@ function PipelineEditor({
           <Label className="text-xs">Lost</Label>
           <Input value={lost} onChange={(e) => setLost(e.target.value)} />
         </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor={`interesse-${pipeline.id}`} className="block text-xs">
+          {t("Nome da coluna do interesse do lead")}
+        </Label>
+        <Input
+          id={`interesse-${pipeline.id}`}
+          data-testid="vocabulario-interesse"
+          value={interesse}
+          maxLength={40}
+          placeholder={t("Interesse")}
+          list={`interesse-sugestoes-${pipeline.id}`}
+          onChange={(e) => setInteresse(e.target.value)}
+        />
+        <datalist id={`interesse-sugestoes-${pipeline.id}`}>
+          {[t("Benefício"), t("Procedimento"), t("Serviço")].map((r) => (
+            <option key={r} value={r} />
+          ))}
+        </datalist>
+        <p className="text-xs text-muted-foreground">
+          {t("Benefício no escritório, Procedimento na clínica, Serviço nos outros. Vazio fica \"Interesse\".")}
+        </p>
       </div>
 
       <div className="space-y-1">

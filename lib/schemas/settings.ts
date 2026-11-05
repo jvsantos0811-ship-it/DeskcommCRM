@@ -286,6 +286,8 @@ export const pipelineConfigPatchSchema = z.object({
       deal: z.string().min(1).max(40).optional(),
       won: z.string().min(1).max(40).optional(),
       lost: z.string().min(1).max(40).optional(),
+      /** v3 §1.4: o nome da coluna "Interesse" (Benefício, Procedimento, Serviço). */
+      interesse: z.string().trim().max(40).optional(),
     })
     .optional(),
   fields: z.array(customFieldSchema).max(50).optional(),
