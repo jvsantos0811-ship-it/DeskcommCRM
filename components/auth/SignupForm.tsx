@@ -92,6 +92,21 @@ export function SignupForm({
           }
         : values;
       const res = await signUp(entrada, convite?.token);
+      if (res.ok && convite) {
+        // CONVITE: a conta nasceu pronta e a pessoa já entrou — não existe
+        // e-mail para esperar neste caminho (decisão de 05/11/2026, ver
+        // `lib/auth/convite-no-gotrue.ts`). Aceite fechado → direto para o CRM;
+        // aceite que não fechou → a tela do convite, que explica cada caso;
+        // sessão que não abriu → o login, com o convite pendurado no `next`.
+        if (res.convite_aceito) {
+          router.replace("/app");
+        } else if (res.sessao_ativa) {
+          router.replace(`/team/accept-invite/${convite.token}`);
+        } else {
+          router.replace(`/login?next=${encodeURIComponent(`/team/accept-invite/${convite.token}`)}`);
+        }
+        return;
+      }
       if (res.ok) {
         /**
          * ⚠️ O PROVEDOR JÁ DEIXOU A PESSOA ENTRAR — não existe e-mail para ela
@@ -118,7 +133,25 @@ export function SignupForm({
         setSentTo(values.email);
         return;
       }
-      if (res.error === "rate_limited") {
+      if (res.error === "senha_fraca") {
+        // A recusa que travou os convidados da Souza Rodrigues (05/11/2026):
+        // "Tente novamente" com a mesma senha nunca funciona. Dizer o motivo,
+        // e o que fazer.
+        const motivos = (res.details?.motivos as string[] | undefined) ?? [];
+        setServerError(
+          motivos.includes("vazada")
+            ? t(
+                "Essa senha já apareceu em vazamentos de dados na internet ou é fácil de adivinhar, por isso não é aceita. Crie uma senha nova, que você não usa em nenhum outro site.",
+              )
+            : motivos.includes("curta")
+              ? t("Essa senha é curta demais. Use pelo menos 8 caracteres.")
+              : motivos.includes("simples")
+                ? t("Essa senha é simples demais. Misture letras maiúsculas, minúsculas e números.")
+                : t(
+                    "Essa senha não foi aceita por ser fraca. Crie uma senha mais longa, que você não usa em nenhum outro site.",
+                  ),
+        );
+      } else if (res.error === "rate_limited") {
         setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
       } else if (res.error === "validation_error") {
         // As recusas do plano dizem o que fazer: "confira os campos" não diz.
@@ -285,6 +318,11 @@ export function SignupForm({
           <p className="text-xs text-destructive">{t(errors.password.message ?? "")}</p>
         )}
         <PasswordStrength password={password} />
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Use uma senha nova, que você não usa em outro site. Senhas comuns ou que já vazaram na internet são recusadas. Dica: três palavras soltas e um número.",
+          )}
+        </p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="password_confirm">{t("Confirmar senha")}</Label>
@@ -330,7 +368,11 @@ export function SignupForm({
         </div>
       )}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? t("Criando conta...") : t("Criar conta")}
+        {isPending
+          ? t("Criando conta...")
+          : convite
+            ? t("Criar senha e entrar")
+            : t("Criar conta")}
       </Button>
     </form>
   );

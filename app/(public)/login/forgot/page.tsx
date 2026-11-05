@@ -26,6 +26,15 @@ export default async function ForgotPasswordPage() {
         </p>
       </div>
       <ForgotPasswordForm />
+      {/* Quem foi convidado e ainda não criou a senha não tem conta — e este
+          formulário, por anti-enumeração, responde "enviado" sem mandar nada.
+          Medido em 05/11/2026: duas tentativas aqui, nenhum e-mail, e a pessoa
+          desistiu. A saída dela é o link do convite. */}
+      <p className="rounded-md border bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
+        {t(
+          "Foi convidado e ainda não entrou nenhuma vez? Você ainda não tem senha para recuperar: abra o e-mail do convite e clique em Criar minha senha.",
+        )}
+      </p>
       <p className="text-center text-sm text-muted-foreground">
         {t("Lembrou a senha?")}{" "}
         <Link href="/login" className="font-medium text-foreground underline underline-offset-4">

@@ -37,7 +37,8 @@ async function preencherEEnviar(comEmpresa = true) {
   await user.type(screen.getByLabelText(/^Email$/i), "dono@plata.test");
   await user.type(screen.getByLabelText(/^Senha$/i), "SenhaForte!2026");
   await user.type(screen.getByLabelText(/Confirmar senha/i), "SenhaForte!2026");
-  await user.click(screen.getByRole("button", { name: /criar conta/i }));
+  // Com convite o botão diz o que acontece — "Criar senha e entrar" (05/11/2026).
+  await user.click(screen.getByRole("button", { name: /criar conta|criar senha e entrar/i }));
 }
 
 describe("cadastro quando o provedor já abriu a sessão", () => {

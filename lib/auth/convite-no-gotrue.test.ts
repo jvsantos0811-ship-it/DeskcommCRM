@@ -9,20 +9,18 @@
  *      a server action usa. `null` (rede fora, resposta estranha) não pode virar
  *      nem "aberto" nem "fechado": os dois erros têm vítima diferente.
  *   2. `criarContaDeConvite` — a conta nasce pela admin API (que o
- *      `disable_signup` não alcança) e o e-mail de confirmação sai pelo
- *      `/resend`, do jeito que o fluxo `/auth/confirm` já espera. Se o e-mail
- *      não sair, a conta é APAGADA: este caminho existe para NÃO deixar conta
- *      órfã para trás.
+ *      `disable_signup` não alcança) JÁ CONFIRMADA: desde 05/11/2026 o link do
+ *      convite é a prova de caixa postal e não existe segundo e-mail (o porquê
+ *      está no cabeçalho do módulo). A senha recusada pelo provedor volta como
+ *      `senha_fraca`, com o motivo — foi o que travou convidados reais.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const admin = vi.hoisted(() => ({
   createUser: vi.fn(),
   deleteUser: vi.fn(),
-  resend: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -45,7 +43,6 @@ const entrada = {
   password: "SenhaForte!2026",
   inviteToken: "token-assinado-do-convite",
   fullName: "Convidada da Silva",
-  emailRedirectTo: "https://crm.exemplo.test/auth/confirm?type=signup",
 };
 
 beforeEach(() => {
@@ -99,32 +96,23 @@ describe("lerConfigPublicaDoGoTrue", () => {
 });
 
 describe("criarContaDeConvite", () => {
-  beforeEach(() => {
-    vi.mocked(createClient).mockResolvedValue({ auth: { resend: admin.resend } } as never);
-  });
-
-  it("cria pela admin API com o convite no user_metadata e manda o e-mail", async () => {
+  it("⭐ cria pela admin API, JÁ CONFIRMADA, com o convite no user_metadata — e não manda e-mail", async () => {
     admin.createUser.mockResolvedValue({ data: { user: { id: "u-1" } }, error: null });
-    admin.resend.mockResolvedValue({ error: null });
 
     const r = await (await convite()).criarContaDeConvite(entrada);
 
-    expect(r).toEqual({ ok: true, sessao_ativa: false });
-    // `email_confirm: false` é o que mantém a prova de caixa postal: a conta
-    // só ativa pelo e-mail que chega NO ENDEREÇO DO CONVITE.
+    expect(r).toEqual({ ok: true, userId: "u-1" });
+    // `email_confirm: true`: o link do convite, assinado e enviado ao endereço
+    // convidado, já provou a caixa postal (decisão de 05/11/2026). O segundo
+    // e-mail custava convidados reais e não provava nada a mais.
     expect(admin.createUser).toHaveBeenCalledWith({
       email: entrada.email,
       password: entrada.password,
-      email_confirm: false,
+      email_confirm: true,
       user_metadata: { invite_token: entrada.inviteToken, full_name: entrada.fullName },
     });
-    // O `createUser` do GoTrue não dispara e-mail nenhum (medido no fonte
-    // v2.196.0) — sem este reenvio a pessoa esperaria um link que nunca sai.
-    expect(admin.resend).toHaveBeenCalledWith({
-      type: "signup",
-      email: entrada.email,
-      options: { emailRedirectTo: entrada.emailRedirectTo },
-    });
+    // Nenhum client anônimo é aberto: não existe `/resend` neste caminho.
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it("conta já existe → `conta_ja_existe` (não é falha de infra)", async () => {
@@ -136,21 +124,25 @@ describe("criarContaDeConvite", () => {
     const r = await (await convite()).criarContaDeConvite(entrada);
 
     expect(r).toEqual({ ok: false, motivo: "conta_ja_existe" });
-    expect(admin.resend).not.toHaveBeenCalled();
   });
 
-  it("e-mail de confirmação não saiu → APAGA a conta e devolve erro", async () => {
-    admin.createUser.mockResolvedValue({ data: { user: { id: "u-2" } }, error: null });
-    admin.resend.mockResolvedValue({ error: { message: "smtp indisponível", status: 500 } });
-    admin.deleteUser.mockResolvedValue({ error: null });
+  it("⭐ senha vazada (o 422 medido em produção) → `senha_fraca` com o motivo, não `criacao_recusada`", async () => {
+    const mensagem = "Password is known to be weak and easy to guess, please choose a different one.";
+    admin.createUser.mockResolvedValue({ data: null, error: { message: mensagem, status: 422 } });
 
     const r = await (await convite()).criarContaDeConvite(entrada);
 
-    expect(r).toEqual({ ok: false, motivo: "email_de_confirmacao_falhou", detalhe: "smtp indisponível" });
-    // Sem esta linha, a próxima tentativa da mesma pessoa cairia em
-    // "conta já existe" com um e-mail que nunca chegou — conta órfã, que é o
-    // defeito que a issue #1653 existe para fechar.
-    expect(admin.deleteUser).toHaveBeenCalledWith("u-2");
+    expect(r).toEqual({ ok: false, motivo: "senha_fraca", motivosDaSenha: ["vazada"], detalhe: mensagem });
+    // Nada a desfazer: a conta não nasceu.
+    expect(admin.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("CONTROLE — falha que não é de senha nem de conta existente segue `criacao_recusada`", async () => {
+    admin.createUser.mockResolvedValue({ data: null, error: { message: "Database error saving new user", status: 500 } });
+
+    const r = await (await convite()).criarContaDeConvite(entrada);
+
+    expect(r).toEqual({ ok: false, motivo: "criacao_recusada", detalhe: "Database error saving new user" });
   });
 
   it("429 do GoTrue vira `rate_limited`, igual ao caminho de sempre", async () => {

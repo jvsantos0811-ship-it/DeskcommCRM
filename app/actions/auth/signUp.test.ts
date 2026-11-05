@@ -47,6 +47,10 @@ vi.mock("@/lib/auth/politica-de-cadastro", () => ({
   modoDeCadastro: vi.fn(async () => "aberto"),
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => false) }));
+// O ATO de virar membro tem teste próprio (`lib/auth/aplicar-convite.test.ts`);
+// aqui importa QUE a action o chama, com quem e com qual convite.
+const aplicarConvite = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/auth/aplicar-convite", () => ({ aplicarConvite }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -54,6 +58,8 @@ vi.mock("@/lib/audit", async (orig) => ({
 }));
 
 const signUpDoProvedor = vi.fn();
+/** `supabase.auth.signInWithPassword` — a sessão que o convite abre no mesmo passo. */
+const entrarComSenha = vi.fn();
 
 /** Um e-mail novo por caso: o teto de `signup` é por IP e por janela. */
 let n = 0;
@@ -115,6 +121,24 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
     const res = await signUp(entrada());
 
     expect(res).toEqual({ ok: false, error: "signup_failed" });
+  });
+
+  it("⭐ senha recusada pelo provedor vira `senha_fraca` com o motivo, não \"tente novamente\"", async () => {
+    // O 422 medido em produção em 05/11/2026 — no convite, mas o cadastro de
+    // quem abre empresa passa pelo MESMO provedor e merece a mesma frase.
+    signUpDoProvedor.mockResolvedValue({
+      data: { user: null, session: null },
+      error: {
+        message: "Password is known to be weak and easy to guess, please choose a different one.",
+        status: 422,
+        code: "weak_password",
+        reasons: ["pwned"],
+      },
+    });
+    const { signUp } = await import("./signUp");
+    const res = await signUp(entrada());
+
+    expect(res).toEqual({ ok: false, error: "senha_fraca", details: { motivos: ["vazada"] } });
   });
 
   it("GoTrue sem SMTP: \"Error sending confirmation email\" vira `email_indisponivel`, não \"tente novamente\"", async () => {
@@ -246,9 +270,12 @@ describe("signUp — instalação que só aceita convidados", () => {
       get: (k: string) => (k === "x-forwarded-for" ? `203.0.113.${n % 250}` : null),
     } as never);
     vi.mocked(createClient).mockResolvedValue({
-      auth: { signUp: signUpDoProvedor },
+      auth: { signUp: signUpDoProvedor, signInWithPassword: entrarComSenha },
     } as never);
     vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
+    admin.createUser.mockReset();
+    entrarComSenha.mockReset();
+    aplicarConvite.mockReset();
   });
 
   it("sem convite: recusa, e NÃO cria conta no provedor", async () => {
@@ -275,18 +302,13 @@ describe("signUp — instalação que só aceita convidados", () => {
       role: "agent",
       exp: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
     });
-    signUpDoProvedor.mockResolvedValue({
-      data: { user: { id: "u-3" }, session: null },
-      error: null,
-    });
+    admin.createUser.mockResolvedValue({ data: { user: { id: "u-3" } }, error: null });
+    entrarComSenha.mockResolvedValue({ data: { session: { access_token: "a" } }, error: null });
+    aplicarConvite.mockResolvedValue({ ok: true, membershipId: "m-3", mudou: true });
 
     const { signUp } = await import("./signUp");
     const res = await signUp(
       {
-        // `full_name` passou a ser exigido de quem entra por CONVITE (a main de
-        // hoje): quem é convidado pula o onboarding e ficava sem nome para
-        // sempre. Este caso é sobre a política de cadastro, não sobre o nome —
-        // o campo entra para o payload ser o que a action aceita hoje.
         full_name: "Convidada da Silva",
         email: dados.email,
         password: dados.password,
@@ -295,23 +317,25 @@ describe("signUp — instalação que só aceita convidados", () => {
       token,
     );
 
-    expect(res).toEqual({ ok: true, sessao_ativa: false });
-    expect(signUpDoProvedor).toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, sessao_ativa: true, convite_aceito: true });
+    expect(admin.createUser).toHaveBeenCalled();
   });
 });
 
 /**
- * O GoTrue com `disable_signup` LIGADO — a trava que fecha `POST /auth/v1/signup`
- * para quem tem a anon key do navegador, e que por isso fecha também o convite.
+ * O CONVITE: CONTA PRONTA, SESSÃO E ACEITE NO MESMO PASSO (05/11/2026).
  *
- * É o cenário da issue #1653: instalação em `so_convite` que sincronizou o
- * `GOTRUE_DISABLE_SIGNUP` do próprio Supabase. Sem os casos abaixo, o convite
- * morreria junto com o buraco — `supabase.auth.signUp()` é exatamente o
- * endpoint recusado, e o defeito viraria "ninguém entra".
+ * Antes, o convidado criava a senha e recebia um SEGUNDO e-mail, de
+ * confirmação, antes de entrar — e em produção três convidados de um escritório
+ * não entraram. O link do convite (assinado, enviado ao endereço convidado) já
+ * prova a caixa postal; o porquê inteiro está no cabeçalho de
+ * `lib/auth/convite-no-gotrue.ts`.
+ *
+ * Continua daqui a guarda da issue #1653: a conta do convidado nasce pela ADMIN
+ * API, que o `disable_signup` do GoTrue não alcança — agora com o GoTrue aberto
+ * OU fechado, uma porta só.
  */
-describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)", () => {
-  const resend = vi.fn();
-
+describe("signUp — convite: conta pronta, sessão e aceite no mesmo passo", () => {
   function goTrueCom(disableSignup: boolean) {
     vi.stubGlobal(
       "fetch",
@@ -326,7 +350,7 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
       invite_id: "00000000-0000-4000-8000-000000000004",
       email: dados.email,
       organization_id: "00000000-0000-4000-8000-000000000001",
-      role: "agent",
+      role: "manager",
       exp: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
     });
     return {
@@ -343,14 +367,15 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
   beforeEach(() => {
     vi.resetModules();
     signUpDoProvedor.mockReset();
+    entrarComSenha.mockReset();
     admin.createUser.mockReset();
     admin.deleteUser.mockReset();
-    resend.mockReset();
+    aplicarConvite.mockReset();
     vi.mocked(headers).mockResolvedValue({
       get: (k: string) => (k === "x-forwarded-for" ? `192.0.2.${(n % 250) + 1}` : null),
     } as never);
     vi.mocked(createClient).mockResolvedValue({
-      auth: { signUp: signUpDoProvedor, resend },
+      auth: { signUp: signUpDoProvedor, signInWithPassword: entrarComSenha },
     } as never);
     vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
   });
@@ -358,44 +383,54 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
     vi.unstubAllGlobals();
   });
 
-  it("com convite: cria a conta pela ADMIN API e manda o e-mail de confirmação", async () => {
+  it("⭐ cria a conta JÁ CONFIRMADA, abre a sessão e aplica o convite — sem segundo e-mail", async () => {
     goTrueCom(true);
     admin.createUser.mockResolvedValue({ data: { user: { id: "u-9" } }, error: null });
-    resend.mockResolvedValue({ error: null });
+    entrarComSenha.mockResolvedValue({ data: { session: { access_token: "a" } }, error: null });
+    aplicarConvite.mockResolvedValue({ ok: true, membershipId: "m-9", mudou: true });
     const { token, entrada: corpo } = await conviteValido();
 
     const { signUp } = await import("./signUp");
     const res = await signUp(corpo, token);
 
-    expect(res).toEqual({ ok: true, sessao_ativa: false });
+    expect(res).toEqual({ ok: true, sessao_ativa: true, convite_aceito: true });
     expect(admin.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         email: corpo.email,
-        email_confirm: false,
+        email_confirm: true,
         user_metadata: { invite_token: token, full_name: "Convidada da Silva" },
       }),
     );
-    expect(resend).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "signup", email: corpo.email }),
+    // A sessão abre com a senha que a pessoa acabou de digitar.
+    expect(entrarComSenha).toHaveBeenCalledWith({ email: corpo.email, password: corpo.password });
+    // O vínculo sai do TOKEN assinado: org, papel e convite — nunca do corpo.
+    expect(aplicarConvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "u-9",
+        payload: expect.objectContaining({
+          invite_id: "00000000-0000-4000-8000-000000000004",
+          organization_id: "00000000-0000-4000-8000-000000000001",
+          role: "manager",
+        }),
+      }),
     );
-    // O caminho que o GoTrue recusa quando `disable_signup` está ligado não é
-    // nem chamado — quem cria a conta é o client admin.
+    // O cadastro público (que manda o e-mail de confirmação) nem é chamado.
     expect(signUpDoProvedor).not.toHaveBeenCalled();
   });
 
-  it("CONTROLE — GoTrue aberto: o convite continua no signUp de sempre", async () => {
+  it("GoTrue ABERTO: o convite também nasce pela admin API — uma porta só, sem e-mail de confirmação", async () => {
     goTrueCom(false);
-    signUpDoProvedor.mockResolvedValue({ data: { user: { id: "u-10" }, session: null }, error: null });
+    admin.createUser.mockResolvedValue({ data: { user: { id: "u-10" } }, error: null });
+    entrarComSenha.mockResolvedValue({ data: { session: { access_token: "a" } }, error: null });
+    aplicarConvite.mockResolvedValue({ ok: true, membershipId: "m-10", mudou: true });
     const { token, entrada: corpo } = await conviteValido();
 
     const { signUp } = await import("./signUp");
     const res = await signUp(corpo, token);
 
-    expect(res).toEqual({ ok: true, sessao_ativa: false });
-    // Instalação em `aberto` (e `so_convite` ainda sem sincronizar) não muda de
-    // comportamento por causa deste conserto: é a restrição "aberto inalterado".
-    expect(signUpDoProvedor).toHaveBeenCalled();
-    expect(admin.createUser).not.toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, sessao_ativa: true, convite_aceito: true });
+    expect(signUpDoProvedor).not.toHaveBeenCalled();
+    expect(admin.createUser).toHaveBeenCalled();
   });
 
   it("CONTROLE — sem convite, com o GoTrue fechado: a recusa continua ANTES de tudo", async () => {
@@ -409,21 +444,22 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
     expect(admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("e-mail de confirmação que não sai → `email_indisponivel`, como no caminho de sempre", async () => {
-    goTrueCom(true);
-    admin.createUser.mockResolvedValue({ data: { user: { id: "u-10" } }, error: null });
-    admin.deleteUser.mockResolvedValue({ error: null });
-    resend.mockResolvedValue({ error: { message: "Error sending confirmation email", status: 500 } });
+  it("⭐ senha vazada (o 422 de 05/11/2026) → `senha_fraca` com o motivo, e nada de sessão nem aceite", async () => {
+    admin.createUser.mockResolvedValue({
+      data: null,
+      error: { message: "Password is known to be weak and easy to guess, please choose a different one.", status: 422 },
+    });
     const { token, entrada: corpo } = await conviteValido();
 
     const { signUp } = await import("./signUp");
     const res = await signUp(corpo, token);
 
-    expect(res).toEqual({ ok: false, error: "email_indisponivel" });
+    expect(res).toEqual({ ok: false, error: "senha_fraca", details: { motivos: ["vazada"] } });
+    expect(entrarComSenha).not.toHaveBeenCalled();
+    expect(aplicarConvite).not.toHaveBeenCalled();
   });
 
   it("conta já existe → `conta_ja_existe`, o mesmo código de antes", async () => {
-    goTrueCom(true);
     admin.createUser.mockResolvedValue({
       data: null,
       error: { message: "A user with this email address has already been registered", code: "email_exists", status: 422 },
@@ -434,5 +470,29 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
     const res = await signUp(corpo, token);
 
     expect(res).toEqual({ ok: false, error: "conta_ja_existe" });
+  });
+
+  it("a sessão não abriu: conta pronta, a saída é o login — sem aceite pela metade", async () => {
+    admin.createUser.mockResolvedValue({ data: { user: { id: "u-11" } }, error: null });
+    entrarComSenha.mockResolvedValue({ data: { session: null }, error: { message: "falha", status: 500 } });
+    const { token, entrada: corpo } = await conviteValido();
+
+    const { signUp } = await import("./signUp");
+    const res = await signUp(corpo, token);
+
+    expect(res).toEqual({ ok: true, sessao_ativa: false, entrar_pelo_login: true });
+    expect(aplicarConvite).not.toHaveBeenCalled();
+  });
+
+  it("aceite recusado (convite revogado, limite do plano): a conta e a sessão ficam, e a tela do convite explica", async () => {
+    admin.createUser.mockResolvedValue({ data: { user: { id: "u-12" } }, error: null });
+    entrarComSenha.mockResolvedValue({ data: { session: { access_token: "a" } }, error: null });
+    aplicarConvite.mockResolvedValue({ ok: false, motivo: "invalid_or_expired" });
+    const { token, entrada: corpo } = await conviteValido();
+
+    const { signUp } = await import("./signUp");
+    const res = await signUp(corpo, token);
+
+    expect(res).toEqual({ ok: true, sessao_ativa: true, convite_aceito: false });
   });
 });
