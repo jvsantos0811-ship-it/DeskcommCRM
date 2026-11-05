@@ -340,6 +340,9 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
    * O suíte inteiro não exercitava esse estado: o seed CRIA a conta do
    * convidado de propósito, que é justamente o que esconde o defeito.
    */
+  // Desde 05/11/2026 este é o caminho EM DESTAQUE ("Criar minha senha"): em
+  // produção, com "Fazer login" como botão principal, três convidados de um
+  // escritório não conseguiram entrar — quem é convidado quase nunca tem senha.
   test("10. sem conta → o caminho existe e leva o convite junto", async ({ page }) => {
     const valid = signInviteToken({
       invite_id: randomUUID(),
@@ -350,7 +353,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     });
 
     await page.goto(`/team/accept-invite/${valid}`);
-    await page.getByRole("link", { name: /ainda não tenho conta/i }).click();
+    await page.getByRole("link", { name: /criar minha senha/i }).click();
 
     // O token viaja: é ele que faz a conta nova nascer amarrada a este convite
     // em vez de ganhar uma organização própria.
@@ -392,6 +395,70 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await expect(page.getByRole("alert").first()).toContainText(/expirou|não é mais válido/i);
     // E cai no signup COMUM só depois do aviso — nunca em silêncio.
     await expect(page.getByLabel("Nome da empresa")).toBeVisible();
+  });
+
+  /**
+   * ─── PRIMEIRO ACESSO PELO CONVITE, A JORNADA INTEIRA (05/11/2026) ─────────
+   *
+   * Medido em produção: três convidados de um escritório não entraram. O botão
+   * em destaque era "Fazer login" (quem é convidado não tem senha), a senha
+   * recusada dizia "tente novamente", e mesmo a senha aceita ainda pedia um
+   * SEGUNDO e-mail de confirmação antes de entrar.
+   *
+   * Este caso dirige a jornada como o convidado faz: abre o link, clica em
+   * "Criar minha senha", preenche e cai DENTRO do CRM — sem e-mail nenhum no
+   * meio. E prova no banco o que a tela não mostra: a conta nasceu confirmada e
+   * o vínculo com a empresa existe, com o papel do convite.
+   */
+  test("12b. ⭐ primeiro acesso: criar a senha pelo convite já entra na empresa", async ({ page }) => {
+    const email = `primeiro.acesso.${randomUUID().slice(0, 8)}@deskcomm.test`;
+    const senha = "PrimeiroAcesso!2026#Deskcomm";
+    const token = signInviteToken({
+      invite_id: randomUUID(),
+      email,
+      organization_id: inv.org_id,
+      role: "agent",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    let userId: string | null = null;
+    try {
+      await page.goto(`/team/accept-invite/${token}`);
+      await expect(page.getByRole("heading", { name: /Você foi convidado/i })).toBeVisible();
+      // O papel em português — a tela mostrava o código cru ("agent").
+      await expect(page.getByText("Atendente", { exact: true })).toBeVisible();
+
+      await page.getByRole("link", { name: /criar minha senha/i }).click();
+      await expect(page).toHaveURL(/\/signup\?invite=/);
+      await page.getByLabel("Seu nome").fill("Primeiro Acesso E2E");
+      await page.getByLabel("Senha", { exact: true }).fill(senha);
+      await page.getByLabel("Confirmar senha").fill(senha);
+      await page.getByRole("button", { name: /criar senha e entrar/i }).click();
+
+      // Direto para dentro do CRM: nenhuma tela de "confirme seu e-mail".
+      await page.waitForURL(/\/app\//, { timeout: 60_000 });
+      await expect(page.getByText(/Enviamos um link de confirmação/i)).toHaveCount(0);
+
+      const { data: lista } = await svc.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const usuario = lista?.users.find((u) => u.email === email);
+      expect(usuario, "a conta do convidado tem de existir").toBeTruthy();
+      userId = usuario!.id;
+      // Confirmada pelo próprio convite — não há segundo e-mail neste caminho.
+      expect(usuario!.email_confirmed_at).toBeTruthy();
+
+      const { data: vinculo } = await svc
+        .from("user_organizations")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("organization_id", inv.org_id)
+        .is("revoked_at", null)
+        .maybeSingle();
+      expect((vinculo as { role: string } | null)?.role).toBe("agent");
+    } finally {
+      if (userId) {
+        await svc.from("user_organizations").delete().eq("user_id", userId);
+        await svc.auth.admin.deleteUser(userId);
+      }
+    }
   });
 
   /**

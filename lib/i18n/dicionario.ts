@@ -9534,14 +9534,41 @@ export const DICIONARIO: Traducoes = {
     es: "Espera unos minutos y vuelve a abrir el enlace de la invitación.",
   },
   "Convite inválido ou expirado": { es: "Invitación inválida o vencida" },
-  "Este link não é válido ou já passou da janela de 24h. Peça um novo convite ao admin do tenant.": {
-    es: "Este enlace no es válido o ya pasaron las 24h de vigencia. Pide una nueva invitación al admin del tenant.",
+  "Este link não é válido ou já passou do prazo. Peça um novo convite a quem te convidou.": {
+    es: "Este enlace no es válido o ya venció. Pide una nueva invitación a quien te invitó.",
   },
   "Você foi convidado": { es: "Te invitaron" },
-  "Para aceitar o convite como": { es: "Para aceptar la invitación como" },
-  "faça login com o email": { es: "inicia sesión con el correo" },
+  // ─── Primeiro acesso pelo convite (05/11/2026) ───
+  "Você vai entrar na equipe como": { es: "Vas a entrar al equipo como" },
+  "com o e-mail": { es: "con el correo" },
+  "É seu primeiro acesso? Crie sua senha e você já entra. Não precisa confirmar outro e-mail.": {
+    es: "¿Es tu primer acceso? Crea tu contraseña y entras de inmediato. No hace falta confirmar otro correo.",
+  },
+  "Criar minha senha": { es: "Crear mi contraseña" },
+  "Já tem senha neste sistema?": { es: "¿Ya tienes contraseña en este sistema?" },
+  "Criar senha e entrar": { es: "Crear contraseña y entrar" },
+  "Primeiro acesso pelo convite? Você ainda não tem senha.": {
+    es: "¿Primer acceso por la invitación? Todavía no tienes contraseña.",
+  },
+  "Foi convidado e ainda não entrou nenhuma vez? Você ainda não tem senha para recuperar: abra o e-mail do convite e clique em Criar minha senha.": {
+    es: "¿Te invitaron y todavía no entraste ninguna vez? Aún no tienes contraseña que recuperar: abre el correo de la invitación y haz clic en Crear mi contraseña.",
+  },
+  "Use uma senha nova, que você não usa em outro site. Senhas comuns ou que já vazaram na internet são recusadas. Dica: três palavras soltas e um número.": {
+    es: "Usa una contraseña nueva, que no uses en otro sitio. Se rechazan las contraseñas comunes o filtradas en internet. Consejo: tres palabras sueltas y un número.",
+  },
+  "Essa senha já apareceu em vazamentos de dados na internet ou é fácil de adivinhar, por isso não é aceita. Crie uma senha nova, que você não usa em nenhum outro site.": {
+    es: "Esa contraseña ya apareció en filtraciones de datos en internet o es fácil de adivinar, por eso no se acepta. Crea una contraseña nueva, que no uses en ningún otro sitio.",
+  },
+  "Essa senha é curta demais. Use pelo menos 8 caracteres.": {
+    es: "Esa contraseña es demasiado corta. Usa al menos 8 caracteres.",
+  },
+  "Essa senha é simples demais. Misture letras maiúsculas, minúsculas e números.": {
+    es: "Esa contraseña es demasiado simple. Mezcla mayúsculas, minúsculas y números.",
+  },
+  "Essa senha não foi aceita por ser fraca. Crie uma senha mais longa, que você não usa em nenhum outro site.": {
+    es: "Esa contraseña no se aceptó por ser débil. Crea una contraseña más larga, que no uses en ningún otro sitio.",
+  },
   "Fazer login": { es: "Iniciar sesión" },
-  "Ainda não tenho conta": { es: "Todavía no tengo cuenta" },
   "Email não corresponde": { es: "El correo no coincide" },
   "Você está logado como": { es: "Estás conectado como" },
   "mas o convite foi enviado para": { es: "pero la invitación se envió a" },

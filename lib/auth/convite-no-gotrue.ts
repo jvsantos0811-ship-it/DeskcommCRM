@@ -1,37 +1,39 @@
 /**
- * Criar a conta de quem foi CONVIDADO quando o GoTrue está com o cadastro
- * público fechado (`disable_signup`) — issue #1653.
+ * A conta de quem foi CONVIDADO — criada pela admin API, já confirmada.
  *
- * ─── O defeito ──────────────────────────────────────────────────────────────
+ * ─── A decisão de 05/11/2026: o convite É a prova de caixa postal ──────────
  *
- * Com `signup_mode = 'so_convite'` o CRM recusava cadastro sem convite na tela,
- * na server action `signUp` e na volta do Google — mas o GoTrue seguia aceitando
- * `POST /auth/v1/signup` direto, com a anon key que vai para o navegador. Não
- * bastava ligar o `disable_signup` do GoTrue para fechar esse caminho: o CONVITE
- * depende do mesmo endpoint (`app/team/accept-invite/[token]` manda para
- * `/signup?invite=…`, que cria a conta com `supabase.auth.signUp()`), e fechar
- * o GoTrue quebrava exatamente quem deveria entrar.
+ * Até aqui, quem chegava pelo convite passava por DOIS e-mails: o do convite e,
+ * depois de criar a senha, um segundo, de confirmação, para provar que o
+ * endereço era dela. Medido em produção (Souza Rodrigues Advogados, 05/11): três
+ * convidados, nenhum entrou. Entre o convite, a senha recusada sem motivo e o
+ * segundo e-mail, o primeiro acesso tinha cinco passos — e cada passo perdia
+ * gente.
  *
- * ─── O conserto, em duas pezas ──────────────────────────────────────────────
+ * O segundo e-mail não provava nada que o primeiro já não provasse. O link do
+ * convite carrega um token ASSINADO (HMAC), amarrado a UM endereço, e só chega
+ * por e-mail àquele endereço. A confirmação ia para a MESMA caixa. É a mesma
+ * régua que o próprio Supabase usa no `inviteUserByEmail`: abrir o link do
+ * convite é a prova.
  *
- * 1. a instalação em `so_convite` sincroniza `DISABLE_SIGNUP` no .env do
- *    Supabase dela (função `sincronizar_signup_mode_do_gotrue` do kit) — é o
- *    que fecha o caminho direto para TODO MUNDO, inclusive para quem tem a anon
- *    key;
- * 2. este módulo cria a conta do CONVIDADO pela admin API
- *    (`auth.admin.createUser`), que não depende do cadastro público, e volta o
- *    e-mail de confirmação pelo mesmo canal de sempre — o fluxo depois disso
- *    (`/auth/confirm` → `decidirConviteDoSignup` → `aplicarConvite`) não muda
- *    uma linha.
+ * O risco que o desenho antigo cobria — alguém que recebeu o link REENCAMINHADO
+ * criar a conta daquele e-mail — é o mesmo de reencaminhar o e-mail de
+ * confirmação, ou a própria senha: quem reencaminha está dando o acesso. O
+ * convite continua com prazo, continua revogável na tela de Equipe (a revogação
+ * é conferida no aceite, em `aplicarConvite`), e o token continua valendo para
+ * um e-mail só.
  *
- * ─── Por que o caminho antigo continua sendo o padrão ───────────────────────
+ * Por isso a conta nasce CONFIRMADA (`email_confirm: true`), quem chama abre a
+ * sessão com a senha que a pessoa acabou de escolher e aplica o convite no
+ * mesmo passo. Do link à tela do CRM: um formulário.
  *
- * Aqui só se entra quando o GoTrue DIZ que o cadastro público está fechado (o
- * `disable_signup` vem de `GET /auth/v1/settings`, que é público). Instalação
- * em `aberto` — e até `so_convite` que ainda não sincronizou — segue no
- * `supabase.auth.signUp()` de sempre: o comportamento de quem já funciona não
- * muda por causa de quem precisa deste conserto. Não deu para perguntar ao
- * GoTrue (rede, placeholder de teste) também cai no caminho de sempre.
+ * ─── Por que admin API sempre, e não só com o cadastro público fechado ──────
+ *
+ * Até 05/11 este caminho só era usado com `disable_signup` ligado no GoTrue
+ * (issue #1653), e o convite de instalação aberta seguia pelo
+ * `supabase.auth.signUp()`, que obriga a confirmar o e-mail. Duas portas para o
+ * mesmo convite davam duas experiências. Agora é uma: a admin API não depende
+ * do cadastro público e cria a conta já confirmada.
  *
  * ─── Sobre usar o client admin num fluxo de usuário final ───────────────────
  *
@@ -40,12 +42,14 @@
  * resolver `organization_id` por conta própria. Aqui ele não lê nem escreve
  * dado de tenant nenhum — cria UMA conta de auth com o e-mail que o convite
  * ASSINADO já autorizou, e devolve. É o mesmo uso que `lib/auth/provision.ts`
- * faz (`auth.admin.createUser`), e o que a própria issue sugere.
+ * faz (`auth.admin.createUser`).
+ *
+ * `lerConfigPublicaDoGoTrue` continua aqui porque o aviso da troca de modo de
+ * cadastro (`lib/auth/aviso-da-troca-de-modo.ts`) lê a mesma configuração.
  */
 import { env } from "@/lib/env";
-import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { motivosDaSenhaRecusada, type MotivoDaSenhaRecusada } from "@/lib/auth/senha-recusada";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 
 /** O que o GoTrue conta de si no endpoint público de settings. */
@@ -85,50 +89,40 @@ export async function lerConfigPublicaDoGoTrue(): Promise<ConfigPublicaDoGoTrue 
 }
 
 export type ResultadoDaContaDeConvite =
-  | { ok: true; sessao_ativa: false }
+  | { ok: true; userId: string }
   | {
       ok: false;
       /**
        * `conta_ja_existe`: já havia conta para este e-mail (só acontece com
        * convite na mão, então não fura a anti-enumeração — o comentário disso
-       * está em `signUp.ts`). Os outros três são falha de infraestrutura.
+       * está em `signUp.ts`). `senha_fraca`: o provedor recusou a senha, e
+       * `motivosDaSenha` diz por quê. Os outros dois são infraestrutura.
        */
-      motivo: "conta_ja_existe" | "rate_limited" | "criacao_recusada" | "email_de_confirmacao_falhou";
+      motivo: "conta_ja_existe" | "rate_limited" | "senha_fraca" | "criacao_recusada";
+      motivosDaSenha?: MotivoDaSenhaRecusada[];
       detalhe?: string;
     };
 
 /**
- * Cria a conta do convidado pela admin API e manda o e-mail de confirmação.
+ * Cria a conta do convidado pela admin API, já com o e-mail confirmado (ver o
+ * cabeçalho: o link do convite é a prova de caixa postal).
  *
- * Por que admin API: `auth.signUp()` é o endpoint que o `disable_signup`
- * bloqueia; `auth.admin.createUser` não é. Por que o `email_confirm: false` +
- * `resend` e não `email_confirm: true`: pular a confirmação daria a qualquer um
- * que colasse o link do convite (link reencaminhável) a conta de OUTRO e-mail —
- * a prova de caixa postal é o e-mail de confirmação indo para o ENDEREÇO DO
- * CONVITE, e ela continua no lugar.
- *
- * O `auth.admin.createUser` do GoTrue NÃO dispara e-mail nenhum (medido no
- * fonte supabase/auth v2.196.0: `adminUserCreate` só grava o usuário), então o
- * reenvio é explícito — pelo `POST /auth/v1/resend`, que é público, não tem
- * trava de cadastro e usa a mesma chave de sempre.
- *
- * Se o reenvio falhar, a conta recém-criada é APAGADA e o erro é devolvido:
- * sem isso a pessoa ficaria com conta sem e-mail e toda nova tentativa cairia
- * em "conta já existe" — a conta órfã que a issue inteira existe para não
- * acumular.
+ * Não manda e-mail nenhum e não abre sessão — quem chama abre a sessão com a
+ * senha que a pessoa digitou e aplica o convite. Sem e-mail para mandar, não
+ * existe mais a conta órfã de "o e-mail de confirmação não saiu" que a versão
+ * anterior precisava apagar.
  */
 export async function criarContaDeConvite(params: {
   email: string;
   password: string;
   inviteToken: string;
   fullName: string;
-  emailRedirectTo: string;
 }): Promise<ResultadoDaContaDeConvite> {
   const admin = createAdminClient();
   const { data, error } = await admin.auth.admin.createUser({
     email: params.email,
     password: params.password,
-    email_confirm: false,
+    email_confirm: true,
     user_metadata: { invite_token: params.inviteToken, full_name: params.fullName },
   });
 
@@ -141,38 +135,12 @@ export async function criarContaDeConvite(params: {
     const jaExiste =
       error?.code === "email_exists" || /already (been )?registered|already exists/i.test(detalhe);
     if (jaExiste) return { ok: false, motivo: "conta_ja_existe" };
+    // A recusa que travou os convidados da Souza Rodrigues em 05/11: senha
+    // vazada. Antes caía em `criacao_recusada` e a tela dizia "tente de novo".
+    const motivosDaSenha = motivosDaSenhaRecusada(error);
+    if (motivosDaSenha) return { ok: false, motivo: "senha_fraca", motivosDaSenha, detalhe };
     return { ok: false, motivo: "criacao_recusada", detalhe };
   }
 
-  // Mesmo cliente anônimo de sempre: quem manda no `/resend` é a chave pública,
-  // igualzinho ao `supabase.auth.signUp()` que este caminho substitui.
-  const supabase = await createClient();
-  const { error: erroResend } = await supabase.auth.resend({
-    type: "signup",
-    email: params.email,
-    options: { emailRedirectTo: params.emailRedirectTo },
-  });
-
-  if (erroResend) {
-    const { error: erroDelete } = await admin.auth.admin.deleteUser(data.user.id);
-    if (erroDelete) {
-      // A conta ficou para trás. Não dá para desfazer em silêncio: é o único
-      // caso em que este caminho pode deixar uma conta órfã, e quem investiga
-      // precisa achar a linha na trilha.
-      logger.error("convite: não deu para desfazer a conta após falha no e-mail de confirmação", {
-        user_id: data.user.id,
-        detalhe: erroDelete.message,
-      });
-    }
-    return {
-      ok: false,
-      motivo: "email_de_confirmacao_falhou",
-      detalhe: erroResend.message,
-    };
-  }
-
-  // `sessao_ativa: false` sempre: sem sessão daqui, a tela continua mandando a
-  // pessoa para o e-mail de confirmação — que foi, de fato, enviado. Quem tem
-  // `mailer_autoconfirm` ligado ganha um clique a mais e o mesmo desfecho.
-  return { ok: true, sessao_ativa: false };
+  return { ok: true, userId: data.user.id };
 }

@@ -28,6 +28,11 @@ export default async function LoginPage({
   );
   const t = (texto: string) => traduzir(texto, idioma);
   const marca = await marcaDaSaida(null);
+  // Veio do link de um CONVITE (o `next` aponta para o aceite)? Quem está aqui
+  // quase sempre ainda não tem senha — foi o beco medido em 05/11/2026: login
+  // com senha que não existe, "Esqueci minha senha" que não manda nada, e a
+  // pessoa desiste. A saída fica à vista, no topo.
+  const tokenDoConvite = next?.match(/^\/team\/accept-invite\/([^/?#]+)$/)?.[1] ?? null;
 
   return (
     <div className="space-y-6">
@@ -35,6 +40,17 @@ export default async function LoginPage({
         <h1 className="text-2xl font-semibold tracking-tight">{t("Entrar")}</h1>
         <p className="text-sm text-muted-foreground">{marca.nome}</p>
       </div>
+      {tokenDoConvite && (
+        <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm" role="status">
+          {t("Primeiro acesso pelo convite? Você ainda não tem senha.")}{" "}
+          <Link
+            href={`/signup?invite=${encodeURIComponent(tokenDoConvite)}`}
+            className="font-medium underline underline-offset-4"
+          >
+            {t("Criar minha senha")}
+          </Link>
+        </div>
+      )}
       {reset === "success" && (
         <div
           className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm"

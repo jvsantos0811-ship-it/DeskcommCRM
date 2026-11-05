@@ -13,8 +13,10 @@ import {
   type SignupInput,
   type SignupComConviteInput,
 } from "@/lib/auth/schemas";
-import { verifyInviteToken } from "@/lib/auth/invite-token";
-import { criarContaDeConvite, lerConfigPublicaDoGoTrue } from "@/lib/auth/convite-no-gotrue";
+import { verifyInviteToken, type InvitePayload } from "@/lib/auth/invite-token";
+import { criarContaDeConvite } from "@/lib/auth/convite-no-gotrue";
+import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { motivosDaSenhaRecusada } from "@/lib/auth/senha-recusada";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { audit, hashEmail } from "@/lib/audit";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
@@ -39,6 +41,19 @@ export type SignUpResult =
        * Achado de @KIRAzinx566, com um cliente real travado nessa tela.
        */
       sessao_ativa: boolean;
+      /**
+       * Só no caminho do CONVITE: a pessoa já é membro da empresa que a
+       * convidou — a tela vai direto para o CRM. `false` com sessão aberta =
+       * a conta e a sessão existem, mas o aceite não fechou (convite revogado,
+       * limite do plano): a tela de aceite explica cada caso.
+       */
+      convite_aceito?: boolean;
+      /**
+       * Só no caminho do CONVITE: a conta nasceu, mas a sessão não abriu aqui.
+       * A pessoa entra pelo login com a senha que acabou de criar, e o `next`
+       * a leva de volta ao aceite. Nunca há e-mail para esperar nesse caminho.
+       */
+      entrar_pelo_login?: boolean;
     }
   | {
       ok: false;
@@ -58,6 +73,12 @@ export type SignUpResult =
        * de confirmação — é a instalação sem e-mail configurado no serviço de
        * login, não um soluço. Tentar de novo nunca funciona; quem resolve é
        * quem administra.
+       *
+       * `senha_fraca`: o provedor recusou a SENHA (vazada, curta ou simples
+       * demais). `details.motivos` diz qual — ver `lib/auth/senha-recusada.ts`.
+       * Separado de `signup_failed` porque "tente novamente" com a mesma senha
+       * nunca funciona: foi o que travou os convidados da Souza Rodrigues em
+       * 05/11/2026.
        */
       error:
         | "validation_error"
@@ -65,7 +86,8 @@ export type SignUpResult =
         | "signup_failed"
         | "somente_convite"
         | "conta_ja_existe"
-        | "email_indisponivel";
+        | "email_indisponivel"
+        | "senha_fraca";
       details?: Record<string, unknown>;
     };
 
@@ -82,10 +104,10 @@ export async function signUp(
   input: SignupInput | SignupComConviteInput,
   /**
    * Token de convite, quando a conta está sendo criada para ACEITAR um convite.
-   * Viaja até `/auth/confirm` pelo `user_metadata` — o mesmo canal que
-   * `org_name` já usa e que o e2e do signup exercita. Ele não dá acesso a nada
-   * sozinho: quem decide é `decidirConviteDoSignup`, comparando a assinatura do
-   * token com o e-mail que o provedor de auth confirmou.
+   * Ele só vale se a assinatura verificar E o e-mail do token for o do
+   * formulário; aí a conta nasce confirmada, a sessão abre e o convite é
+   * aplicado aqui mesmo (ver o bloco "CONVITE" abaixo). O token também vai no
+   * `user_metadata`, como antes, para quem investiga achar a origem da conta.
    */
   inviteToken?: string,
 ): Promise<SignUpResult> {
@@ -117,6 +139,7 @@ export async function signUp(
   // aqui não é erro do usuário — é tentativa de entrar em organização alheia
   // colando um token que chegou para outra pessoa.
   let convite: string | null = null;
+  let payloadDoConvite: InvitePayload | null = null;
   if (temConvite && inviteToken) {
     const payload = verifyInviteToken(inviteToken);
     if (!payload) {
@@ -126,6 +149,7 @@ export async function signUp(
       return { ok: false, error: "validation_error", details: { invite: ["email_divergente"] } };
     }
     convite = inviteToken;
+    payloadDoConvite = payload;
   }
 
   // ── A AUTORIDADE da política de cadastro ──────────────────────────────────
@@ -164,25 +188,26 @@ export async function signUp(
     }
   }
 
-  // ── O GoTrue com o cadastro público FECHADO (#1653) ──────────────────────────
+  // ── CONVITE: a conta nasce pronta e a pessoa entra no mesmo passo ─────────
   //
-  // Com `disable_signup` ligado no GoTrue — é o que fecha `POST /auth/v1/signup`
-  // para quem tem a anon key do navegador, o buraco que esta issue abre — o
-  // `supabase.auth.signUp()` de baixo também é recusado, inclusive para quem
-  // TEM convite. Só se entra aqui quando o próprio GoTrue diz que está fechado
-  // (`GET /auth/v1/settings`, público); nos outros casos — instalação aberta e
-  // até `so_convite` que ainda não sincronizou — o caminho de baixo continua
-  // exatamente o de antes.
+  // Decisão de 05/11/2026 — o porquê inteiro está no cabeçalho de
+  // `lib/auth/convite-no-gotrue.ts`. O link do convite, assinado e enviado ao
+  // endereço convidado, já é a prova de caixa postal; o segundo e-mail (de
+  // confirmação) não provava mais nada e custava convidados de verdade.
   //
-  // A ordem em relação à trava de política acima continua sendo a mesma: sem
-  // convite válido não se chega aqui.
-  if (convite !== null && (await lerConfigPublicaDoGoTrue())?.disable_signup === true) {
+  // Então: a conta nasce CONFIRMADA pela admin API (que também não depende do
+  // cadastro público do GoTrue — issue #1653), a sessão abre aqui com a senha
+  // que a pessoa acabou de escolher, e o convite é aplicado. Da tela do convite
+  // à tela do CRM, um formulário.
+  //
+  // A ordem em relação à trava de política acima continua a mesma: sem convite
+  // válido não se chega aqui.
+  if (convite !== null && payloadDoConvite !== null) {
     const criada = await criarContaDeConvite({
       email: parsed.data.email,
       password: parsed.data.password,
       inviteToken: convite,
       fullName: (parsed.data as SignupComConviteInput).full_name,
-      emailRedirectTo: `${origin}/auth/confirm?type=signup`,
     });
 
     if (!criada.ok) {
@@ -190,12 +215,11 @@ export async function signUp(
         action: "auth.signup_failed",
         metadata: {
           email_hash: hashEmail(parsed.data.email),
-          // Mesmos motivos do caminho de baixo, para a trilha continuar
-          // distinguível sem mapa novo: `conta_ja_existe_com_convite` já é o
-          // vocabulário de quem chega com convite na mão.
+          // `conta_ja_existe_com_convite` já é o vocabulário de quem chega
+          // com convite na mão — a trilha continua legível sem mapa novo.
           reason: criada.motivo === "conta_ja_existe" ? "conta_ja_existe_com_convite" : criada.motivo,
           detalhe: criada.detalhe ?? null,
-          via: "admin_convite",
+          via: "convite_direto",
         },
         requestId,
         ip,
@@ -203,18 +227,44 @@ export async function signUp(
       });
       if (criada.motivo === "conta_ja_existe") return { ok: false, error: "conta_ja_existe" };
       if (criada.motivo === "rate_limited") return { ok: false, error: "rate_limited" };
-      if (criada.motivo === "email_de_confirmacao_falhou") return { ok: false, error: "email_indisponivel" };
+      if (criada.motivo === "senha_fraca") {
+        return { ok: false, error: "senha_fraca", details: { motivos: criada.motivosDaSenha ?? [] } };
+      }
       return { ok: false, error: "signup_failed" };
     }
 
     await audit({
       action: "auth.signup_requested",
-      metadata: { email_hash: hashEmail(parsed.data.email), via: "admin_convite" },
+      actorUserId: criada.userId,
+      metadata: { email_hash: hashEmail(parsed.data.email), via: "convite_direto" },
       requestId,
       ip,
       userAgent,
     });
-    return { ok: true, sessao_ativa: criada.sessao_ativa };
+
+    // A sessão, com a senha que a pessoa digitou neste mesmo formulário — o
+    // mesmo `signInWithPassword` da tela de login, pelo client de servidor que
+    // grava os cookies.
+    const supabase = await createClient();
+    const { data: entrada, error: erroDeEntrada } = await supabase.auth.signInWithPassword({
+      email: parsed.data.email,
+      password: parsed.data.password,
+    });
+    if (erroDeEntrada || !entrada?.session) {
+      // A conta existe e está confirmada; só a sessão não abriu aqui. Não há
+      // e-mail para esperar: a saída é entrar com a senha recém-criada.
+      return { ok: true, sessao_ativa: false, entrar_pelo_login: true };
+    }
+
+    // O vínculo com a empresa. Revogação, limite do plano e replay são
+    // tratados dentro de `aplicarConvite`, igual ao botão "Aceitar convite" e
+    // ao `/auth/confirm`.
+    const aceite = await aplicarConvite({
+      userId: criada.userId,
+      payload: payloadDoConvite,
+      requestId,
+    });
+    return { ok: true, sessao_ativa: true, convite_aceito: aceite.ok };
   }
 
   const supabase = await createClient();
@@ -226,59 +276,34 @@ export async function signUp(
       // sobrevive ao redirect do GoTrue e é o que distingue este fluxo do de
       // recovery quando a verificação chega via `code` (PKCE), não `token_hash`.
       emailRedirectTo: `${origin}/auth/confirm?type=signup`,
-      // O convite é revalidado no servidor mesmo tendo sido validado ao montar
-      // a tela: o campo de e-mail do formulário é adulterável no cliente, e a
-      // decisão que importa acontece com o e-mail JÁ confirmado pelo provedor.
-      // `full_name` vai junto no convite: sem ele a pessoa entra na equipe sem
-      // nome e aparece como um pedaço de identificador em toda tela que a
-      // nomeia. No caminho sem convite ele não existe — ali quem dá o nome é o
-      // onboarding, que o convidado não percorre.
-      data: convite
-        ? {
-            invite_token: convite,
-            full_name: (parsed.data as SignupComConviteInput).full_name,
-          }
-        : { org_name: (parsed.data as SignupInput).org_name, ...(planoEscolhido ? { cobranca_plan_id: planoEscolhido } : {}) },
+      // Daqui para baixo é só quem ABRE empresa: o convite saiu no bloco
+      // "CONVITE" acima, com a conta pronta e sem e-mail de confirmação.
+      data: { org_name: (parsed.data as SignupInput).org_name, ...(planoEscolhido ? { cobranca_plan_id: planoEscolhido } : {}) },
     },
   });
 
   if (error) {
     if (error.status === 429) return { ok: false, error: "rate_limited" };
 
-    // ── O BECO SEM SAÍDA DE QUEM JÁ TEM CONTA ────────────────────────────
-    //
-    // Medido em produção em 2026-09-10: quem foi revogado e recebeu convite
-    // novo chega aqui, porque já tem conta. O GoTrue devolve
-    // "User already registered", e a tela dizia "Não foi possível criar a
-    // conta. Tente novamente." — instrução impossível: tentar de novo nunca
-    // vai funcionar. A pessoa tentou TRÊS vezes; está nas três linhas de
-    // `auth.signup_failed` da trilha.
-    //
-    // O caminho certo existe e é curto (entrar e aceitar o convite), mas a
-    // tela não levava até ele.
-    //
-    // ⚠️ POR QUE ISTO NÃO FURA A ANTI-ENUMERAÇÃO. O cabeçalho desta função
-    // explica que e-mail já cadastrado recebe a MESMA resposta de sucesso,
-    // para ninguém descobrir quem tem conta aqui testando endereços. A regra
-    // continua inteira: este ramo só existe quando há um CONVITE ASSINADO
-    // para este e-mail. Quem tem o convite já sabe que este endereço foi
-    // convidado — a assinatura é a prova. Sem convite, `convite` é `null` e a
-    // resposta segue sendo `signup_failed`, indistinguível como antes.
-    const jaExiste = /already\s*registered|already\s*exists/i.test(error.message);
-    if (jaExiste && convite !== null) {
+    // Senha recusada pelo provedor: dizer POR QUÊ. "Tente novamente" com a
+    // mesma senha nunca funciona. Não fura a anti-enumeração — o motivo é da
+    // senha digitada, não do e-mail.
+    const motivosDaSenha = motivosDaSenhaRecusada(error);
+    if (motivosDaSenha) {
       await audit({
         action: "auth.signup_failed",
-        metadata: {
-          email_hash: hashEmail(parsed.data.email),
-          reason: "conta_ja_existe_com_convite",
-        },
+        metadata: { email_hash: hashEmail(parsed.data.email), reason: "senha_fraca" },
         requestId,
         ip,
         userAgent,
       });
-      return { ok: false, error: "conta_ja_existe" };
+      return { ok: false, error: "senha_fraca", details: { motivos: motivosDaSenha } };
     }
 
+    // Quem já tem conta e chega COM convite não passa mais por aqui: o bloco
+    // "CONVITE" acima devolve `conta_ja_existe` e a tela leva ao login com o
+    // convite pendurado (achado de 2026-09-10, preservado lá). Sem convite, a
+    // resposta segue indistinguível — é a anti-enumeração do cabeçalho.
     await audit({
       action: "auth.signup_failed",
       metadata: {

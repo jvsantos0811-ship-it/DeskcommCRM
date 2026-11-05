@@ -5,6 +5,7 @@ import { SignupForm } from "@/components/auth/SignupForm";
 import { Button } from "@/components/ui/button";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { lerConfigPublicaDoGoTrue } from "@/lib/auth/convite-no-gotrue";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { createClient } from "@/lib/supabase/server";
 import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
@@ -66,6 +67,11 @@ export default async function SignupPage({
   const cadastro = convite ? null : await lerCadastroNaTela(createAdminClient());
   const planos = cadastro?.oferecidos ?? [];
   const googleSemPlano = cadastro?.exigeEscolha ?? false;
+  // Com convite e o cadastro público do GoTrue FECHADO, o Google recusa a conta
+  // nova do convidado (o `disable_signup` vale também para o OAuth). Mostrar o
+  // botão seria mandar a pessoa a um erro; o formulário acima cria a conta.
+  const googleFechadoParaConvite =
+    convite !== undefined && (await lerConfigPublicaDoGoTrue())?.disable_signup === true;
 
   // Convite VÁLIDO passa em qualquer modo — é o ponto inteiro do convite.
   const modo = convite ? null : await modoDeCadastro();
@@ -125,7 +131,7 @@ export default async function SignupPage({
       <SignupForm convite={convite} planos={planos} planoInicial={planoInicialDoSeletor(planos, cadastro?.padraoId ?? null)} />
       {/* O convite atravessa o Google na URL de retorno: sem ele, quem foi
           convidado e cria a conta com Google ganharia uma empresa própria. */}
-      {googleSemPlano ? (
+      {googleFechadoParaConvite ? null : googleSemPlano ? (
         <p className="text-center text-xs text-muted-foreground">{t("Para garantir que o plano selecionado seja contratado, conclua o cadastro com e-mail e senha.")}</p>
       ) : (
         <>
@@ -138,7 +144,16 @@ export default async function SignupPage({
 
       <p className="text-center text-sm text-muted-foreground">
         {t("Já tem conta?")}{" "}
-        <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+        {/* Com convite, o login leva o convite pendurado no `next`: quem já
+            tinha conta cai no aceite, e não na tela inicial sem empresa. */}
+        <Link
+          href={
+            convite
+              ? `/login?next=${encodeURIComponent(`/team/accept-invite/${convite.token}`)}`
+              : "/login"
+          }
+          className="font-medium text-foreground underline underline-offset-4"
+        >
           {t("Entrar")}
         </Link>
       </p>

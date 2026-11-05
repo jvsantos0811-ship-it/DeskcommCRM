@@ -81,4 +81,13 @@ export function verifyInviteToken(token: string): InvitePayload | null {
   return payload;
 }
 
-export const INVITE_TTL_SECONDS = 60 * 60 * 24; // 24h
+/**
+ * Validade do convite: 7 dias.
+ *
+ * Era 24h. Medido em 05/11/2026: convidados de um escritório recebem o e-mail
+ * num dia e só sentam para entrar no outro — com 24h o link já tinha vencido, e
+ * o administrador precisava reenviar a cada tentativa. Sete dias é a janela em
+ * que a pessoa de fato abre o e-mail; o convite continua revogável a qualquer
+ * momento na tela de Equipe (a revogação é conferida no aceite).
+ */
+export const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7;
