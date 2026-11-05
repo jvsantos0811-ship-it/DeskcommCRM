@@ -1245,6 +1245,12 @@ export const AUDIT_ACTIONS = [
   // Pacote Conversa (PC-018 em diante): as regras da IA na conversa da
   // organização (Configurações › IA). Metadata com as chaves alteradas.
   "settings.conversa_atualizada",
+  // v3 §1.1: Configurações › Valor por tipo de lead — criar, mudar o valor médio,
+  // marcar "confirmado pelo cliente" ou desativar um tipo de lead do catálogo.
+  // Metadata com o valor antes e depois (centavos) e as chaves alteradas; o
+  // valor dos negócios que muda junto fica na linha do tempo de cada um.
+  "tipo_de_lead.created",
+  "tipo_de_lead.updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

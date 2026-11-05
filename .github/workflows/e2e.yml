@@ -1315,6 +1315,7 @@ jobs:
         midias-nao-entendidas.spec.ts
         sem-fonte.spec.ts
         funil-ajustes-do-joao.spec.ts
+        valor-por-tipo-de-lead.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

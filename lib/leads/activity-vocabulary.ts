@@ -211,7 +211,14 @@ export type ActivityType =
    * possível (`lead_id` é NOT NULL), só auditoria (D6).
    */
   | "contact_marked_personal"
-  | "contact_unmarked_personal";
+  | "contact_unmarked_personal"
+  /**
+   * v3 §1.3: o valor do negócio foi preenchido (ou atualizado) pelo valor
+   * médio do tipo de lead — gravado pelo gatilho da migration 9018, nunca por
+   * TS. A constante que o nomeia é `ATIVIDADE_DO_VALOR_PELO_TIPO`
+   * (`lib/leads/tipo-de-lead.ts`).
+   */
+  | "valor_pelo_tipo_de_lead";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou no funil",
@@ -329,6 +336,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // que o contato saiu da operação (ou voltou), não o nome da coluna.
   contact_marked_personal: "Marcado como pessoal",
   contact_unmarked_personal: "Desmarcado como pessoal",
+  valor_pelo_tipo_de_lead: "Valor do caso pelo tipo de lead",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

@@ -23,7 +23,7 @@ import {
   retomarLeadHandler,
 } from "@/app/api/v1/leads/_handler";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
-import { conferirCamposPersonalizados } from "../conferencia-de-campos";
+import { conferirCamposPersonalizados, conferirInteresse } from "../conferencia-de-campos";
 import { resolveUserNames } from "./_users";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
@@ -89,6 +89,15 @@ async function recusaSeLeadDePessoal(
 const VALOR_DO_NEGOCIO =
   "valor do negócio × 100, em QUALQUER moeda (também guarani): R$ 249,90 → 24990; ₲125.000 → 12500000. " +
   "O preço do catálogo (preco_cents) NÃO segue esta régua em moeda sem centavos: multiplique por 100.";
+
+/**
+ * O que o MODELO lê sobre `custom_fields` (v3, seção 1.2). O interesse do
+ * cliente vai em `servico`, com o nome exato de um tipo de lead do escritório —
+ * a lista vem no bloco "Campos do negócio" do turno.
+ */
+const CUSTOM_FIELDS_DO_NEGOCIO =
+  "campos do negócio (chave → valor). O interesse do cliente vai em servico, com o nome exato de um " +
+  "tipo de lead do escritório (a lista está no bloco Campos do negócio do turno).";
 
 /**
  * Enriquece rows de lead com os campos de governança aditivos (G6-03):
@@ -277,7 +286,7 @@ const createInputShape = {
    * declarava a chave; o schema de criação do REST continua sem ela porque lá
    * ela é gerida pelo servidor (o valor entra por fora do `parse`, no handler).
    */
-  custom_fields: z.record(z.string(), z.unknown()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional().describe(CUSTOM_FIELDS_DO_NEGOCIO),
 };
 
 export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
@@ -309,12 +318,15 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     // ela, a chave nova deixava a IA cumprir a régua da etapa com um valor que
     // o cliente não disse. O campo recusado sai do insert; se a etapa o exige,
     // a régua devolve o 422 — coerente: o cliente não disse.
+    // v3 §1.2: o interesse (`servico`) só grava o nome exato de um tipo de lead.
+    const interesse = await conferirInteresse(ctx, input.custom_fields);
     const conferencia = await conferirCamposPersonalizados(
       ctx,
       { pipelineId: input.pipeline_id },
-      input.custom_fields,
+      interesse.custom_fields,
     );
-    const custom_fields = conferencia.custom_fields ?? input.custom_fields;
+    const custom_fields = conferencia.custom_fields ?? interesse.custom_fields;
+    const recusados = [...interesse.recusados, ...conferencia.recusados];
     const lead = await createLeadHandler(
       ctx.supabase,
       {
@@ -335,10 +347,10 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
     );
     return {
       lead,
-      ...(conferencia.recusados.length > 0
+      ...(recusados.length > 0
         ? {
-            campos_nao_gravados: conferencia.recusados,
-            erro_de_ensino: conferencia.recusados.map((r) => r.mensagem).join(" "),
+            campos_nao_gravados: recusados,
+            erro_de_ensino: recusados.map((r) => r.mensagem).join(" "),
           }
         : {}),
     };
@@ -378,7 +390,7 @@ const updateInputShape = {
    * modelou o funil no vocabulário do próprio nicho recebia a IA como leitora,
    * nunca como escrivã.
    */
-  custom_fields: z.record(z.string(), z.unknown()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional().describe(CUSTOM_FIELDS_DO_NEGOCIO),
   /**
    * PC-003: o STATUS da resposta de cada campo de qualificação que o funil
    * marcou "com status". Use CONFIRMADO/NEGADO/NAO_SE_APLICA só quando o
@@ -411,7 +423,13 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
     // dinheiro em código, o degrau 2 pergunta ao Jev o que sobrou, e o que o
     // cliente não disse volta como ERRO DE ENSINO para o modelo, com os outros
     // campos da mesma chamada seguindo gravando (`lib/mcp/conferencia-de-campos`).
-    const conferencia = await conferirCamposPersonalizados(ctx, { leadId: lead_id }, parsed.custom_fields);
+    // v3 §1.2: o interesse (`servico`) só grava o nome exato de um tipo de lead
+    // ativo da organização — sem correspondência, só essa chave volta como erro
+    // de ensino, com os nomes válidos.
+    const interesse = await conferirInteresse(ctx, parsed.custom_fields);
+    const conferencia = await conferirCamposPersonalizados(ctx, { leadId: lead_id }, interesse.custom_fields);
+    const recusados = [...interesse.recusados, ...conferencia.recusados];
+    const camposFinais = conferencia.custom_fields ?? interesse.custom_fields;
     const lead = await updateLeadHandler(
       ctx.supabase,
       {
@@ -420,16 +438,14 @@ export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
         requestId: ctx.requestId,
       },
       lead_id,
-      conferencia.custom_fields === undefined
-        ? parsed
-        : { ...parsed, custom_fields: conferencia.custom_fields },
+      camposFinais === undefined ? parsed : { ...parsed, custom_fields: camposFinais },
     );
     return {
       lead,
-      ...(conferencia.recusados.length > 0
+      ...(recusados.length > 0
         ? {
-            campos_nao_gravados: conferencia.recusados,
-            erro_de_ensino: conferencia.recusados.map((r) => r.mensagem).join(" "),
+            campos_nao_gravados: recusados,
+            erro_de_ensino: recusados.map((r) => r.mensagem).join(" "),
           }
         : {}),
     };

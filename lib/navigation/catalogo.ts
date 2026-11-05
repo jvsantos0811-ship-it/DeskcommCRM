@@ -438,6 +438,21 @@ export const NAV_CATALOG = [
     // na navegação" — a porta existia, era outra.
   },
   {
+    // v3 §1.1: o valor médio de cada tipo de lead (o que o cliente procura) — é
+    // ele que preenche o valor do negócio quando a IA grava o interesse. Mora em
+    // "Sua empresa" porque é onde o negócio se DESCREVE, como os tipos de
+    // agendamento. Leitura para todos (o atendente confere o valor que entrou no
+    // negócio); escrever é `manager`, e quem cobra é a rota e a RLS.
+    href: "/app/settings/tenant/tipos-de-lead",
+    label: "Valor por tipo de lead",
+    description: "O valor médio de cada tipo de caso ou serviço, que entra no negócio quando a IA identifica o interesse.",
+    icon: "Tag",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "viewer",
+    // SEM `sidebar`: mora atrás de "Configurações", como as vizinhas.
+  },
+  {
     href: "/app/settings/tenant/proposals",
     label: "Propostas",
     description: "Configure a validade padrão e condições para propostas comerciais.",
