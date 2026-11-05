@@ -51,7 +51,14 @@ test.describe("v3 §1.1 — Configurações › Valor por tipo de lead", () => {
     await linha(page).getByTestId("tipo-de-lead-salvar-valor").click();
     await expect(page.getByText("Tipo de lead salvo.").first()).toBeVisible({ timeout: 15_000 });
 
+    // A caixa muda na hora (otimista); recarregar antes de a gravação voltar
+    // mediria a pressa do teste, não a tela. Espera a resposta do PATCH.
+    const gravou = page.waitForResponse(
+      (r) => r.url().includes("/api/v1/tipos-de-lead/") && r.request().method() === "PATCH",
+      { timeout: 15_000 },
+    );
     await linha(page).getByTestId("tipo-de-lead-confirmado").check();
+    expect((await gravou).status()).toBe(200);
     await expect(linha(page).getByTestId("tipo-de-lead-confirmado")).toBeChecked({ timeout: 15_000 });
 
     await page.reload();
