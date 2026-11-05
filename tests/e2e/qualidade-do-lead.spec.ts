@@ -259,8 +259,9 @@ test.describe("v3 §2/§3 — a nota de qualidade no funil", () => {
     await expect(porque).toContainText(`Por que ${semeado.tituloD} tem nota 0`);
     await expect(porque).toContainText("Nunca respondeu e entrou há mais de 48 h");
     await expect(porque).toContainText("Ajuste ao limite de 0 a 100");
-    // Abrir o porquê não abre o negócio.
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Abrir o porquê não abre o negócio. (O porquê também é `role="dialog"`,
+    // do Radix: quem diz se o pop-up do negócio abriu é o cabeçalho dele.)
+    await expect(page.getByTestId("cabecalho-do-negocio")).toHaveCount(0);
     await page.keyboard.press("Escape");
   });
 
