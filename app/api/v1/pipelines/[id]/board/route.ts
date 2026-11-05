@@ -514,11 +514,19 @@ async function withQualidade(
     logger.warn("quadro sem a nota de qualidade", { pipelineId, code: error.code, message: error.message });
     return leads;
   }
-  const porLead = new Map<string, LinhaDaQualidade>();
-  for (const linha of (data ?? []) as LinhaDaQualidade[]) porLead.set(linha.lead_id, linha);
+  const porLead = new Map<string, LinhaDaQualidade & { no_universo?: boolean | null }>();
+  for (const linha of (data ?? []) as Array<LinhaDaQualidade & { no_universo?: boolean | null }>) {
+    porLead.set(linha.lead_id, linha);
+  }
   return leads.map((lead) => {
     const linha = porLead.get(lead.id);
-    return linha ? { ...lead, qualidade: calcularQualidade(sinaisDaLinha(linha), agora) } : lead;
+    return linha
+      ? {
+          ...lead,
+          qualidade: calcularQualidade(sinaisDaLinha(linha), agora),
+          noRecorteDoPainel: linha.no_universo === true,
+        }
+      : lead;
   });
 }
 

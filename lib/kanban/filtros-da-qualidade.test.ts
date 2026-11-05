@@ -106,3 +106,24 @@ describe("o que cada filtro deixa no quadro", () => {
     expect(ids(applyFilters(LEADS, {}))).toEqual(["a", "b", "c", "ganho", "sem-nota"]);
   });
 });
+
+describe("v3 §8 — `?recorte=painel`: o mesmo recorte do painel de Dados", () => {
+  const comRecorte = [
+    lead("no-painel", q({ nivel: "A" }), { noRecorteDoPainel: true } as Partial<Lead>),
+    lead("manual", q({ nivel: "A" }), { noRecorteDoPainel: false } as Partial<Lead>),
+    lead("sem-fato", undefined),
+  ];
+
+  it("ida e volta pela URL, e liga a barra; valor desconhecido é ignorado", () => {
+    expect(filtersFromParams(sp("nivel=A&recorte=painel"))).toMatchObject({ nivel: "A", recorte: "painel" });
+    expect(filtersFromParams(sp("recorte=outro")).recorte).toBeUndefined();
+    expect(filtersToParams({ nivel: "A", recorte: "painel" })).toBe("nivel=A&recorte=painel");
+    expect(filtroLigado({ recorte: "painel" })).toBe(true);
+  });
+
+  it("deixa só o lead que o painel conta — o mesmo ?nivel=A dá a mesma quantidade", () => {
+    expect(ids(applyFilters(comRecorte, { nivel: "A" }))).toEqual(["no-painel", "manual"]);
+    expect(ids(applyFilters(comRecorte, { nivel: "A", recorte: "painel" }))).toEqual(["no-painel"]);
+    expect(ids(applyFilters(comRecorte, { recorte: "painel" }))).toEqual(["no-painel"]);
+  });
+});

@@ -674,6 +674,15 @@ beforeAll(() => {
           values (v_org, 'RLS invariant cargo', 'agent');
         end if;
 
+        -- migration 9020 (fork): retrato diario dos paineis de Dados. A leitura
+        -- e de quem ve a organizacao INTEIRA: o agent semeado aqui, em "so os
+        -- seus" (o padrao), NAO le — o bloco dedicado no fim deste arquivo prova
+        -- as duas direcoes. Escrita so pelo servidor (authenticated so SELECT).
+        if not exists (select 1 from public.crm_dados_retrato where organization_id = v_org) then
+          insert into public.crm_dados_retrato (organization_id, dia, resumo)
+          values (v_org, current_date, '{"leads": 1}'::jsonb);
+        end if;
+
         -- migration 9004 (fork): painel de dados. Leitura org-scoped sem gate
         -- de papel; a escrita so o servidor faz (authenticated so tem SELECT).
         if not exists (select 1 from public.data_dashboards where organization_id = v_org) then
@@ -954,6 +963,11 @@ export const TABLES = [
   // quais muletas a IA do escritório usa e quanto. Sem texto de cliente, mas é
   // dado operacional da organização. Leitura org-scoped; escrita só do worker.
   "frases_proibidas_na_semana",
+  // ⚠️ `crm_dados_retrato` (migration 9020) NÃO entra nesta lista: a leitura é
+  // de quem vê a organização INTEIRA, e o usuário semeado é `agent` em "só os
+  // seus" — o controle positivo falharia por ACERTO. A prova (as duas direções,
+  // com o mesmo agent passando a ver todos) está no bloco dedicado no fim deste
+  // arquivo e em `tests/invariants/retrato-de-dados.test.ts`.
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
@@ -1001,5 +1015,47 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
       ),
     );
     expect(total).toBe(2);
+  });
+});
+
+/**
+ * migration 9020 (fork) — o retrato diário de Dados. Fora da lista TABLES de
+ * propósito (ver a nota lá): a leitura exige ver a organização inteira. Aqui as
+ * duas direções, com o agent semeado:
+ *  - em "só os seus" (o padrão da organização) ele não lê nem o da própria;
+ *  - passando a ver todos (`visibility_mode = 'all'`, numa transação desfeita),
+ *    lê o da própria e continua lendo ZERO do vizinho.
+ */
+describe("RLS — crm_dados_retrato (retrato diário de Dados, migration 9020)", () => {
+  function contarVendoTodos(userId: string, org: string, orgDoUsuario: string): number {
+    const out = sql(`
+      begin;
+      update public.organizations set settings = coalesce(settings, '{}'::jsonb) || '{"visibility_mode":"all"}'::jsonb
+       where id = '${orgDoUsuario}';
+      set local role authenticated;
+      select set_config('request.jwt.claims', '{"sub":"${userId}"}', true);
+      select 'n=' || count(*) from public.crm_dados_retrato where organization_id = '${org}';
+      rollback;
+    `);
+    const linha = out.split("\n").find((l) => l.startsWith("n="));
+    if (!linha) throw new Error(`unexpected psql output: ${out}`);
+    return Number(linha.slice(2));
+  }
+
+  it("os dois tenants têm retrato (o seed existe)", () => {
+    expect(Number(sql(
+      `select count(distinct organization_id) from public.crm_dados_retrato where organization_id in ('${ORG_A}','${ORG_B}');`,
+    ))).toBe(2);
+  });
+
+  it("agent em \"só os seus\" não lê o retrato de ninguém — nem o da própria organização", () => {
+    expect(countAs(USER_A, `select count(*) from public.crm_dados_retrato where organization_id = '${ORG_A}';`)).toBe(0);
+    expect(countAs(USER_A, `select count(*) from public.crm_dados_retrato where organization_id = '${ORG_B}';`)).toBe(0);
+  });
+
+  it("agent que vê todos lê o da própria organização e ZERO do vizinho (controle positivo)", () => {
+    expect(contarVendoTodos(USER_A, ORG_A, ORG_A)).toBe(1);
+    expect(contarVendoTodos(USER_A, ORG_B, ORG_A)).toBe(0);
+    expect(contarVendoTodos(USER_B, ORG_A, ORG_B)).toBe(0);
   });
 });

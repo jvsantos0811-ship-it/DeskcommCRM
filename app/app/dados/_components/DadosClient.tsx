@@ -48,10 +48,10 @@ export function DadosClient({ podeEditar }: { podeEditar: boolean }) {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6" data-dados>
+    <div className="flex flex-col gap-6" data-meus-paineis>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t("Dados")}</h1>
+          <h2 className="text-lg font-semibold tracking-tight">{t("Meus painéis")}</h2>
           <p className="text-sm text-muted-foreground">
             {t("Monte painéis com os números que importam para você: o que medir, como agrupar e qual a meta.")}
           </p>

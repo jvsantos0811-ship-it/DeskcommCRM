@@ -357,6 +357,17 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "agent), promovido a admin passa a ler (controle), e UPDATE/INSERT/DELETE " +
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
   },
+  {
+    tabela: "crm_dados_retrato",
+    razao:
+      "tests/invariants/retrato-de-dados.test.ts (\"quem lê o retrato\") e o bloco " +
+      "dedicado de rls-isolation.test.ts — dois tenants reais por JWT: gerente e " +
+      "leitor de A leem o de A; o agent em \"só os seus\" lê 0 (o retrato soma os " +
+      "leads dos colegas; por isso não cabe em TABLES, cujo usuário semeado é agent); " +
+      "o mesmo agent com visibility_mode 'all' passa a ler o de A (controle) e " +
+      "continua lendo 0 de B; o gerente de A lê 0 de B; INSERT e a função de " +
+      "gravar pela sessão dão permission denied. Migration 9020 (fork).",
+  },
 ];
 
 /**

@@ -91,6 +91,14 @@ export interface Lead {
    * ler os fatos: o card fica sem selo, nunca com nota inventada.
    */
   qualidade?: QualidadeDoLead;
+  /**
+   * Derivado: o lead está no RECORTE do painel de Dados (`no_universo` da
+   * `fn_dados_qualidade_do_lead`: funil padrão, sem base importada, cadastro
+   * manual nem card de teste). O link do painel abre o funil com
+   * `?recorte=painel`, e é isto que faz a contagem do quadro bater com a do
+   * painel (v3 §7: "`?nivel=A` mostra os mesmos 7 leads").
+   */
+  noRecorteDoPainel?: boolean;
   score?: {
     probability: number;
     reason: string;

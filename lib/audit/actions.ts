@@ -1251,6 +1251,15 @@ export const AUDIT_ACTIONS = [
   // valor dos negócios que muda junto fica na linha do tempo de cada um.
   "tipo_de_lead.created",
   "tipo_de_lead.updated",
+  // v3 §8: o retrato diário dos painéis de Dados (migration 9020). `gerado` —
+  // pelo cron das 06:00, pelo "Atualizar agora" ou porque um valor do catálogo
+  // mudou (metadata: origem, dia, leads, apagados); `recusado` — "Atualizar
+  // agora" antes de 30 minutos do último (metadata: gerado_em, proximo_em);
+  // `falhou` — o cron não conseguiu montar o retrato de uma organização (segue
+  // para as outras e tenta de novo na hora seguinte; metadata: etapa, erro).
+  "dados.retrato_gerado",
+  "dados.retrato_recusado",
+  "dados.retrato_falhou",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

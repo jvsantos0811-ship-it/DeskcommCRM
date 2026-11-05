@@ -41,7 +41,7 @@ function chaveDaCor(q: QualidadeDoLead): Nivel | "ganho" | "perdido" {
 const fator = String(PESOS_DA_NOTA.fatorDaChance).replace(".", ",");
 
 /** O texto de cada parcela do "por que". Literais em `t()`; os números vêm dos pesos. */
-function rotuloDaParcela(p: Parcela, rotuloDoInteresse: string, t: (s: string) => string): string {
+export function rotuloDaParcela(p: Parcela, rotuloDoInteresse: string, t: (s: string) => string): string {
   switch (p.chave) {
     case "chance":
       return `${t("Chance de fechar")} ${String(p.chance ?? 0).replace(".", ",")}% × ${fator}${

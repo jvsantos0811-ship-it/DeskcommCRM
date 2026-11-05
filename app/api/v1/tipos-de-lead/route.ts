@@ -24,6 +24,8 @@ import {
   COLUNAS_DO_TIPO_DE_LEAD,
   tipoDeLeadCreateSchema,
 } from "@/lib/schemas/tipos-de-lead";
+import { refazerRetratoPeloCatalogo } from "@/lib/dados/gerar-retrato";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -105,6 +107,23 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: { preco_cents: criado.preco_cents, valor_confirmado: parsed.data.valor_confirmado },
     requestId,
   });
+
+  // v3 §7: a aba Dinheiro de Dados muda na hora — o retrato do dia é refeito
+  // com o valor novo. Falhar aqui não desfaz o cadastro (a função nunca lança).
+  await refazerRetratoPeloCatalogo(
+    admin,
+    orgId,
+    (r) =>
+      audit({
+        organizationId: orgId,
+        actorUserId: authz.user.id,
+        action: "dados.retrato_gerado",
+        resourceType: "crm_dados_retrato",
+        metadata: { origem: "catalogo", dia: r.dia, leads: r.leads, apagados: r.apagados },
+        requestId,
+      }),
+    (e) => logger.warn("dados: retrato não refeito depois do catálogo", { requestId, message: e instanceof Error ? e.message : String(e) }),
+  );
 
   return ok(data, { requestId, status: 201 });
 }
