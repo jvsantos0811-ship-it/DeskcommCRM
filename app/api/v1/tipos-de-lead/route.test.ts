@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { audit } from "@/lib/audit";
+import { refazerRetratoPeloCatalogo } from "@/lib/dados/gerar-retrato";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -11,6 +12,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/dados/gerar-retrato", () => ({ refazerRetratoPeloCatalogo: vi.fn(async () => undefined) }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -158,5 +160,29 @@ describe("PATCH /api/v1/tipos-de-lead/:id", () => {
     const res = await PATCH(pedido("PATCH", {}), { params: Promise.resolve({ id: TIPO_ID }) });
     expect(res.status).toBe(422);
     expect(atualizado).toBeNull();
+    expect(refazerRetratoPeloCatalogo).not.toHaveBeenCalled();
+  });
+});
+
+describe("v3 §7 — o valor do catálogo muda a aba Dinheiro na hora", () => {
+  it("criar e mudar um tipo de lead refazem o retrato de Dados da organização da SESSÃO", async () => {
+    const { POST } = await import("./route");
+    await POST(pedido("POST", { nome: "BPC/LOAS", preco_cents: 150000 }));
+    expect(refazerRetratoPeloCatalogo).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_ID,
+      expect.any(Function),
+      expect.any(Function),
+    );
+    const { PATCH } = await import("./[id]/route");
+    await PATCH(pedido("PATCH", { preco_cents: 160000 }), { params: Promise.resolve({ id: TIPO_ID }) });
+    expect(refazerRetratoPeloCatalogo).toHaveBeenCalledTimes(2);
+  });
+
+  it("nome repetido (nada gravado) não refaz o retrato", async () => {
+    erroDoInsert = { code: "23505" };
+    const { POST } = await import("./route");
+    expect((await POST(pedido("POST", { nome: "BPC/LOAS", preco_cents: 1 }))).status).toBe(409);
+    expect(refazerRetratoPeloCatalogo).not.toHaveBeenCalled();
   });
 });

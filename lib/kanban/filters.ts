@@ -87,6 +87,12 @@ export interface LeadFilters {
   temperatura?: Temperatura;
   servico?: string;
   situacao?: Situacao;
+  /**
+   * v3 §8: `?recorte=painel` — só os leads que o painel de Dados conta (funil
+   * padrão, sem base importada, cadastro manual nem card de teste). Todo link
+   * do painel leva este parâmetro, para o quadro mostrar a mesma quantidade.
+   */
+  recorte?: "painel";
 }
 
 /** `?nivel=a` vale A: o link é colado à mão. Fora da lista, sem filtro. */
@@ -163,7 +169,8 @@ export function filtroLigado(f: LeadFilters): boolean {
       f.nivel ||
       f.temperatura ||
       f.servico?.trim() ||
-      f.situacao,
+      f.situacao ||
+      f.recorte,
   );
 }
 
@@ -199,6 +206,7 @@ export function filtersFromParams(
     temperatura: temperaturaDoParametro(sp.get("temp")),
     servico: sp.get("servico")?.trim() || undefined,
     situacao: situacaoDoParametro(sp.get("situacao")),
+    recorte: sp.get("recorte") === "painel" ? "painel" : undefined,
   };
 }
 
@@ -218,6 +226,7 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.temperatura) p.set("temp", f.temperatura);
   if (f.servico?.trim()) p.set("servico", f.servico.trim());
   if (f.situacao) p.set("situacao", f.situacao);
+  if (f.recorte) p.set("recorte", f.recorte);
   return p.toString();
 }
 
@@ -325,6 +334,7 @@ export function applyFilters(
     if (f.temperatura && l.qualidade?.temperatura !== f.temperatura) return false;
     if (f.servico?.trim() && !interesseCasa(l.qualidade?.interesse, f.servico)) return false;
     if (f.situacao && !l.qualidade?.situacoes.includes(f.situacao)) return false;
+    if (f.recorte === "painel" && l.noRecorteDoPainel !== true) return false;
     return true;
   });
 }

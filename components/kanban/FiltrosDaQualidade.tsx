@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -118,6 +119,36 @@ export function FiltrosDaQualidade({ filters, onChange, leads, rotuloDoInteresse
           </DropdownMenuItem>
         ))}
       </Chip>
+      {filters.recorte === "painel" && (
+        // v3 §8: o link do painel de Dados chega com o recorte dele, para o
+        // quadro mostrar a mesma quantidade. Tirar o recorte mostra todo card.
+        <span
+          data-testid="filtro-qualidade-recorte"
+          data-ligado="sim"
+          title={t("Só os leads que o painel de Dados conta: sem a base importada, o cadastro manual e os cards de teste.")}
+          className="inline-flex h-8 items-center rounded-full border border-accent bg-accent/10 pl-3 text-xs font-semibold text-text"
+        >
+          {t("Mesmo recorte do painel de Dados")}
+          <button
+            type="button"
+            data-testid="filtro-qualidade-recorte-tirar"
+            aria-label={`${t("Tirar filtro")}: ${t("Mesmo recorte do painel de Dados")}`}
+            onClick={() => onChange({ ...filters, recorte: undefined })}
+            className="ml-1 mr-1 flex h-6 w-6 items-center justify-center rounded-full text-base leading-none hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span aria-hidden>×</span>
+          </button>
+        </span>
+      )}
+      {filters.recorte === "painel" && (
+        <Link
+          href="/app/dados"
+          data-testid="voltar-para-dados"
+          className="text-xs font-semibold text-accent underline-offset-2 hover:underline"
+        >
+          {t("Voltar para Dados")}
+        </Link>
+      )}
     </div>
   );
 }

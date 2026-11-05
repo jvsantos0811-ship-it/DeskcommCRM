@@ -126,6 +126,11 @@ CRONS="
 # repetição enquanto a âncora não mudar. Minuto 37, e não o 23 da data do funil:
 # as duas varrem crm_leads e não devem disputar a mesma batida num self-host pequeno.
 37 * * * *|60|api/v1/cron/lead-time-triggers
+# O RETRATO DE DADOS (v3 §8, migration 9020). De hora em hora pelo mesmo motivo
+# do aniversario: quem decide e o relogio de CADA organizacao. A rodada so gera o
+# retrato da que ja passou das 06:00 e ainda nao tem o do dia; a que falhou e
+# refeita na hora seguinte. Minuto 11, longe das outras varreduras de crm_leads.
+11 * * * *|300|api/v1/cron/dados-retrato
 # A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
 # do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
 # 43, longe das outras varreduras horarias. Chave desligada: sai na hora.
