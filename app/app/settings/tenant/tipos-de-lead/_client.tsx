@@ -74,12 +74,18 @@ export function TiposDeLeadClient({ inicial, podeEditar }: Props) {
   }
 
   function atualizar(id: string, patch: Partial<TipoDeLeadNaTela>) {
+    // A marcação muda NA HORA (a caixa responde ao clique) e volta atrás se o
+    // servidor recusar: esperar a resposta deixava a caixa parada por um
+    // instante, e quem clica lê isso como "não pegou".
+    const anterior = tipos.find((x) => x.id === id);
+    setTipos((atual) => atual.map((x) => (x.id === id ? { ...x, ...patch } : x)));
     startTransition(async () => {
       try {
         const r = await apiClient.patch<{ data: TipoDeLeadNaTela }>(`/api/v1/tipos-de-lead/${id}`, patch);
         setTipos((atual) => atual.map((x) => (x.id === id ? r.data : x)));
         toast.success(t("Tipo de lead salvo."));
       } catch (err) {
+        if (anterior) setTipos((atual) => atual.map((x) => (x.id === id ? anterior : x)));
         toast.error(mensagemDoErro(err));
       }
     });
