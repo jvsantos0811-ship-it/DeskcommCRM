@@ -384,6 +384,10 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
         filters.overdueOnly ||
         filters.lostReason ||
         filters.lostCategory ||
+        filters.nivel ||
+        filters.temperatura ||
+        filters.servico ||
+        filters.situacao ||
         (filters.status && filters.status !== "all")) && (
         <Button
           variant="ghost"

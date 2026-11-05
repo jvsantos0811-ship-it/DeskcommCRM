@@ -46,6 +46,8 @@ interface StageColumnProps {
    */
   etapas?: ReadonlyArray<{ id: string; name: string }>;
   onMover?: (leadId: string, stageId: string) => void;
+  /** `rotuloDoInteresse(vocabulary)` do funil, para o porquê da nota no card. */
+  rotuloDoInteresse?: string | null;
 }
 
 export function StageColumn({
@@ -64,6 +66,7 @@ export function StageColumn({
   onRenomear,
   etapas,
   onMover,
+  rotuloDoInteresse,
 }: StageColumnProps) {
   const t = useT();
   // O TOTAL É POR MOEDA (#1531). Antes ele somava todos os `value_cents` e
@@ -274,6 +277,7 @@ export function StageColumn({
                 onOpen={onOpen}
                 etapas={etapas}
                 onMover={onMover ? (stageId) => onMover(lead.id, stageId) : undefined}
+                rotuloDoInteresse={rotuloDoInteresse}
               />
             ))}
             {provided.placeholder}

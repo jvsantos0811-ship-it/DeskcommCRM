@@ -1,4 +1,13 @@
 import type { Lead } from "@/lib/types/leads";
+import {
+  NIVEIS,
+  SITUACOES,
+  TEMPERATURAS,
+  type Nivel,
+  type Situacao,
+  type Temperatura,
+} from "@/lib/dados/qualidade";
+import { normalizarNomeDoTipo } from "@/lib/leads/tipo-de-lead";
 import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { cardTemMarcador, cardTemTodasNaMesmaCaixa } from "@/lib/kanban/marcadores-do-card";
 import {
@@ -67,6 +76,43 @@ export interface LeadFilters {
   lostReason?: string;
   /** A categoria do motivo de perda (issue #1537), resolvida no funil. */
   lostCategory?: string;
+  /**
+   * v3 §3 — os filtros da QUALIDADE DO LEAD, todos sobre `lead.qualidade` (a
+   * nota que a rota do quadro calcula com a mesma regra do painel de Dados):
+   * `?nivel=A|B|C|D`, `?temp=quente|morno|frio`, `?servico=<nome do tipo de
+   * lead>` e `?situacao=esperando_fechamento|parado|sem_resposta`. Lead sem
+   * nota (o quadro não conseguiu ler os fatos) não passa em nenhum deles.
+   */
+  nivel?: Nivel;
+  temperatura?: Temperatura;
+  servico?: string;
+  situacao?: Situacao;
+}
+
+/** `?nivel=a` vale A: o link é colado à mão. Fora da lista, sem filtro. */
+export function nivelDoParametro(v: string | null | undefined): Nivel | undefined {
+  const n = v?.trim().toUpperCase();
+  return (NIVEIS as readonly string[]).includes(n ?? "") ? (n as Nivel) : undefined;
+}
+
+export function temperaturaDoParametro(v: string | null | undefined): Temperatura | undefined {
+  const t = v?.trim().toLowerCase();
+  return (TEMPERATURAS as readonly string[]).includes(t ?? "") ? (t as Temperatura) : undefined;
+}
+
+export function situacaoDoParametro(v: string | null | undefined): Situacao | undefined {
+  const t = v?.trim().toLowerCase();
+  return (SITUACOES as readonly string[]).includes(t ?? "") ? (t as Situacao) : undefined;
+}
+
+/**
+ * O interesse do card casa com o do filtro? Pela MESMA régua do nome do tipo de
+ * lead (sem maiúscula, acento nem pontuação): `?servico=bpc loas` acha "BPC/LOAS".
+ */
+export function interesseCasa(interesse: string | null | undefined, filtro: string): boolean {
+  if (!interesse) return false;
+  const alvo = normalizarNomeDoTipo(filtro);
+  return alvo !== "" && normalizarNomeDoTipo(interesse) === alvo;
 }
 
 /**
@@ -113,7 +159,11 @@ export function filtroLigado(f: LeadFilters): boolean {
       f.lostReason ||
       f.lostCategory ||
       f.valueCentsMin != null ||
-      f.valueCentsMax != null,
+      f.valueCentsMax != null ||
+      f.nivel ||
+      f.temperatura ||
+      f.servico?.trim() ||
+      f.situacao,
   );
 }
 
@@ -145,6 +195,10 @@ export function filtersFromParams(
     overdueOnly: sp.get("overdue") === "1" || undefined,
     lostReason: sp.get("motivo") ?? undefined,
     lostCategory: sp.get("categoria") ?? undefined,
+    nivel: nivelDoParametro(sp.get("nivel")),
+    temperatura: temperaturaDoParametro(sp.get("temp")),
+    servico: sp.get("servico")?.trim() || undefined,
+    situacao: situacaoDoParametro(sp.get("situacao")),
   };
 }
 
@@ -160,6 +214,10 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.overdueOnly) p.set("overdue", "1");
   if (f.lostReason) p.set("motivo", f.lostReason);
   if (f.lostCategory) p.set("categoria", f.lostCategory);
+  if (f.nivel) p.set("nivel", f.nivel);
+  if (f.temperatura) p.set("temp", f.temperatura);
+  if (f.servico?.trim()) p.set("servico", f.servico.trim());
+  if (f.situacao) p.set("situacao", f.situacao);
   return p.toString();
 }
 
@@ -261,6 +319,12 @@ export function applyFilters(
       if (l.status !== "open") return false;
       if (!l.expected_close_date || l.expected_close_date >= today) return false;
     }
+    // v3 §3: a qualidade do lead. Ganho e perdido não têm nível, temperatura
+    // nem situação — ficam fora desses três filtros, como no painel.
+    if (f.nivel && l.qualidade?.nivel !== f.nivel) return false;
+    if (f.temperatura && l.qualidade?.temperatura !== f.temperatura) return false;
+    if (f.servico?.trim() && !interesseCasa(l.qualidade?.interesse, f.servico)) return false;
+    if (f.situacao && !l.qualidade?.situacoes.includes(f.situacao)) return false;
     return true;
   });
 }

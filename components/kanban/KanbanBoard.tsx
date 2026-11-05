@@ -20,6 +20,7 @@ import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { rotuloDoInteresse } from "@/lib/kanban/vocabulary";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -364,6 +365,7 @@ export function KanbanBoard({
             podeRenomear={podeRenomearEtapa}
             onRenomear={(nome) => renameStage.mutate({ stageId: stage.id, name: nome })}
             etapas={etapasDoMenu}
+            rotuloDoInteresse={rotuloDoInteresse(data.pipeline.vocabulary)}
             onMover={(leadId, stageId) => {
               const lead = data.leads.find((l) => l.id === leadId);
               if (lead) moverPeloPopup(lead, stageId);
@@ -389,6 +391,7 @@ export function KanbanBoard({
             .map((s) => ({ id: s.id, name: s.name, is_won: s.is_won, is_lost: s.is_lost }))}
           movendo={moveCard.isPending}
           onMoverParaEtapa={(stageId) => moverPeloPopup(leadDoDossie, stageId)}
+          rotuloDoInteresse={rotuloDoInteresse(data.pipeline.vocabulary)}
         />
       )}
 

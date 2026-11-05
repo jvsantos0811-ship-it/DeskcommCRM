@@ -27,6 +27,8 @@ import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { calcularQualidade, sinaisDaLinha, type LinhaDaQualidade } from "@/lib/dados/qualidade";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
@@ -476,6 +478,50 @@ async function withTarefas(
   };
 }
 
+/**
+ * Anexa a NOTA DE QUALIDADE (0–100), o nível A–D e o "por que" — v3, seção 2.
+ *
+ * Os fatos vêm de `fn_dados_qualidade_do_lead` (migration 9019, SECURITY
+ * INVOKER: vale a RLS de quem abre o quadro — o atendente em "só os seus" não
+ * recebe fato de lead de ninguém), e a nota sai de `calcularQualidade`, a MESMA
+ * regra do painel de Dados. É isso que faz `?nivel=A` no quadro mostrar os
+ * mesmos leads que o painel conta como A.
+ *
+ * Falha aqui NÃO derruba o quadro: a nota é leitura de apoio, e um quadro que
+ * não abre por causa dela é pior que um quadro sem selo. O erro vai para o log
+ * estruturado, e os cards saem sem a nota (o selo some, o filtro de nível não
+ * acha ninguém) — nunca com uma nota inventada.
+ */
+async function withQualidade(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  pipelineId: string,
+  leads: Lead[],
+  agora: Date,
+): Promise<Lead[]> {
+  if (leads.length === 0) return leads;
+  let resposta: { data: unknown; error: { code?: string; message: string } | null };
+  try {
+    resposta = await supabase.rpc("fn_dados_qualidade_do_lead", {
+      p_org: organizationId,
+      p_pipeline_id: pipelineId,
+    });
+  } catch (e) {
+    resposta = { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
+  }
+  const { data, error } = resposta;
+  if (error) {
+    logger.warn("quadro sem a nota de qualidade", { pipelineId, code: error.code, message: error.message });
+    return leads;
+  }
+  const porLead = new Map<string, LinhaDaQualidade>();
+  for (const linha of (data ?? []) as LinhaDaQualidade[]) porLead.set(linha.lead_id, linha);
+  return leads.map((lead) => {
+    const linha = porLead.get(lead.id);
+    return linha ? { ...lead, qualidade: calcularQualidade(sinaisDaLinha(linha), agora) } : lead;
+  });
+}
+
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
@@ -580,10 +626,18 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComTarefas.error, 500, { requestId });
   }
 
+  const leadsComQualidade = await withQualidade(
+    supabase,
+    (pipeline as Pipeline).organization_id,
+    pipelineId,
+    leadsComTarefas.leads,
+    new Date(),
+  );
+
   const leadsComConversa = await withConversas(
     supabase,
     (pipeline as Pipeline).organization_id,
-    leadsComTarefas.leads,
+    leadsComQualidade,
   );
   if (leadsComConversa.error) {
     return fail("internal_error", leadsComConversa.error, 500, { requestId });

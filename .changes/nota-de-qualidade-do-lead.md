@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Nota de qualidade do lead (0 a 100) e nível A a D no funil, com o porquê e filtros
+---
+Cada card do funil mostra um selo com o nível e a nota do lead, por exemplo "A · 86". Passando o mouse (ou clicando, ou com Enter no teclado) aparece o porquê: a chance de fechar × 0,4, etapa com chance de 50% ou mais (+15), interesse identificado (+15), respondeu à IA (+10, ou +20 com 3 respostas ou mais), respondeu nas últimas 72 h (+8) ou 24 h (+15), a IA marcou como morno (+5) ou quente (+10), e os descontos por nunca ter respondido depois de 48 h (−10) ou por mais de 7 dias sem responder (−10). Ganho vale 100; perdido, ou card repetido de um contato já desqualificado, vale 0. Nível A (65 ou mais) é fechar agora; B (45 a 64), empurrar; C (25 a 44), reaquecer; D (abaixo de 25), nutrir no automático. O mesmo selo aparece no pop-up do negócio. No topo do quadro há os filtros Nível, Temperatura, o interesse (com o nome que o funil usa: Benefício, Procedimento ou Serviço) e Situação (esperando fechamento, parado além do prazo da etapa, nunca recebeu resposta); cada um vira um endereço que pode ser copiado e aberto de novo, como `?nivel=A`. O atendente que vê só os próprios leads continua vendo só os dele.

@@ -1,4 +1,5 @@
 import type { ScoreBand } from "@/lib/kanban/score-band";
+import type { QualidadeDoLead } from "@/lib/dados/qualidade";
 import type { ResumoDasTarefas } from "@/lib/tarefas/tipos";
 
 /**
@@ -82,6 +83,14 @@ export interface Lead {
     last_message_at: string | null;
     unread: number;
   } | null;
+  /**
+   * Derivado (não é coluna): a NOTA DE QUALIDADE 0–100, o nível A–D, a
+   * temperatura, a situação e o "por que" (v3 §2). A rota do quadro calcula com
+   * `calcularQualidade` (`lib/dados/qualidade.ts`) sobre os fatos da
+   * `fn_dados_qualidade_do_lead` (9019). Ausente quando o quadro não conseguiu
+   * ler os fatos: o card fica sem selo, nunca com nota inventada.
+   */
+  qualidade?: QualidadeDoLead;
   score?: {
     probability: number;
     reason: string;
