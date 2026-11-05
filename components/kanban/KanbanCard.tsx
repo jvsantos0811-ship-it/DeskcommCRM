@@ -11,6 +11,7 @@ import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
 import { ConversaSlot } from "./ConversaSlot";
 import { ScoreSlot } from "./ScoreSlot";
+import { SeloDaNota } from "./SeloDaNota";
 import { OwnerBadge, ownerInitials } from "./OwnerBadge";
 import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { ContatoNoCard } from "./ContatoNoCard";
@@ -54,6 +55,8 @@ interface KanbanCardProps {
   etapas?: ReadonlyArray<{ id: string; name: string }>;
   /** Move pela mesma mutação do arrasto e do pop-up. */
   onMover?: (stageId: string) => void;
+  /** Como o funil chama o interesse (`rotuloDoInteresse`) — o "Benefício identificado" do porquê. */
+  rotuloDoInteresse?: string | null;
 }
 
 function formatValor(cents: number | null, currency: string | null): string | null {
@@ -95,6 +98,7 @@ export function KanbanCard({
   onOpen,
   etapas,
   onMover,
+  rotuloDoInteresse,
 }: KanbanCardProps) {
   const t = useT();
   const value = formatValor(card.valueCents, card.currency);
@@ -266,6 +270,17 @@ export function KanbanCard({
                 </button>
               </h3>
             </div>
+            {/* O SELO DA NOTA (v3 §2): nível e nota, com o porquê no mouse,
+                no clique e no teclado. Mora na linha do título, que já tem
+                altura fixa de duas linhas — o card não cresce (PC-013). */}
+            {lead.qualidade && (
+              <SeloDaNota
+                qualidade={lead.qualidade}
+                nome={card.title}
+                rotuloDoInteresse={rotuloDoInteresse}
+                className="mt-0.5"
+              />
+            )}
           </div>
 
           {/* ② valor — só quando o negócio TEM valor (PC-013). O "—" reservado

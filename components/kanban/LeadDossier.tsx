@@ -21,6 +21,7 @@ import { ConversaNoDossie } from "./ConversaNoDossie";
 import { EtapasDoNegocio, type EtapaDoNegocio } from "./EtapasDoNegocio";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
+import { SeloDaNota } from "./SeloDaNota";
 import { BotaoDaLinhaDoTempo, PainelDaLinhaDoTempo } from "./LinhaDoTempoDoNegocio";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
@@ -51,6 +52,8 @@ interface Props {
   /** Move o negócio pela MESMA mutação do arrasto do quadro. */
   onMoverParaEtapa?: (stageId: string) => void;
   movendo?: boolean;
+  /** `rotuloDoInteresse(vocabulary)` do funil, para o porquê da nota. */
+  rotuloDoInteresse?: string | null;
 }
 
 function formatValor(cents: number | null, currency: string | null): string {
@@ -87,6 +90,7 @@ export function LeadDossier({
   etapas,
   onMoverParaEtapa,
   movendo = false,
+  rotuloDoInteresse,
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -175,6 +179,9 @@ export function LeadDossier({
           >
             {stageName}
           </span>
+          {lead.qualidade && (
+            <SeloDaNota qualidade={lead.qualidade} nome={lead.title} rotuloDoInteresse={rotuloDoInteresse} />
+          )}
           <div className="min-w-0 shrink-0 text-xs">
             <OwnerBadge
               compacto

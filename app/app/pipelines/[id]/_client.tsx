@@ -25,6 +25,8 @@ import { CalendarioDoFunil } from "@/components/kanban/CalendarioDoFunil";
 import { AbasDoFunil, CHAVE_ULTIMO_FUNIL } from "@/components/kanban/AbasDoFunil";
 import { gravarPreferencia } from "@/hooks/ui/usePreferenciaDoNavegador";
 import { FilterBar } from "@/components/kanban/FilterBar";
+import { FiltrosDaQualidade } from "@/components/kanban/FiltrosDaQualidade";
+import { rotuloDoInteresse } from "@/lib/kanban/vocabulary";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { Button } from "@/components/ui/button";
@@ -281,12 +283,21 @@ export function PipelinePageClient({
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="pt-3">
+          <div className="flex flex-col gap-2 pt-3">
             <FilterBar
               filters={filters}
               onChange={setFilters}
               leads={data?.leads ?? []}
               settings={data?.pipeline.settings}
+            />
+            {/* v3 §3: nível, temperatura, interesse e situação — os links do
+                painel de Dados chegam aqui com o chip ligado, e filtro ligado
+                mantém esta barra aberta (`filtroLigado`). */}
+            <FiltrosDaQualidade
+              filters={filters}
+              onChange={setFilters}
+              leads={data?.leads ?? []}
+              rotuloDoInteresse={rotuloDoInteresse(data?.pipeline.vocabulary)}
             />
           </div>
         </div>
