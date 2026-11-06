@@ -186,6 +186,10 @@ export const POLITICAS_DE_AVISO = {
     refs: ["task"],
     orientacao: "A tarefa venceu sem conclusão. Abra e conclua, ou reagende o prazo se ele não for mais possível.",
   },
+  ninguem_respondeu: {
+    refs: ["conversation"],
+    orientacao: "Abra a conversa e responda o lead. Este aviso se resolve sozinho quando alguém da equipe ou a IA responder.",
+  },
   other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
@@ -201,6 +205,7 @@ const ROTULO_POR_KIND: Record<string, string> = {
   message_send_stuck: "Abrir uma conversa afetada",
   proposta_travada: "Abrir proposta",
   voice_call_missed: "Ligar de volta",
+  ninguem_respondeu: "Responder o lead",
   // "Abrir o fluxo" convida a olhar; o aviso pede CONFERIR qual fluxo está
   // parado antes de ir ligá-lo no agente.
   followup_sem_agente: "Ver o fluxo parado",

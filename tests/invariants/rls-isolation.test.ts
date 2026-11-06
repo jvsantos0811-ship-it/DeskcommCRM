@@ -609,6 +609,13 @@ beforeAll(() => {
           values (v_org, v_conv, gen_random_uuid());
         end if;
 
+        -- migration 9021 (fork): veredito da leitura curta "a conversa terminou?"
+        -- do aviso Ninguem respondeu. So ids e o veredito; escrita so o cron.
+        if not exists (select 1 from public.conferencias_de_fim_da_conversa where organization_id = v_org) then
+          insert into public.conferencias_de_fim_da_conversa (organization_id, conversation_id, message_id, terminou)
+          values (v_org, v_conv, gen_random_uuid(), false);
+        end if;
+
         -- migration 9010 (fork): recusa/bloqueio da IA. So ids e motivo,
         -- nunca texto de conversa. Leitura org-scoped sem gate de papel; a
         -- escrita so o servidor/worker faz (authenticated so tem SELECT).
@@ -939,6 +946,10 @@ export const TABLES = [
   // o escritório conversa e onde a IA travou. Leitura org-scoped sem gate de
   // papel; escrita só pelo servidor/worker.
   "recusas_da_ia",
+  // migration 9021 (fork) — veredito da leitura curta "a conversa terminou?" do
+  // aviso Ninguém respondeu: só ids e o veredito, mas dizem com quem o
+  // escritório conversa. Leitura org-scoped sem gate de papel; escrita só o cron.
+  "conferencias_de_fim_da_conversa",
   // migration 9011 (fork) — assinatura confirmada: o ganho por evento (pessoa
   // gerente ou provedor), com data e quem registrou. Vazar entrega ao vizinho
   // quem fechou contrato com o escritório e quando. Leitura org-scoped sem gate

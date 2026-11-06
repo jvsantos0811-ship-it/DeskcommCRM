@@ -396,6 +396,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
   },
   {
+    id: "conferir_fim_da_conversa",
+    rotulo: "Conferir se a conversa terminou",
+    oQueFaz:
+      "Quando um lead escreveu e ninguém respondeu em 1 hora de expediente, lê as últimas 6 mensagens e diz se a conversa já terminou (um agradecimento, uma despedida) ou se alguém precisa responder. Na dúvida, a Central recebe o aviso.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/escalacao/conferir-fim-da-conversa.ts",
+    sintomaDeFalha:
+      "Conversas que terminaram com um agradecimento também geram o aviso \"Um lead escreveu e ninguém respondeu\" — sobra aviso, nunca falta.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "triagem_de_historico",
     rotulo: "Separar os contatos antigos importados",
     oQueFaz:

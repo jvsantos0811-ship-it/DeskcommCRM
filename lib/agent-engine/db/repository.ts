@@ -126,6 +126,10 @@ export type InboxKind =
   // dois dispara pela MESMA lista (`lib/tarefas/preferencia-de-lembrete.ts`).
   | 'task_due'
   | 'task_overdue'
+  // (migration 9021, PM-025 §7) O lead escreveu e nem a IA nem uma pessoa
+  // respondeu em 1 hora de expediente. Um aberto por conversa; resolve sozinho
+  // quando alguém responde (`lib/escalacao/ninguem-respondeu-rodada.ts`).
+  | 'ninguem_respondeu'
   | 'other';
 
 export interface InboxItemRow {

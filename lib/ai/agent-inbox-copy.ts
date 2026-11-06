@@ -119,6 +119,8 @@ export const KIND_LABEL = {
   // ainda dá tempo de concluir ou se já é o vencimento que aconteceu.
   task_due: "Uma tarefa está perto do vencimento",
   task_overdue: "Uma tarefa venceu sem conclusão",
+  // PM-025 §7: o rótulo diz o fato — um lead esperando e ninguém do lado de cá.
+  ninguem_respondeu: "Um lead escreveu e ninguém respondeu",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

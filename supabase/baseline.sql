@@ -10199,6 +10199,9 @@ alter table public.agent_inbox_items
     -- lista pelas razões de sempre (bloco único por constraint, #159).
     'task_due',
     'task_overdue',
+    -- (migration 9021, PM-025 §7) Um lead escreveu e ninguém respondeu em 1
+    -- hora de expediente. Um aberto por conversa; resolve sozinho (#159: bloco único).
+    'ninguem_respondeu',
     'other'
   ));
 
@@ -57941,6 +57944,54 @@ grant execute on function public.fn_dados_gravar_retrato(uuid, text, integer, js
 
 notify pgrst, 'reload schema';
 
+
+-- ---- aviso Ninguém respondeu: um aberto por conversa e a memória da leitura curta (migration 9021) ----
+-- Racional inteiro no cabeçalho da migration 9021. O kind novo entrou no bloco único do CHECK, acima.
+create unique index if not exists agent_inbox_ninguem_respondeu_aberto_unico
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where status = 'open' and kind = 'ninguem_respondeu';
+
+create table if not exists public.conferencias_de_fim_da_conversa (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  -- A última mensagem do lead quando a pergunta foi feita. Sem FK: a mensagem
+  -- pode ser apagada pela anonimização, e o veredito sem texto não precisa dela.
+  message_id uuid not null,
+  terminou boolean not null,
+  -- leitura = o modelo respondeu; sem_modelo = não há modelo nem chave (avisa);
+  -- teto = o teto de gasto da IA parou (avisa); falhou = a chamada deu erro (avisa).
+  origem text not null default 'leitura',
+  modelo text,
+  created_at timestamptz not null default now(),
+  constraint conferencias_de_fim_da_conversa_unica unique (organization_id, conversation_id, message_id)
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'conferencias_de_fim_da_conversa_origem_check') then
+    alter table public.conferencias_de_fim_da_conversa
+      add constraint conferencias_de_fim_da_conversa_origem_check
+      check (origem in ('leitura', 'sem_modelo', 'teto', 'falhou'));
+  end if;
+end $$;
+
+create index if not exists conferencias_de_fim_da_conversa_conversa_idx
+  on public.conferencias_de_fim_da_conversa (organization_id, conversation_id);
+
+comment on table public.conferencias_de_fim_da_conversa is
+  'PM-025 §7 (migration 9021): o veredito da leitura curta "a conversa terminou?" por mensagem do lead, para o aviso Ninguém respondeu não perguntar duas vezes. Sem texto nem nome. Leitura: membro da organização; escrita só pelo service_role.';
+
+alter table public.conferencias_de_fim_da_conversa enable row level security;
+
+drop policy if exists conferencias_de_fim_da_conversa_select on public.conferencias_de_fim_da_conversa;
+create policy conferencias_de_fim_da_conversa_select on public.conferencias_de_fim_da_conversa
+  for select to authenticated
+  using (organization_id in (select public.fn_user_org_ids()));
+
+revoke all on table public.conferencias_de_fim_da_conversa from public, anon, authenticated;
+grant select on table public.conferencias_de_fim_da_conversa to authenticated;
+grant all on table public.conferencias_de_fim_da_conversa to service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

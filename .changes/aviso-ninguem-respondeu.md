@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Aviso na Central quando um lead escreve e ninguém responde
+---
+Em Configurações › Distribuição de atendimento dá para ligar o aviso "Um lead escreveu e ninguém respondeu". Com ele ligado, a Central avisa quando a última mensagem de um lead ficou 1 hora de expediente sem resposta — nem da IA, nem de alguém da equipe pelo CRM ou pelo celular do escritório. O aviso diz quando o lead escreveu e a etapa, leva direto à conversa e some sozinho quando alguém responde. Despedidas como "obrigado", "ok" ou um 👍 logo depois de uma resposta não geram aviso; quando a forma da mensagem não basta, uma leitura curta das últimas 6 mensagens decide, e na dúvida o aviso sai. A resposta automática do WhatsApp Business (saudação ou ausência) não conta como resposta. O expediente é o horário da equipe (sem horário cadastrado, seg–sex das 8h às 18h), sem contar feriados nacionais. Só contam mensagens que chegarem depois de ligar o aviso. Na mesma tela, a empresa escolhe quais funis contam e quais marcadores tiram o lead da conta; grupo, contato bloqueado e o número interno de avisos ficam de fora. O modelo da leitura curta ("Conferir se a conversa terminou") pode ser escolhido em IA › Provedores.
