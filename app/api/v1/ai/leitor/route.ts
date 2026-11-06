@@ -3,8 +3,10 @@
  *       (PM-027 §8): a configuração, os modelos com preço, custo estimado por mês,
  *       nota na bateria e se há chave (gerente+).
  * PATCH /api/v1/ai/leitor — liga, desliga ou troca o modelo do Leitor (admin).
- *       Só liga com modelo APROVADO na bateria e com a chave do provedor na
- *       organização; a reserva segue a mesma régua. Grava `settings.leitor`
+ *       Só liga com modelo APROVADO na bateria e com chave para ele — a da
+ *       organização ou, sem ela, a da instalação (decisão do dono, 06/11: o
+ *       Leitor usa a mesma chave de IA que o resto do CRM); a reserva segue a
+ *       mesma régua. Grava `settings.leitor`
  *       (merge, sem apagar o alcance) e a escolha do ponto `leitor_da_conversa`.
  *       Ligar marca `ligado_em`: nada anterior é lido (sem carga inicial, §3).
  */
@@ -40,7 +42,7 @@ const corpoSchema = z.strictObject({
 const MENSAGEM: Record<RecusaDoLeitor, string> = {
   sem_modelo: "Escolha um modelo e rode a bateria para ligar o Leitor.",
   modelo_nao_aprovado: "Este modelo não acertou 100% da bateria e não pode ser ligado.",
-  sem_chave: "Cadastre a chave deste provedor em IA › Credenciais antes de ligar.",
+  sem_chave: "Nenhuma chave disponível para este provedor: cadastre em IA › Credenciais.",
   reserva_igual: "A reserva precisa ser um modelo diferente do principal.",
   reserva_nao_aprovada: "O modelo de reserva também precisa ter acertado 100% da bateria.",
 };
@@ -104,7 +106,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     .eq("id", orgId);
   if (eUpd) return fail("internal_error", eUpd.message, 500, { requestId });
 
-  // A escolha do ponto na tela Provedores acompanha o modelo ligado, com a chave da organização.
+  // A escolha do ponto na tela Provedores acompanha o modelo ligado, com a chave da
+  // organização; sem ela, `credential_id` nulo e a leitura usa a chave da instalação.
   if (pedido.ligado && modeloEscolhido) {
     const { data: cred } = await admin
       .from("ai_provider_credentials")

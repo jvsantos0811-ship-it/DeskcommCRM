@@ -6,9 +6,12 @@
  *     aparece em andamento (quem a roda é o cron, com a chave da empresa; aqui não
  *     há chave de IA, e a prova é a fila, não a nota).
  *  2. O admin de uma empresa abre IA › Provedores e vê o cartão do Leitor:
- *     desligado, o aviso da bateria, a nota de um modelo aprovado e o seletor que
- *     só aceita modelo aprovado COM chave do provedor (sem chave, a opção fica
- *     desabilitada e a linha diz "sem chave nesta empresa").
+ *     desligado, o aviso da bateria, a nota de um modelo aprovado, de onde vem a
+ *     chave de cada modelo (a da empresa, "usa a chave da instalação" ou "sem
+ *     chave") e o seletor que só aceita modelo aprovado COM chave (sem chave
+ *     nenhuma, a opção fica desabilitada). No CI não há chave de IA na
+ *     instalação nem na empresa: a prova aqui é o "sem chave"; a da instalação
+ *     tem a prova de unidade (`lib/dados/leitor/leitor-da-org.test.ts`).
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -132,16 +135,21 @@ test("o admin da empresa vê o cartão do Leitor: desligado, a nota e o seletor 
   await expect(haiku).toContainText("Aprovado");
   await expect(haiku).toContainText("2.4 s");
 
-  // Sem a chave da Anthropic nesta empresa, o aprovado aparece desabilitado no seletor.
+  // A linha diz de onde vem a chave; sem chave nenhuma, o aprovado fica desabilitado no seletor.
   const opcao = cartao.getByTestId("leitor-escolher-modelo").locator(`option[value="${MODELO}"]`);
   await expect(opcao).toHaveCount(1);
-  if (await haiku.getByText("sem chave nesta empresa").count()) {
-    // `toBeDisabled()` não lê o `disabled` de um <option> (medido no CI: o
-    // Playwright achou `<option disabled …>` e respondeu "enabled"). A
-    // propriedade do elemento é a pergunta certa.
-    await expect(opcao).toHaveJSProperty("disabled", true);
-    await expect(cartao.getByTestId("leitor-ligar")).toBeDisabled();
-  }
+  const origem = haiku.getByTestId("leitor-origem-da-chave");
+  await expect(origem).toBeVisible();
+  const deOnde = await origem.getAttribute("data-origem");
+  const rotulos: Record<string, string> = { empresa: "chave da empresa", instalacao: "usa a chave da instalação", nenhuma: "sem chave" };
+  const rotulo = rotulos[deOnde ?? ""];
+  expect(rotulo, `origem da chave inesperada: ${deOnde}`).toBeDefined();
+  await expect(origem).toHaveText(rotulo!);
+  // `toBeDisabled()` não lê o `disabled` de um <option> (medido no CI: o
+  // Playwright achou `<option disabled …>` e respondeu "enabled"). A
+  // propriedade do elemento é a pergunta certa.
+  await expect(opcao).toHaveJSProperty("disabled", deOnde === "nenhuma");
+  if (deOnde === "nenhuma") await expect(cartao.getByTestId("leitor-ligar")).toBeDisabled();
 
   fs.mkdirSync(EVIDENCIA, { recursive: true });
   await cartao.screenshot({ path: path.join(EVIDENCIA, "2-cartao-do-leitor.png") });

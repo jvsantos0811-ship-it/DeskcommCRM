@@ -4,9 +4,11 @@
  * O CARTÃO DO LEITOR DA CONVERSA na tela Provedores (PM-027 §8).
  *
  * Mostra, por modelo, o preço do catálogo, o custo estimado por mês nesta
- * empresa, a nota na bateria (acertos/total, com a data) e o tempo médio. Liga o
- * Leitor só com modelo aprovado na bateria (100% nos casos que bloqueiam) e com a
- * chave do provedor cadastrada; a reserva segue a mesma régua. A bateria roda na
+ * empresa, a nota na bateria (acertos/total, com a data), o tempo médio e de onde
+ * vem a chave (a da empresa, a da instalação ou nenhuma). Liga o Leitor só com
+ * modelo aprovado na bateria (100% nos casos que bloqueiam) e com chave para ele —
+ * sem chave própria, vale a da instalação (decisão de 06/11); a reserva segue a
+ * mesma régua. A bateria roda na
  * área do dono da plataforma (a aprovação vale para todos os escritórios,
  * decisão de 06/11): aqui o dono vê o atalho "Testar na bateria".
  */
@@ -29,6 +31,12 @@ const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.
 function dolares(cents: number | null): string {
   if (cents === null) return "—";
   return `US$ ${(cents / 100).toFixed(2)}`;
+}
+
+function rotuloDaChave(m: ModeloNoCartao, t: (s: string) => string): string {
+  if (m.origemDaChave === "empresa") return t("chave da empresa");
+  if (m.origemDaChave === "instalacao") return t("usa a chave da instalação");
+  return t("sem chave");
 }
 
 function precoPorMilhao(m: ModeloNoCartao): string {
@@ -189,7 +197,9 @@ export function CartaoDoLeitor() {
                 <tr key={chave(m)} className="border-t border-border" data-testid="leitor-modelo" data-modelo={chave(m)}>
                   <td className="py-1 pr-3">
                     <span className="font-medium">{m.nome}</span>
-                    {!m.temChave ? <span className="block text-muted-foreground">{t("sem chave nesta empresa")}</span> : null}
+                    <span className="block text-muted-foreground" data-testid="leitor-origem-da-chave" data-origem={m.origemDaChave ?? "nenhuma"}>
+                      {rotuloDaChave(m, t)}
+                    </span>
                   </td>
                   <td className="py-1 pr-3 tabular-nums">{precoPorMilhao(m)}</td>
                   <td className="py-1 pr-3 tabular-nums">{dolares(m.custoPorMesCents)}</td>
