@@ -26,6 +26,7 @@ import { fichaDoLeitorSchema, type FichaDoLeitor } from "@/lib/dados/ficha";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 import type { ModeloDoLeitor } from "./config";
+import { montarModeloEscolhido } from "./modelo-escolhido";
 
 export const PONTO_DO_LEITOR = "leitor_da_conversa";
 const TEMPO_LIMITE_MS = 60_000;
@@ -39,6 +40,8 @@ export interface EntradaDaLeitura {
   /** A conversa transcrita (`transcreverConversa`). */
   conversa: string;
   aprovado: ModeloDoLeitor;
+  /** Tentada uma vez quando o provedor do principal falha (PM-027 §8). */
+  reserva?: ModeloDoLeitor | null;
 }
 
 export type ResultadoDaLeitura =
@@ -50,13 +53,14 @@ export type ResultadoDaLeitura =
 
 export type Leitor = (e: EntradaDaLeitura) => Promise<ResultadoDaLeitura>;
 
-type Classificar = (
+export type Classificar = (
   model: LanguageModel,
   sistema: string,
   conversa: string,
 ) => Promise<{ ficha: FichaDoLeitor; promptTokens: number; completionTokens: number }>;
 
-const classificarComModelo: Classificar = async (model, sistema, conversa) => {
+/** A leitura em si (também usada pela bateria, com o modelo que ela testa). */
+export const lerComModelo: Classificar = async (model, sistema, conversa) => {
   const r = await generateObject({
     model,
     schema: fichaDoLeitorSchema,
@@ -82,7 +86,7 @@ export function idDoModeloAprovado(m: ModeloDoLeitor): string {
 }
 
 /** O Leitor de produção. `classificar` existe para o teste. */
-export function criarLeitor(admin: ReturnType<typeof createAdminClient>, classificar: Classificar = classificarComModelo): Leitor {
+export function criarLeitor(admin: ReturnType<typeof createAdminClient>, classificar: Classificar = lerComModelo): Leitor {
   return async (e) => {
     const aprovado = idDoModeloAprovado(e.aprovado);
     const resolvido = await resolverModeloDoPonto(PONTO_DO_LEITOR, e.organizationId, aprovado);
@@ -128,7 +132,42 @@ export function criarLeitor(admin: ReturnType<typeof createAdminClient>, classif
         latency_ms: Date.now() - t0,
         erro: { message: erro },
       });
+      if (e.reserva) {
+        const naReserva = await lerNaReserva(admin, e, e.reserva, classificar);
+        if (naReserva) return naReserva;
+      }
       return { tipo: "falhou", modelo: resolvido.modelId, erro };
     }
   };
+}
+
+/** Uma tentativa com o modelo de reserva, com a chave da organização. `null` = não deu. */
+async function lerNaReserva(
+  admin: ReturnType<typeof createAdminClient>,
+  e: EntradaDaLeitura,
+  reserva: ModeloDoLeitor,
+  classificar: Classificar,
+): Promise<ResultadoDaLeitura | null> {
+  const montado = await montarModeloEscolhido(admin as never, reserva, e.organizationId);
+  if (!montado) return null;
+  const t0 = Date.now();
+  try {
+    const c = await classificar(montado.model, e.sistema, e.conversa);
+    const ficha = fichaDoLeitorSchema.parse(c.ficha);
+    const latenciaMs = Date.now() - t0;
+    const custo = await computeCost({ model: montado.modelId, promptTokens: c.promptTokens, completionTokens: c.completionTokens });
+    await registrarChamadaDeIa(admin as never, {
+      organization_id: e.organizationId,
+      contact_id: e.contactId,
+      purpose: "leitor_da_conversa",
+      model: montado.modelId,
+      input_tokens: c.promptTokens,
+      output_tokens: c.completionTokens,
+      cost_cents: custo,
+      latency_ms: latenciaMs,
+    });
+    return { tipo: "lida", ficha, modelo: montado.modelId, latenciaMs };
+  } catch {
+    return null;
+  }
 }

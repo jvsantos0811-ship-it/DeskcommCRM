@@ -1269,6 +1269,14 @@ export const AUDIT_ACTIONS = [
   // a rodada (a que não fez nada não audita; metadata: origem, dia, lidos,
   // falhas, restantes, avisos, parou).
   "leitor.rodada",
+  // PM-027 §8–§9: o dono pediu um modelo na bateria do Leitor (metadata: modelo,
+  // juiz, organização da chave); a rodada terminou (placar); casos carregados
+  // (criados, ignorados); e a configuração do Leitor numa organização (ligar,
+  // desligar, modelo, reserva, prefixos, termo — antes e depois).
+  "leitor.bateria_pedida",
+  "leitor.bateria_terminada",
+  "leitor.bateria_casos_carregados",
+  "settings.leitor_atualizado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

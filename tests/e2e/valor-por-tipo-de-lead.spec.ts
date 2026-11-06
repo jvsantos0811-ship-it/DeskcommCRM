@@ -69,6 +69,28 @@ test.describe("v3 §1.1 — Configurações › Valor por tipo de lead", () => {
     await page.screenshot({ path: path.join(EVIDENCIA, "valor-por-tipo-de-lead-admin.png"), fullPage: true });
   });
 
+  test("o admin escreve o checklist de requisitos mínimos (PM-027) e ele fica depois de recarregar", async ({ page }) => {
+    creds = (await loginComoAdmin(page, creds)) as CredsE2E;
+    await page.goto("/app/settings/tenant/tipos-de-lead");
+    await expect(linha(page)).toBeVisible({ timeout: 30_000 });
+    await expect(linha(page).getByTestId("tipo-de-lead-requisitos-resumo")).toHaveText("Nenhum");
+    await linha(page).getByTestId("tipo-de-lead-editar-requisitos").click();
+    await linha(page).getByTestId("tipo-de-lead-requisitos-texto").fill("houve acidente\n\ncarteira assinada na data\n");
+    const gravou = page.waitForResponse(
+      (r) => r.url().includes("/api/v1/tipos-de-lead/") && r.request().method() === "PATCH",
+      { timeout: 15_000 },
+    );
+    await linha(page).getByTestId("tipo-de-lead-salvar-requisitos").click();
+    expect((await gravou).status()).toBe(200);
+    await page.reload();
+    await expect(linha(page).getByTestId("tipo-de-lead-requisitos-resumo")).toHaveText("2 requisitos", { timeout: 30_000 });
+    await expect(linha(page).getByTestId("tipo-de-lead-requisitos-resumo")).toHaveAttribute(
+      "title",
+      "houve acidente · carteira assinada na data",
+    );
+    await page.screenshot({ path: path.join(EVIDENCIA, "valor-por-tipo-de-lead-requisitos.png"), fullPage: true });
+  });
+
   test("o atendente vê a lista, mas não muda", async ({ page }) => {
     await loginAtendente(page);
     await page.goto("/app/settings/tenant/tipos-de-lead");

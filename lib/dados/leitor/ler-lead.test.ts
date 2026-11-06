@@ -109,3 +109,20 @@ describe("uma leitura do Leitor", () => {
     expect(mesmoModelo("openai/gpt-6-luna", "claude-haiku-5-5")).toBe(false);
   });
 });
+
+describe("o modelo de reserva", () => {
+  it("o principal falhou: tenta uma vez a reserva, com a chave da organização", async () => {
+    vi.resetModules();
+    const montar = vi.fn(async () => ({ model: {}, modelId: "openai/gpt-6-luna", origem: "credencial_da_organizacao" }));
+    vi.doMock("./modelo-escolhido", () => ({ montarModeloEscolhido: montar }));
+    const { criarLeitor: criar } = await import("./ler-lead");
+    const classificar = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("provedor fora do ar"))
+      .mockResolvedValueOnce({ ficha: FICHA, promptTokens: 10, completionTokens: 5 });
+    const r = await criar({} as never, classificar)({ ...entrada, reserva: { provider: "openai", model_id: "gpt-6-luna" } });
+    expect(r).toMatchObject({ tipo: "lida", modelo: "openai/gpt-6-luna" });
+    expect(montar).toHaveBeenCalledWith({}, { provider: "openai", model_id: "gpt-6-luna" }, "org-1");
+    vi.doUnmock("./modelo-escolhido");
+  });
+});

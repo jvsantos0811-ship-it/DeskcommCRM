@@ -24,6 +24,7 @@ import {
   Stack,
   Receipt,
   PlugsConnected,
+  Robot,
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -120,6 +121,10 @@ const NAV_ITEMS: NavItem[] = [
   // A porta das chaves da agência (migration 9014): a chave que alcança todas
   // as empresas pelo MCP é da INSTALAÇÃO, e só o dono a cria, troca e revoga.
   { href: "/admin/chaves-da-agencia", label: "Chaves da agência", icon: PlugsConnected },
+  // A bateria do Leitor da conversa (PM-027, migration 9023): a aprovação de um
+  // modelo vale para todos os escritórios, e as conversas dos casos não saem da
+  // organização de origem — por isso é do dono, e não de cada empresa.
+  { href: "/admin/bateria-do-leitor", label: "Bateria do Leitor", icon: Robot },
 ];
 
 interface AdminSidebarProps {

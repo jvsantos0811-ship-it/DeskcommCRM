@@ -13,7 +13,7 @@
 -- "Ok" 39%, "Boa tarde" 41%, "Só um momento" 38%.
 --
 -- Esta função só CONTA (texto, conversas, vezes, no prazo); a proporção e a
--- decisão moram em `lib/mensagens/textos-automaticos.ts`, junto com a mesma
+-- decisão moram em `lib/messaging/textos-automaticos.ts`, junto com a mesma
 -- normalização do texto (espaços juntos, sem espaço nas pontas, minúsculas).
 --
 -- "Depois da mensagem do lead" = a última mensagem recebida do lead na mesma
@@ -88,4 +88,4 @@ revoke execute on function public.fn_textos_automaticos_do_celular(uuid, timesta
 grant execute on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) to service_role;
 
 comment on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) is
-  'PM-027 §6 (migration 9024): os textos que o celular do escritório mandou IGUAIS em 3+ conversas desde p_desde, com quantas vezes saíram até p_segundos depois da mensagem do lead. A decisão (80% no prazo = automático) mora em lib/mensagens/textos-automaticos.ts. Só o service_role executa.';
+  'PM-027 §6 (migration 9024): os textos que o celular do escritório mandou IGUAIS em 3+ conversas desde p_desde, com quantas vezes saíram até p_segundos depois da mensagem do lead. A decisão (80% no prazo = automático) mora em lib/messaging/textos-automaticos.ts. Só o service_role executa.';

@@ -44,6 +44,7 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { CartaoDeMapas } from "./CartaoDeMapas";
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
+import { CartaoDoLeitor } from "./CartaoDoLeitor";
 
 interface Ponto {
   id: string;
@@ -209,6 +210,8 @@ export function PainelDeProvedores() {
       <CartaoDoPadrao dados={dados} aoSalvar={carregar} />
 
       <CartaoDoJev dados={jev.dados} erro={jev.erro} recarregar={jev.recarregar} />
+
+      <CartaoDoLeitor />
 
       <div className="space-y-8">
         {porPapel.map(({ papel, info, pontos }) => (

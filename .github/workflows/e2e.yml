@@ -1305,6 +1305,7 @@ jobs:
       # PREVISÃO, não medida: parte 6 ~1000s de casos, parte 7 ~400s.
       SPECS_PARTE_7: >-
         integracao-dados-fontes-liberadas.spec.ts
+        bateria-do-leitor.spec.ts
         passagem-entre-agentes.spec.ts
         regras-da-ia-repeticao.spec.ts
         sons-dos-avisos.spec.ts

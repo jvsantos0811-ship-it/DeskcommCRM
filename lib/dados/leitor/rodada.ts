@@ -27,7 +27,7 @@ import { logger } from "@/lib/logger";
 
 import { configDoLeitor, leitorPodeRodar } from "./config";
 import type { Leitor } from "./ler-lead";
-import { montarPromptDoLeitor, transcreverConversa, VERSAO_DO_PROMPT, type MensagemParaOLeitor } from "./prompt";
+import { montarPromptDoLeitor, transcreverConversa, VERSAO_DO_PROMPT, type MensagemParaOLeitor, type VariaveisDoPrompt } from "./prompt";
 import { decidirLeitura } from "./selecao";
 
 const DIA_MS = 86_400_000;
@@ -246,6 +246,7 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
         sistema,
         conversa: transcreverConversa(mensagens, expediente.timezone),
         aprovado: pode.modelo,
+        reserva: config.reserva,
       });
       if (leitura.tipo === "sem_modelo" || leitura.tipo === "modelo_diferente" || leitura.tipo === "teto") {
         r.parou = leitura.tipo;
@@ -288,7 +289,12 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
 
 // ─── leituras e gravações ───────────────────────────────────────────────────
 
-async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: ReturnType<typeof configDoLeitor>): Promise<string> {
+/** As variáveis do prompt-molde desta organização, hoje (também congeladas nos casos da bateria). */
+export async function variaveisDoPromptDaOrg(
+  admin: SupabaseClient,
+  org: Pick<OrgDoLeitor, "id" | "display_name">,
+  config: ReturnType<typeof configDoLeitor>,
+): Promise<VariaveisDoPrompt> {
   const [agentesR, tiposR] = await Promise.all([
     admin.from("ai_agents").select("name").eq("organization_id", org.id).limit(20),
     admin
@@ -302,7 +308,7 @@ async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: Retu
   ]);
   if (agentesR.error) throw new Error(`agentes: ${agentesR.error.message}`);
   if (tiposR.error) throw new Error(`tipos: ${tiposR.error.message}`);
-  return montarPromptDoLeitor({
+  return {
     organizacao: org.display_name?.trim() || "a empresa",
     agentes: ((agentesR.data ?? []) as Array<{ name: string | null }>).map((a) => a.name ?? "").filter(Boolean),
     tipos: ((tiposR.data ?? []) as Array<{ nome: string; requisitos: string[] | null }>).map((x) => ({
@@ -311,10 +317,20 @@ async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: Retu
     })),
     prefixosDeAnuncio: config.prefixos_de_anuncio,
     termoDoContrato: config.termo_do_contrato,
-  });
+  };
 }
 
-async function mensagensDoContato(admin: SupabaseClient, orgId: string, contactId: string): Promise<MensagemRow[]> {
+async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: ReturnType<typeof configDoLeitor>): Promise<string> {
+  return montarPromptDoLeitor(await variaveisDoPromptDaOrg(admin, org, config));
+}
+
+/** As mensagens do contato (todas as conversas sem grupo), da mais antiga à mais nova; `ate` congela. */
+export async function mensagensDoContato(
+  admin: SupabaseClient,
+  orgId: string,
+  contactId: string,
+  ate: Date | null = null,
+): Promise<MensagemRow[]> {
   const { data: convs, error: cErr } = await admin
     .from("conversations")
     .select("id")
@@ -329,6 +345,7 @@ async function mensagensDoContato(admin: SupabaseClient, orgId: string, contactI
     .select("direction, sent_via, type, body, media_derived_text, status, created_at, sent_by_user_id")
     .eq("organization_id", orgId)
     .in("conversation_id", ids)
+    .lte("created_at", (ate ?? new Date("9999-12-31T00:00:00Z")).toISOString())
     .order("created_at", { ascending: false })
     .limit(MENSAGENS_LIDAS);
   if (mErr) throw new Error(`mensagens: ${mErr.message}`);

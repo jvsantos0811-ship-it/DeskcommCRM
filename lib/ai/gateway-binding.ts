@@ -366,7 +366,7 @@ async function lerBinding(
  * chave da organização, vira queda para `resolveLanguageModel`, que sabe achar
  * a chave certa para aquele prefixo.
  */
-function idParaOProvider(provider: string, id: string): string | null {
+export function idParaOProvider(provider: string, id: string): string | null {
   // Os roteadores levam o prefixo inteiro — inclusive o provedor personalizado
   // (#1642), que serve id de QUALQUER fabricante atrás do próprio endpoint.
   if (provider === "openrouter" || provider === "requesty" || provider === "custom")
@@ -768,7 +768,7 @@ async function credencialDaOrganizacao(
 }
 
 /** Decifra a chave da organização. Plaintext só existe no retorno. */
-async function decifrarChave(
+export async function decifrarChave(
   credentialId: string | null,
   organizationId: string,
 ): Promise<string | null> {
@@ -807,7 +807,7 @@ async function decifrarChave(
  * devolve `null` para o chamador cair no padrão com aviso, nunca um fallback
  * silencioso para outro provedor.
  */
-function instanciar(
+export function instanciar(
   provider: string,
   apiKey: string,
   modelId: string,

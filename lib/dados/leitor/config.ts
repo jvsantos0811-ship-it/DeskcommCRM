@@ -27,6 +27,8 @@ export const configDoLeitorSchema = z.object({
   ligado_em: z.string().datetime({ offset: true }).nullable().default(null),
   /** O modelo que passou na bateria e foi ligado. */
   modelo: modeloSchema.nullable().default(null),
+  /** O modelo de reserva (se o provedor do principal falhar), também aprovado na bateria. */
+  reserva: modeloSchema.nullable().default(null),
   prefixos_de_anuncio: z.array(z.string().trim().min(1).max(20)).max(20).default([]),
   termo_do_contrato: z.string().trim().min(1).max(40).default("contrato"),
 });
@@ -36,6 +38,7 @@ export const CONFIG_PADRAO: ConfigDoLeitor = {
   ligado: false,
   ligado_em: null,
   modelo: null,
+  reserva: null,
   prefixos_de_anuncio: [],
   termo_do_contrato: "contrato",
 };
@@ -50,6 +53,7 @@ export function configDoLeitor(settings: unknown): ConfigDoLeitor {
     ligado: b.ligado,
     ligado_em: b.ligado_em,
     modelo: b.modelo,
+    reserva: b.reserva,
     prefixos_de_anuncio: b.prefixos_de_anuncio,
     termo_do_contrato: b.termo_do_contrato,
   });

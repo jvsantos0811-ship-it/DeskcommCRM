@@ -107,6 +107,7 @@ export const O_QUE_FICA = {
   ficha_do_lead:
     "a ficha que a leitura automática da conversa fez dele: o que ele contou, com o trecho que prova cada item (LGPD art. 20)",
   ficha_do_lead_historico: "as leituras anteriores dessa ficha",
+  casos_da_bateria_do_leitor: "a cópia da conversa dele usada para testar a leitura automática",
   tasks: "o que se combinou fazer para ele",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",
