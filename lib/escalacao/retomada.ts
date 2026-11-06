@@ -60,6 +60,7 @@ import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/act
 import { logger } from "@/lib/logger";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 
+import { acordarIaSeOClienteEspera, type DesfechoDoDespertar } from "./acordar-ia-na-devolucao";
 import { lerContinuidadeHumana, type ContinuidadeHumana } from "./continuidade";
 
 export interface RetomadaDeps {
@@ -108,6 +109,12 @@ export type RetomadaResultado =
       /** true = já estava com o agente; a operação é idempotente. */
       jaEstavaComOAgente: boolean;
       continuidade: ContinuidadeHumana;
+      /**
+       * Se a IA foi acordada para a mensagem do cliente que ficou sem resposta
+       * (`acordar-ia-na-devolucao.ts`). `nao_pedido` = quem chamou acorda
+       * depois, por conta própria (`acordarIa: false`).
+       */
+      despertar: DesfechoDoDespertar | "nao_pedido";
     }
   | { ok: false; erro: RetomadaFalha; detalhe?: string };
 
@@ -125,7 +132,18 @@ interface ConversaRow {
 
 export async function devolverAtendimentoAoAgente(
   deps: RetomadaDeps,
-  input: { conversationId: string; origem?: OrigemDaRetomada },
+  input: {
+    conversationId: string;
+    origem?: OrigemDaRetomada;
+    /**
+     * Acordar a IA quando a última mensagem é do cliente (padrão: sim). Só
+     * passa `false` quem acorda por conta própria DEPOIS de mexer em algo que o
+     * turno lê — a rota do botão, que ainda põe a conversa com o agente
+     * escolhido no roteador; e o caso técnico da transcrição, que re-pede o
+     * turno da própria mídia.
+     */
+    acordarIa?: boolean;
+  },
 ): Promise<RetomadaResultado> {
   const { supabase, organizationId } = deps;
 
@@ -338,7 +356,20 @@ export async function devolverAtendimentoAoAgente(
     },
   });
 
-  return { ok: true, conversationId: input.conversationId, jaEstavaComOAgente, continuidade };
+  // (7) O cliente que ficou esperando é respondido agora, não na próxima
+  // mensagem dele (PM-025 §0). Por último: o turno lê o checkpoint gravado em
+  // (5) e encontra a conversa já com a IA.
+  const despertar =
+    input.acordarIa === false
+      ? ("nao_pedido" as const)
+      : await acordarIaSeOClienteEspera(supabase, {
+          organizationId,
+          conversationId: input.conversationId,
+          requestId: deps.requestId,
+          origem: input.origem ? "devolucao_automatica" : deps.actor.type,
+        });
+
+  return { ok: true, conversationId: input.conversationId, jaEstavaComOAgente, continuidade, despertar };
 }
 
 function recusarSempreHumano(

@@ -39,6 +39,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth/require-role";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
+import { acordarIaSeOClienteEspera } from "@/lib/escalacao/acordar-ia-na-devolucao";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -100,7 +101,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       actor: { type: "user", id: authUser.id, role: activeOrg.role },
       requestId,
     },
-    { conversationId: id },
+    // A IA é acordada no fim desta rota, depois de a conversa ficar com o
+    // agente escolhido no roteador: acordar antes faria o turno nascer para o
+    // agente de antes.
+    { conversationId: id, acordarIa: false },
   );
 
   if (!resultado.ok) {
@@ -175,9 +179,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
+  // PM-025 §0: o cliente que ficou esperando é respondido agora. Nunca lança;
+  // filtra a organização da sessão.
+  const despertar = await acordarIaSeOClienteEspera(admin, {
+    organizationId: activeOrg.orgId,
+    conversationId: id,
+    requestId,
+    origem: "user",
+  });
+
   return ok(
     {
       reactivated: true,
+      // true = a última mensagem era do cliente e a IA já foi chamada a responder.
+      ia_acordada: despertar === "acordou",
       // O que a pessoa fez vai junto: quem chamou consegue mostrar na tela que o
       // agente não voltou cego.
       continuidade: {

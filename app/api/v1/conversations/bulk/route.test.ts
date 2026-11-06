@@ -173,6 +173,9 @@ vi.mock("@/lib/inbox/atividade-de-comando", () => ({
   registrarTrocaDeComando: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/escalacao/retomada", () => ({ devolverAtendimentoAoAgente: vi.fn() }));
+vi.mock("@/lib/escalacao/acordar-ia-na-devolucao", () => ({
+  acordarIaSeOClienteEspera: vi.fn().mockResolvedValue("ninguem_esperando"),
+}));
 
 let estado: Estado;
 
@@ -455,11 +458,12 @@ describe("POST /api/v1/conversations/bulk", () => {
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledTimes(2);
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A }),
-      { conversationId: CONV_A },
+      // A rota acorda a IA no fim, depois do agente do roteador (PM-025 §0).
+      { conversationId: CONV_A, acordarIa: false },
     );
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A }),
-      { conversationId: CONV_A2 },
+      { conversationId: CONV_A2, acordarIa: false },
     );
   });
 
