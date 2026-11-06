@@ -12,6 +12,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/escalacao/retomada", () => ({ devolverAtendimentoAoAgente: vi.fn() }));
+vi.mock("@/lib/escalacao/acordar-ia-na-devolucao", () => ({ acordarIaSeOClienteEspera: vi.fn().mockResolvedValue("ninguem_esperando") }));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONVERSA = "44444444-4444-4444-8444-444444444444";

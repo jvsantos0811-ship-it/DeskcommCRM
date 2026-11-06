@@ -67,6 +67,8 @@ interface CenarioBanco {
    * como o Postgres faria.
    */
   marcaNaEscrita?: boolean;
+  /** A última mensagem da conversa (PM-025 §0: a do cliente acorda a IA). */
+  ultimaMensagem?: Record<string, unknown> | null;
 }
 
 /**
@@ -113,6 +115,9 @@ function fazerSupabase(cenario: CenarioBanco, cap: Captura) {
         }
         if (tabela === "conversations") {
           return Promise.resolve({ data: cenario.conversa, error: null });
+        }
+        if (tabela === "messages") {
+          return Promise.resolve({ data: cenario.ultimaMensagem ?? null, error: null });
         }
         if (tabela === "contacts") {
           return Promise.resolve({
@@ -161,6 +166,8 @@ function conversaPassadaAHumano(over: Record<string, unknown> = {}) {
     assigned_to_user_id: ATENDENTE,
     assignee_kind: "user",
     bot_silenced_until: "infinity",
+    channel_session_id: "77777777-7777-4777-8777-777777777777",
+    is_group: false,
     ...over,
   };
 }
@@ -209,6 +216,7 @@ async function retomar(
   cap: Captura,
   actor: Actor = USUARIO,
   origem?: OrigemDaRetomada,
+  acordarIa?: boolean,
 ) {
   return devolverAtendimentoAoAgente(
     {
@@ -218,9 +226,14 @@ async function retomar(
       actor,
       requestId: "req-1",
     },
-    { conversationId: CONV, origem },
+    { conversationId: CONV, origem, ...(acordarIa === undefined ? {} : { acordarIa }) },
   );
 }
+
+const pedidosDeTurno = (cap: Captura) =>
+  cap.rpc.filter((r) => r.fn === "emit_event" && r.args.p_event_type === "ai_agent.dispatch_requested");
+
+const MENSAGEM_DO_CLIENTE = { id: "88888888-8888-4888-8888-888888888888", direction: "inbound" };
 
 describe("devolver o atendimento ao agente", () => {
   it("limpa force_human do contato — a trava que ninguém soltava", async () => {
@@ -415,6 +428,57 @@ describe("devolver o atendimento ao agente", () => {
     // órfã o agendamento para sempre.
     expect(falhou).toMatchObject({ ok: false, erro: "resume_signal_failed" });
     expect(res.ok).toBe(true);
+  });
+
+  // PM-025 §0: 12 devoluções em 21 dias com o cliente esperando, nenhuma
+  // respondida — a IA só voltava a falar na PRÓXIMA mensagem dele.
+  it("cliente esperando: devolver acorda a IA para a mensagem dele", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(cenarioComAtendimentoHumano({ ultimaMensagem: MENSAGEM_DO_CLIENTE }), cap);
+    expect(res).toMatchObject({ ok: true, despertar: "acordou" });
+    expect(pedidosDeTurno(cap)).toHaveLength(1);
+    expect(pedidosDeTurno(cap)[0]!.args).toMatchObject({
+      p_entity_id: MENSAGEM_DO_CLIENTE.id,
+      p_payload: { conversation_id: CONV, contact_id: CONTATO, inbound_message_id: MENSAGEM_DO_CLIENTE.id },
+    });
+    // O acordar vem DEPOIS do sinal de retomada: o turno encontra a conversa já com a IA.
+    const ordem = cap.rpc.filter((r) => r.fn === "emit_event").map((r) => r.args.p_event_type);
+    expect(ordem).toEqual(["ai.handoff_resolved", "ai_agent.dispatch_requested"]);
+  });
+
+  it("a devolução automática (prazo) também acorda a IA", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ ultimaMensagem: MENSAGEM_DO_CLIENTE }),
+      cap,
+      USUARIO,
+      { automatica: { minutos: 30 } },
+    );
+    expect(res).toMatchObject({ ok: true, despertar: "acordou" });
+    expect(pedidosDeTurno(cap)[0]!.args.p_metadata).toMatchObject({ origem: "devolucao_automatica" });
+  });
+
+  it("a última mensagem é da equipe: devolver NÃO acorda (não fala por cima)", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ ultimaMensagem: { id: "m-2", direction: "outbound" } }),
+      cap,
+    );
+    expect(res).toMatchObject({ ok: true, despertar: "ninguem_esperando" });
+    expect(pedidosDeTurno(cap)).toEqual([]);
+  });
+
+  it("acordarIa: false — quem chamou acorda depois, por conta própria", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({ ultimaMensagem: MENSAGEM_DO_CLIENTE }),
+      cap,
+      USUARIO,
+      undefined,
+      false,
+    );
+    expect(res).toMatchObject({ ok: true, despertar: "nao_pedido" });
+    expect(pedidosDeTurno(cap)).toEqual([]);
   });
 
   it("conversa de outra organização não é encontrada", async () => {

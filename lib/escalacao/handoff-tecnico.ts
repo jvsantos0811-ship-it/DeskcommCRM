@@ -276,7 +276,9 @@ export async function reagirAConclusaoDeDerivacao(
       try {
         const r = await devolverAtendimentoAoAgente(
           { supabase: admin, organizationId, actor: ATOR, requestId },
-          { conversationId },
+          // Este caminho re-pede o turno da própria mídia logo abaixo
+          // (`reenfileirarTurno`): acordar aqui também seria pedido em dobro.
+          { conversationId, acordarIa: false },
         );
         devolvido = r.ok;
       } catch (erro) {
