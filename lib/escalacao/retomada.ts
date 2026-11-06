@@ -357,7 +357,7 @@ export async function devolverAtendimentoAoAgente(
   });
 
   // (7) O cliente que ficou esperando é respondido agora, não na próxima
-  // mensagem dele (PM-025 §0). Por último: o turno lê o checkpoint gravado em
+  // mensagem dele (PM-027 §0). Por último: o turno lê o checkpoint gravado em
   // (5) e encontra a conversa já com a IA.
   const despertar =
     input.acordarIa === false

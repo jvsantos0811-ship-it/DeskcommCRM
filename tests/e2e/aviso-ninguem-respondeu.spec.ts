@@ -1,6 +1,6 @@
 /**
  * CONFIGURAÇÕES › DISTRIBUIÇÃO DE ATENDIMENTO — O AVISO "NINGUÉM RESPONDEU"
- * PELA TELA (PM-025 §2 e §7, fork).
+ * PELA TELA (PM-027 §2 e §7, fork).
  *
  * Quem administra liga o aviso, escolhe o funil e os marcadores que tiram o lead
  * da conta, salva, e tudo fica depois de recarregar — com a data em que o aviso
@@ -23,7 +23,7 @@ import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 const EVIDENCIA = path.join(process.cwd(), "evidence", "pm-025-ninguem-respondeu");
 let creds: CredsE2E = lerCreds();
 
-test.describe("PM-025 — aviso Ninguém respondeu", () => {
+test.describe("PM-027 — aviso Ninguém respondeu", () => {
   test.describe.configure({ timeout: 240_000 });
 
   test("o admin liga o aviso, escolhe funil e marcadores, e tudo fica depois de recarregar", async ({ page }) => {

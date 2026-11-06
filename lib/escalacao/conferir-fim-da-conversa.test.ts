@@ -75,4 +75,29 @@ describe("conferir se a conversa terminou", () => {
       "Assistente virtual: Posso ajudar?\nEquipe: [audio] Vou verificar.\nContato: Tudo bem, obrigado pela ajuda",
     );
   });
+
+  it("sem escolha própria, herda o modelo aprovado do Leitor — e o custo continua no ponto do aviso", async () => {
+    const admin = (proprio: boolean) => ({
+      from: (tabela: string) => {
+        const b = {
+          select: () => b,
+          eq: () => b,
+          maybeSingle: async () =>
+            tabela === "ai_purpose_bindings"
+              ? { data: proprio ? { id: "b-1" } : null, error: null }
+              : { data: { settings: { leitor: { modelo: { provider: "anthropic", model_id: "claude-haiku-5-5" } } } }, error: null },
+        };
+        return b;
+      },
+    });
+    const classificar = vi.fn().mockResolvedValue({ terminou: false, promptTokens: 10, completionTokens: 2 });
+    await criarConferidorDoFim(admin(false) as never, classificar)(entrada);
+    expect(resolver.mock.calls[0]!.slice(0, 3)).toEqual(["leitor_da_conversa", "org-1", "anthropic/claude-haiku-5-5"]);
+    expect(registrar.mock.calls[0]![1]).toMatchObject({ purpose: "conferir_fim_da_conversa" });
+
+    resolver.mockClear();
+    await criarConferidorDoFim(admin(true) as never, classificar)(entrada);
+    expect(resolver.mock.calls[0]![0]).toBe(PONTO_CONFERIR_FIM);
+  });
 });
+

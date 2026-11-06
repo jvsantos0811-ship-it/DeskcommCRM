@@ -4,7 +4,7 @@
  *
  * Mora em `organizations.settings.leitor` (`funis` e
  * `marcadores_que_desqualificam`), e vale para o Leitor da conversa, o painel
- * "Esperando a equipe" e o aviso "Ninguém respondeu" (PM-025 §2). A regra:
+ * "Esperando a equipe" e o aviso "Ninguém respondeu" (PM-027 §2). A regra:
  * `lib/dados/alcance-do-leitor.ts`. Os outros campos de `settings.leitor` (o
  * Leitor ganha os dele) são preservados: merge NÃO destrutivo.
  *

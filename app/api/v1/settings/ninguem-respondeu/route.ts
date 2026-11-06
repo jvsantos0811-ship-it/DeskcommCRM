@@ -3,7 +3,7 @@
  * PATCH /api/v1/settings/ninguem-respondeu — liga ou desliga (manager+).
  *
  * Mora em `organizations.settings.ninguem_respondeu` ({ ligado, ligado_em }).
- * SEM RETROATIVO (PM-025 §7): só mensagem do lead que chega depois de ligado
+ * SEM RETROATIVO (PM-027 §7): só mensagem do lead que chega depois de ligado
  * conta; religar depois de desligar volta a contar dali. A regra da data está
  * em `proximaConfig` (`lib/escalacao/ninguem-respondeu.ts`). Merge NÃO
  * destrutivo do jsonb, como `settings/horario-da-equipe`.

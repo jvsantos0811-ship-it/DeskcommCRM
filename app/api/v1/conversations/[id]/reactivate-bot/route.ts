@@ -179,7 +179,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  // PM-025 §0: o cliente que ficou esperando é respondido agora. Nunca lança;
+  // PM-027 §0: o cliente que ficou esperando é respondido agora. Nunca lança;
   // filtra a organização da sessão.
   const despertar = await acordarIaSeOClienteEspera(admin, {
     organizationId: activeOrg.orgId,

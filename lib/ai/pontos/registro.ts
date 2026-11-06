@@ -396,10 +396,22 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     },
   },
   {
+    id: "leitor_da_conversa",
+    rotulo: "Ler a conversa para os painéis",
+    oQueFaz:
+      "Uma vez por dia, às 6h, lê a conversa dos leads que tiveram mensagem nova e preenche a ficha de cada um: o que a pessoa contou, se atende aos requisitos, se espera alguém da equipe. Os painéis de Dados usam a ficha. Só liga com um modelo que acertou toda a bateria de teste.",
+    papel: "entender",
+    exige: {},
+    emissor: "lib/dados/leitor/ler-lead.ts",
+    sintomaDeFalha:
+      "Os leads aparecem como \"Sem leitura\" nos painéis de Dados, e a situação de cada um deixa de acompanhar o que a pessoa escreveu.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "conferir_fim_da_conversa",
     rotulo: "Conferir se a conversa terminou",
     oQueFaz:
-      "Quando um lead escreveu e ninguém respondeu em 1 hora de expediente, lê as últimas 6 mensagens e diz se a conversa já terminou (um agradecimento, uma despedida) ou se alguém precisa responder. Na dúvida, a Central recebe o aviso.",
+      "Quando um lead escreveu e ninguém respondeu em 1 hora de expediente, lê as últimas 6 mensagens e diz se a conversa já terminou (um agradecimento, uma despedida) ou se alguém precisa responder. Na dúvida, a Central recebe o aviso. Sem escolha própria, usa o modelo do \"Ler a conversa para os painéis\".",
     papel: "entender",
     exige: {},
     emissor: "lib/escalacao/conferir-fim-da-conversa.ts",

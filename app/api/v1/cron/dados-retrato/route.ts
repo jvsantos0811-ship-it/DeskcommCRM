@@ -13,6 +13,10 @@
  *  - Uma organização que falha não para as outras: o erro vai para o log e para
  *    a auditoria (`dados.retrato_falhou`), e a rodada segue.
  *  - Rodada sem nada a fazer não audita (`cron-audita-so-quando-ha-efeito`).
+ *  - Organização com o Leitor da conversa ligado espera a rodada diária dele
+ *    terminar (PM-027 §3: o retrato vem depois do Leitor). Quem gera o retrato,
+ *    nesse caso, é o próprio fim da rodada (`lib/dados/leitor/rodadas.ts`); esta
+ *    rota só o gera se a rodada passar de 3 horas aberta (`retratoEsperaOLeitor`).
  */
 import { randomUUID } from "node:crypto";
 
@@ -22,6 +26,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { ErroDoRetrato, gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import { retratoEsperaOLeitor } from "@/lib/dados/leitor/rodadas";
 import { HORA_DO_RETRATO } from "@/lib/dados/retrato";
 import { logger } from "@/lib/logger";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
@@ -46,9 +51,29 @@ async function handle(req: NextRequest): Promise<Response> {
     (o) => !paradas.has(o.organization_id),
   );
 
+  // O Leitor ligado faz o retrato esperar a rodada diária (até 3 horas).
+  const agora = new Date();
+  const orgsDoAlvo = new Map<string, { id: string; settings: unknown; timezone: string | null }>();
+  if (alvo.length > 0) {
+    const { data: orgs } = await admin
+      .from("organizations")
+      .select("id, settings, timezone")
+      .in(
+        "id",
+        alvo.map((o) => o.organization_id),
+      );
+    for (const org of (orgs ?? []) as Array<{ id: string; settings: unknown; timezone: string | null }>) orgsDoAlvo.set(org.id, org);
+  }
+
   let gerados = 0;
   let falhas = 0;
+  let esperando = 0;
   for (const o of alvo) {
+    const org = orgsDoAlvo.get(o.organization_id);
+    if (org && (await retratoEsperaOLeitor(admin, org, agora))) {
+      esperando += 1;
+      continue;
+    }
     try {
       const r = await gerarRetratoDaOrg(admin, o.organization_id, "cron", { soSeFaltar: true });
       if (r.gravado) {
@@ -81,7 +106,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok({ organizacoes: alvo.length, gerados, falhas }, { requestId });
+  return ok({ organizacoes: alvo.length, gerados, falhas, esperando_o_leitor: esperando }, { requestId });
 }
 
 export const GET = handle;

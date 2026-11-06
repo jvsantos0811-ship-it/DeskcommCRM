@@ -1,5 +1,5 @@
 /**
- * DEVOLVER À IA COM O CLIENTE ESPERANDO ACORDA A IA (PM-025 §0).
+ * DEVOLVER À IA COM O CLIENTE ESPERANDO ACORDA A IA (PM-027 §0).
  *
  * O defeito medido na produção: a mensagem que chegou com a conversa nas mãos
  * de uma pessoa (ou com a conta suspensa) tinha o pedido de turno consumido sem

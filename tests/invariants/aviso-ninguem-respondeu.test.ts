@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
 /**
- * PM-025 §7 (migration 9021) — O AVISO "NINGUÉM RESPONDEU", contra o Postgres do baseline.
+ * PM-027 §7 (migration 9021) — O AVISO "NINGUÉM RESPONDEU", contra o Postgres do baseline.
  *
  * O que só o banco garante:
  *   1. o vocabulário da Central aceita `ninguem_respondeu` (e continua fechado);

@@ -358,6 +358,22 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "pela sessão e qualquer leitura por anon dão permission denied. Migration 0510.",
   },
   {
+    tabela: "crm_lead_ficha",
+    razao:
+      "tests/invariants/ficha-do-lead.test.ts e o bloco dedicado de rls-isolation.test.ts — " +
+      "dois tenants reais por JWT: o agent em \"só os seus\" lê 0 (a ficha traz trecho da " +
+      "conversa de leads de colegas; por isso não cabe em TABLES, cujo usuário semeado é " +
+      "agent); o mesmo agent com visibility_mode 'all' lê a de A (controle) e 0 de B; " +
+      "INSERT/UPDATE pela sessão e leitura por anon dão permission denied. Migration 9022 (fork).",
+  },
+  {
+    tabela: "crm_lead_ficha_historico",
+    razao:
+      "tests/invariants/ficha-do-lead.test.ts e o bloco dedicado de rls-isolation.test.ts — " +
+      "mesma régua da ficha (quem vê a organização inteira), pelo mesmo motivo: o histórico " +
+      "guarda as leituras anteriores, com trecho de conversa. Migration 9022 (fork).",
+  },
+  {
     tabela: "crm_dados_retrato",
     razao:
       "tests/invariants/retrato-de-dados.test.ts (\"quem lê o retrato\") e o bloco " +

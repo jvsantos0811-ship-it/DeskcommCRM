@@ -1,5 +1,5 @@
 /**
- * O aviso "Um lead escreveu e ninguém respondeu" (PM-025 §7) — a regra pura.
+ * O aviso "Um lead escreveu e ninguém respondeu" (PM-027 §7) — a regra pura.
  *
  * O caso de aceite (§9.6) está aqui com a forma das 9 conversas da Bórbora que
  * originaram a ordem (textos encurtados, sem nome nem telefone): com o aviso

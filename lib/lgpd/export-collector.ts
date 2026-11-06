@@ -295,6 +295,19 @@ export interface PassagemEntreAgentesRow {
  * "informado"), as licenças e as promessas. É dado dele; o gatilho da 9016
  * apaga o registro na anonimização.
  */
+/**
+ * A Ficha do lead que o Leitor da conversa leu (fork, 9022): os fatos da conversa
+ * com o trecho que prova cada um, e as leituras anteriores. A anonimização apaga
+ * as duas tabelas; o titular recebe as duas.
+ */
+export interface FichaDoLeadRow {
+  lead_id: string;
+  ficha: unknown;
+  modelo: string;
+  gatilho: string;
+  lida_em: string;
+}
+
 export interface RegistroDaConversaRow {
   id: string;
   tipo: string;
@@ -733,6 +746,12 @@ export interface ExportPayload {
    * Opcional no TIPO pelo mesmo motivo de `passagens_entre_agentes`.
    */
   registro_da_conversa?: RegistroDaConversaRow[];
+  /**
+   * Ficha do lead e as leituras anteriores (fork, 9022) — ver `FichaDoLeadRow`.
+   * Opcional no TIPO pelo mesmo motivo de `passagens_entre_agentes`.
+   */
+  ficha_do_lead?: FichaDoLeadRow[];
+  ficha_do_lead_historico?: FichaDoLeadRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
@@ -1678,6 +1697,43 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Ficha do lead do Leitor da conversa (fork, 9022) — contact_id direto. O
+  // gatilho da 9022 apaga a ficha e o histórico na anonimização; este bloco é a
+  // outra metade.
+  let ficha_do_lead: FichaDoLeadRow[] = [];
+  let ficha_do_lead_historico: FichaDoLeadRow[] = [];
+  if (contactId) {
+    const atual = await admin
+      .from("crm_lead_ficha")
+      .select("lead_id, ficha, modelo, gatilho, lida_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("lida_em", { ascending: false })
+      .limit(50);
+    if (atual.error) {
+      logger.warn("[lgpd-export-worker] ficha do lead load failed", { request_id: requestId, error: atual.error.message });
+    } else if (atual.data) {
+      conferirTeto("crm_lead_ficha", atual.data, 50);
+      ficha_do_lead = atual.data as FichaDoLeadRow[];
+    }
+    const anteriores = await admin
+      .from("crm_lead_ficha_historico")
+      .select("lead_id, ficha, modelo, gatilho, lida_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("lida_em", { ascending: false })
+      .limit(500);
+    if (anteriores.error) {
+      logger.warn("[lgpd-export-worker] ficha do lead (histórico) load failed", {
+        request_id: requestId,
+        error: anteriores.error.message,
+      });
+    } else if (anteriores.data) {
+      conferirTeto("crm_lead_ficha_historico", anteriores.data, 500);
+      ficha_do_lead_historico = anteriores.data as FichaDoLeadRow[];
+    }
+  }
+
   // Empresas e pessoas (0448/0449) — ver o comentário do campo `b2b` no tipo.
   // A pessoa vem de `contacts.person_id`; as linhas de planilha casam pelo
   // contato OU pela pessoa, o MESMO escopo da redação da 0449. Erro lança:
@@ -2419,6 +2475,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     contracts,
     passagens_entre_agentes,
     registro_da_conversa,
+    ficha_do_lead,
+    ficha_do_lead_historico,
     tasks,
     webhook_captures,
     audit_log_extract,
@@ -2616,6 +2674,8 @@ function emptyPayload(
     contracts: [],
     passagens_entre_agentes: [],
     registro_da_conversa: [],
+    ficha_do_lead: [],
+    ficha_do_lead_historico: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],

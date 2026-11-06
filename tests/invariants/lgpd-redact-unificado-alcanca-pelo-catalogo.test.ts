@@ -320,6 +320,22 @@ const DECISOES: Record<string, Decisao> = {
       "APAGA as linhas dele pelo gatilho trg_contacts_apaga_registro_da_conversa " +
       "(fn_apagar_registro_da_conversa_ao_anonimizar). Não há trilha a preservar.",
   },
+  crm_lead_ficha: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9022 (fork, PM-027): a Ficha do lead que o Leitor da conversa grava — fatos da conversa " +
+      "com o trecho que prova cada um (o que o cliente contou do caso, de saúde, de trabalho). " +
+      "A virada de is_anonymized APAGA as linhas dele pelo gatilho trg_contacts_apaga_ficha_do_lead " +
+      "(fn_apagar_ficha_do_lead_ao_anonimizar). Não há trilha a preservar.",
+  },
+  crm_lead_ficha_historico: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9022 (fork, PM-027): as leituras anteriores da Ficha do lead, com os mesmos trechos; " +
+      "apagadas pelo mesmo gatilho (fn_apagar_ficha_do_lead_ao_anonimizar).",
+  },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",

@@ -1,6 +1,6 @@
 /**
  * "A CONVERSA TERMINOU?" — a leitura curta do aviso Ninguém respondeu
- * (PM-025 §7, 2ª camada). Ponto de IA `conferir_fim_da_conversa`.
+ * (PM-027 §7, 2ª camada). Ponto de IA `conferir_fim_da_conversa`.
  *
  * Só roda quando a forma da última mensagem não decide (`decidirPelaForma`
  * devolveu "indeciso") e o lead já esperou 1 hora de expediente. Lê as últimas
@@ -11,9 +11,11 @@
  * lead esperando sem ninguém saber é o defeito que este aviso existe para
  * pegar.
  *
- * O modelo vem da tela Provedores (o binding deste ponto); sem escolha, o
- * classificador barato do produto ou o padrão da organização. Custo e tokens em
- * `llm_calls`, como toda chamada de IA.
+ * O modelo vem da tela Provedores (o binding deste ponto); sem escolha própria,
+ * HERDA o modelo aprovado do Leitor da conversa (PM-027 §8: "padrão: herda o
+ * modelo do Leitor"); sem os dois, o classificador barato do produto ou o padrão
+ * da organização. Custo e tokens em `llm_calls`, como toda chamada de IA, sempre
+ * no ponto deste aviso.
  */
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
@@ -23,6 +25,8 @@ import { computeCost } from "@/lib/ai/cost";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { registrarChamadaDeIa } from "@/lib/ai/usage/registrar-chamada";
+import { configDoLeitor } from "@/lib/dados/leitor/config";
+import { idDoModeloAprovado, PONTO_DO_LEITOR } from "@/lib/dados/leitor/ler-lead";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 import type { MensagemDaConversa } from "./ninguem-respondeu";
@@ -95,15 +99,45 @@ const classificarComModelo: Classificar = async (model, trecho) => {
   };
 };
 
+/**
+ * O modelo herdado do Leitor: só quando este ponto NÃO tem escolha própria na
+ * tela e o Leitor tem um modelo aprovado. Qualquer erro de leitura = sem herança
+ * (o caminho de sempre).
+ */
+export async function modeloHerdadoDoLeitor(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<string | null> {
+  try {
+    const { data: proprio, error: e1 } = await admin
+      .from("ai_purpose_bindings")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("purpose", PONTO_CONFERIR_FIM)
+      .eq("is_enabled", true)
+      .maybeSingle();
+    if (e1 || proprio) return null;
+    const { data: org, error: e2 } = await admin.from("organizations").select("settings").eq("id", organizationId).maybeSingle();
+    if (e2 || !org) return null;
+    const modelo = configDoLeitor((org as { settings?: unknown }).settings).modelo;
+    return modelo ? idDoModeloAprovado(modelo) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** O conferidor de produção. `classificar` existe para o teste. */
 export function criarConferidorDoFim(
   admin: ReturnType<typeof createAdminClient>,
   classificar: Classificar = classificarComModelo,
 ): ConferidorDoFim {
   return async ({ organizationId, contactId, trecho }) => {
-    const resolvido = await resolverModeloDoPonto(PONTO_CONFERIR_FIM, organizationId, DEFAULT_CLASSIFIER_MODEL, {
-      naFaltaUsarOPadraoDaOrganizacao: true,
-    });
+    const herdado = await modeloHerdadoDoLeitor(admin, organizationId);
+    const resolvido = herdado
+      ? await resolverModeloDoPonto(PONTO_DO_LEITOR, organizationId, herdado)
+      : await resolverModeloDoPonto(PONTO_CONFERIR_FIM, organizationId, DEFAULT_CLASSIFIER_MODEL, {
+          naFaltaUsarOPadraoDaOrganizacao: true,
+        });
     if (!resolvido) return { terminou: false, origem: "sem_modelo", modelo: null };
 
     const orcamento = await podeGastarComIa(organizationId, PONTO_CONFERIR_FIM);

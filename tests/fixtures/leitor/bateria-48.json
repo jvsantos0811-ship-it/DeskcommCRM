@@ -1,0 +1,968 @@
+{
+ "_leia": "Bateria da regra fixa da qualidade do lead (Regra v2 §4; PM-027). 48 fichas reais, SEM identificação: nome, telefone, trecho de conversa, organização e data de criação do lead foram tirados (o repositório é público). Cada caso traz a ficha no formato curto do Gestor e o resultado esperado da regra. A parte que acha a conversa de cada caso e testa o modelo do Leitor roda dentro do CRM, não aqui.",
+ "versao": "2026-11-05",
+ "relogio_da_regra": "2026-11-05T21:40:00-03:00",
+ "casos": [
+  {
+   "id": "B01",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "vínculo/data em que saiu do trabalho",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "29/10 10:15",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Frio",
+    "qualidade": "B",
+    "acao": "Reaquecer com o que o lead já contou",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B02",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "carência: autônomo, MEI recente, sem pagar há 5 meses",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "29/10 15:30",
+    "palavras": true,
+    "risco": true
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Frio",
+    "qualidade": "C",
+    "acao": "Reaquecer com o que o lead já contou",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B03",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B04",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Auxílio-acidente",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B05",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Auxílio-acidente",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B06",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Auxílio-acidente",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B07",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Auxílio-acidente",
+    "confirmar": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional (confirmar assinatura)",
+    "alertas": [
+     "confirmar se assinou"
+    ]
+   }
+  },
+  {
+   "id": "B08",
+   "ficha": {
+    "contato": "cliente",
+    "interesse": "Auxílio-acidente",
+    "confirmar": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Já é cliente",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Mover para o Operacional (confirmar assinatura)",
+    "alertas": [
+     "confirmar se assinou"
+    ]
+   }
+  },
+  {
+   "id": "B09",
+   "ficha": {
+    "contato": "interno",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Não é lead",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Arquivar",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B10",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "sim",
+    "requisitos": "atende",
+    "negociacao": "contrato_enviado",
+    "bola": "escritorio",
+    "fala": "05/11 11:34",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Contrato enviado",
+    "temperatura": "Quente",
+    "qualidade": "A",
+    "acao": "Ligar hoje",
+    "alertas": [
+     "escritório deve resposta"
+    ]
+   }
+  },
+  {
+   "id": "B11",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "se ficou limitação",
+    "negociacao": "nenhuma",
+    "bola": "escritorio",
+    "fala": "04/11 13:27",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "B",
+    "acao": "Escritório responder hoje",
+    "alertas": [
+     "escritório deve resposta"
+    ]
+   }
+  },
+  {
+   "id": "B12",
+   "ficha": {
+    "contato": "lead",
+    "duplicado": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Duplicado",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Juntar ao card aberto",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B13",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "sim",
+    "requisitos": "atende",
+    "negociacao": "nenhuma",
+    "espera": "alta médica · retorno combinado 04/12",
+    "bola": "lead",
+    "fala": "28/10 21:11",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Aguardando evento",
+    "temperatura": "Agendado",
+    "qualidade": "A",
+    "acao": "Chamar depois: alta médica · retorno combinado 04/12",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B14",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "parcial",
+    "requisitos": "a_confirmar",
+    "falta": "tudo",
+    "negociacao": "nenhuma",
+    "espera": "perícia do INSS (data a perguntar)",
+    "bola": "lead",
+    "fala": "05/11 16:44",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Aguardando evento",
+    "temperatura": "Agendado",
+    "qualidade": "C",
+    "acao": "Chamar depois: perícia do INSS (data a perguntar)",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B15",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "parcial",
+    "requisitos": "a_confirmar",
+    "falta": "tudo",
+    "negociacao": "nenhuma",
+    "espera": "resultado do INSS (pedido em análise)",
+    "bola": "lead",
+    "fala": "28/10 11:51",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Aguardando evento",
+    "temperatura": "Agendado",
+    "qualidade": "C",
+    "acao": "Chamar depois: resultado do INSS (pedido em análise)",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B16",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "se ainda é segurado (benefício cessou em 2016)",
+    "negociacao": "nenhuma",
+    "objecao": "documento",
+    "bola": "escritorio",
+    "fala": "04/11 08:38",
+    "palavras": true,
+    "risco": true
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "C",
+    "acao": "Escritório responder hoje",
+    "alertas": [
+     "escritório deve resposta"
+    ]
+   }
+  },
+  {
+   "id": "B17",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "se o advogado anterior ainda atua",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "03/11 12:14",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "B",
+    "acao": "Retomar: se o advogado anterior ainda atua",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B18",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "o problema de saúde e as datas",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "31/10 08:18",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "B",
+    "acao": "Retomar: o problema de saúde e as datas",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B19",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "incapacidade e contribuição",
+    "negociacao": "nenhuma",
+    "objecao": "confianca",
+    "bola": "lead",
+    "fala": "29/10 07:53",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Frio",
+    "qualidade": "B",
+    "acao": "Reaquecer com o que o lead já contou",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B20",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "data da alta e limitação atual",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "28/10 11:26",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Frio",
+    "qualidade": "B",
+    "acao": "Reaquecer com o que o lead já contou",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B21",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "A confirmar (filha, acidente)",
+    "contou": "sim",
+    "requisitos": "a_confirmar",
+    "falta": "vínculo da filha com o INSS",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 14:44",
+    "palavras": true,
+    "risco": true
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "C",
+    "acao": "Retomar: vínculo da filha com o INSS",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B22",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "BPC/LOAS",
+    "contou": "parcial",
+    "requisitos": "a_confirmar",
+    "falta": "renda da família e laudo do filho",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "03/11 11:03",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "C",
+    "acao": "Retomar: renda da família e laudo do filho",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B23",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "A confirmar (queda)",
+    "contou": "parcial",
+    "requisitos": "a_confirmar",
+    "falta": "tudo; parece falar de outro atendimento (seguro)",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "03/11 14:13",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Morno",
+    "qualidade": "C",
+    "acao": "Retomar: tudo; parece falar de outro atendimento (seguro)",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B24",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Incapacidade (auxílio-doença)",
+    "contou": "sim",
+    "requisitos": "nao_atende",
+    "falta": "nunca contribuiu (diarista sem INSS)",
+    "negociacao": "nenhuma",
+    "bola": "escritorio",
+    "fala": "31/10 18:50",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Sem requisito",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Responder com orientação e encerrar",
+    "alertas": [
+     "escritório deve resposta"
+    ]
+   }
+  },
+  {
+   "id": "B25",
+   "ficha": {
+    "contato": "lead",
+    "fora_area": true,
+    "interesse": "Fora da área (financiamento)",
+    "contou": "sim",
+    "bola": "escritorio",
+    "fala": "02/11 19:19",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Fora da área",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Responder e indicar outro profissional",
+    "alertas": [
+     "escritório deve resposta"
+    ]
+   }
+  },
+  {
+   "id": "B26",
+   "ficha": {
+    "contato": "lead",
+    "sem_caso": true,
+    "contou": "sim",
+    "bola": "lead",
+    "fala": "29/10 07:07",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Sem caso",
+    "temperatura": "—",
+    "qualidade": "—",
+    "acao": "Responder com orientação e encerrar",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B27",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "05/11 09:57",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Morno",
+    "qualidade": "D",
+    "acao": "Retomar: pedir o caso",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B28",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "05/11 17:08",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Morno",
+    "qualidade": "D",
+    "acao": "Retomar: pedir o caso",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B29",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "30/10 10:13",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B30",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "A confirmar (deficiência visual)",
+    "contou": "parcial",
+    "requisitos": "a_confirmar",
+    "falta": "tudo",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "28/10 16:28",
+    "palavras": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Em qualificação",
+    "temperatura": "Frio",
+    "qualidade": "C",
+    "acao": "Reaquecer com o que o lead já contou",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B31",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "01/11 11:43",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B32",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "28/10 11:51",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B33",
+   "ficha": {
+    "contato": "ilegivel",
+    "fala": "30/10 15:43",
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Sem leitura",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": [
+     "áudio não entendido"
+    ]
+   }
+  },
+  {
+   "id": "B34",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "31/10 14:59",
+    "palavras": false,
+    "ilegivel": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": [
+     "áudio não entendido"
+    ]
+   }
+  },
+  {
+   "id": "B35",
+   "ficha": {
+    "contato": "lead",
+    "interesse": "Auxílio-acidente",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "28/10 09:21",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B36",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "29/10 11:19",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B37",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "28/10 19:34",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B38",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "29/10 12:23",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B39",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "31/10 20:11",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B40",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 13:09",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B41",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 16:41",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B42",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 13:54",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B43",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 20:06",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B44",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "01/11 09:24",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B45",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "02/11 06:03",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B46",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "lead",
+    "fala": "31/10 08:55",
+    "palavras": false,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Follow-up automático",
+    "alertas": []
+   }
+  },
+  {
+   "id": "B47",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "escritorio",
+    "fala": "03/11 02:52",
+    "palavras": false,
+    "nunca_respondido": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Escritório responder hoje",
+    "alertas": [
+     "escritório deve resposta",
+     "nunca respondido"
+    ]
+   }
+  },
+  {
+   "id": "B48",
+   "ficha": {
+    "contato": "lead",
+    "contou": "nao",
+    "negociacao": "nenhuma",
+    "bola": "escritorio",
+    "fala": "03/11 03:14",
+    "palavras": false,
+    "nunca_respondido": true,
+    "risco": false
+   },
+   "esperado": {
+    "situacao": "Só chegou",
+    "temperatura": "Frio",
+    "qualidade": "D",
+    "acao": "Escritório responder hoje",
+    "alertas": [
+     "escritório deve resposta",
+     "nunca respondido"
+    ]
+   }
+  }
+ ]
+}
