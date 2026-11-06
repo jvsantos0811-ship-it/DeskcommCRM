@@ -44,6 +44,8 @@ vi.mock("@/hooks/kanban/useBoard", () => ({
     seguranca: { divergencias: 0, ultimaVerificacao: null },
   }),
 }));
+// PM-027 §6: o quadro pede os leads de "Esperando a equipe" só com `?esperando=equipe`.
+vi.mock("@/hooks/dados/useEsperandoAEquipe", () => ({ useEsperandoAEquipe: () => ({ data: undefined }) }));
 vi.mock("@/hooks/kanban/useBulkAction", () => ({
   useBulkAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));

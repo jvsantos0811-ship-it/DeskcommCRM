@@ -271,7 +271,15 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
       if (item.gatilho === "lead_voltou") {
         const banco = fatosDoBanco(item.lead, abertosPorContato.get(contato) ?? [], mensagens, item.ultimaEntrada);
         const c = classificarFicha({ ficha: leitura.ficha, banco }, agora);
-        if (!FORA_DA_VENDA.has(c.situacao) && (await abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, expediente.timezone, idioma, t))) {
+        // PM-027 §3, exceção 1 (caso LV1): o contato já tem OUTRO card com
+        // potencial aberto — novo ou antigo —, então o lead já está no funil por
+        // ele. A ficha é gravada, mas o aviso não abre.
+        const outroCardAberto = (abertosPorContato.get(contato) ?? []).some((o) => o.id !== item.lead.id);
+        if (
+          !outroCardAberto &&
+          !FORA_DA_VENDA.has(c.situacao) &&
+          (await abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, expediente.timezone, idioma, t))
+        ) {
           r.avisos += 1;
         }
       }

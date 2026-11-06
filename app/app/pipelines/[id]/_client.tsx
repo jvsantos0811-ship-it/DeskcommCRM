@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "@/lib/ui/icons";
 import type { LeadFilters } from "@/lib/kanban/filters";
+import { useEsperandoAEquipe } from "@/hooks/dados/useEsperandoAEquipe";
 import { applyFilters, filtersFromParams, filtersToParams, filtroLigado } from "@/lib/kanban/filters";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
@@ -95,7 +96,13 @@ export function PipelinePageClient({
     const settings = data?.pipeline.settings;
     return (motivo: string) => categoriaDoMotivo(motivo, settings);
   }, [data?.pipeline.settings]);
-  const filteredLeads = data ? applyFilters(data.leads, filters, { categoriaDo }) : [];
+  // PM-027 §6: `?esperando=equipe` — os leads do painel "Esperando a equipe".
+  const esperando = useEsperandoAEquipe(filters.esperando === "equipe" ? pipelineId : null);
+  const esperandoAEquipe = useMemo(
+    () => (esperando.data ? new Set(esperando.data.leads.map((l) => l.lead_id)) : undefined),
+    [esperando.data],
+  );
+  const filteredLeads = data ? applyFilters(data.leads, filters, { categoriaDo, esperandoAEquipe }) : [];
   // NÃO é a conta do FilterBar: o seletor de filtro lista as três caixas
   // (`marcadoresDoCard`: negócio, contato e conversa), e esta lista, a da tag em
   // lote, só `lead.tags` — é lá que a ação em lote grava (#852). O `useMemo` é o

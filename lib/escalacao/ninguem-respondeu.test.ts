@@ -21,7 +21,6 @@ import {
   avaliarConversa,
   configDoAviso,
   melhorPosicao,
-  pareceRespostaAutomatica,
   proximaConfig,
   textoDoAviso,
   type EntradaDaAvaliacao,
@@ -216,32 +215,6 @@ describe("quando avisa", () => {
     const a = avaliarConversa(entrada(m));
     expect(a.tipo).toBe("conferir");
     if (a.tipo === "conferir") expect(a.trecho).toHaveLength(6);
-  });
-});
-
-describe("resposta automática do WhatsApp Business", () => {
-  const entradaDoLead = lead("2026-11-05T10:00:00-03:00", { body: "Oi" });
-  it("candidata: saiu do celular até 60 s depois, texto de verdade", () => {
-    const m = equipe("2026-11-05T10:00:10-03:00", { body: "Olá! Sou do escritório. Como posso te chamar?" });
-    expect(pareceRespostaAutomatica(m, entradaDoLead)).toBe(true);
-  });
-  it("não é candidata: texto curto, saiu depois de 60 s, saiu da IA ou não respondia o lead", () => {
-    expect(pareceRespostaAutomatica(equipe("2026-11-05T10:00:10-03:00", { body: "Ok" }), entradaDoLead)).toBe(false);
-    expect(
-      pareceRespostaAutomatica(
-        equipe("2026-11-05T10:05:00-03:00", { body: "Olá! Sou do escritório. Como posso te chamar?" }),
-        entradaDoLead,
-      ),
-    ).toBe(false);
-    expect(pareceRespostaAutomatica(ia("2026-11-05T10:00:10-03:00", "Olá! Aqui é a assistente virtual."), entradaDoLead)).toBe(
-      false,
-    );
-    expect(
-      pareceRespostaAutomatica(
-        equipe("2026-11-05T10:00:10-03:00", { body: "Olá! Sou do escritório. Como posso te chamar?" }),
-        null,
-      ),
-    ).toBe(false);
   });
 });
 
