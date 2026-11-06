@@ -156,13 +156,14 @@ export function TiposDeLeadClient({ inicial, podeEditar }: Props) {
                 <th className="px-4 py-2 font-medium">{t("Tipo de lead")}</th>
                 <th className="px-4 py-2 font-medium">{t("Valor médio")}</th>
                 <th className="px-4 py-2 font-medium">{t("Confirmado pelo cliente")}</th>
+                <th className="px-4 py-2 font-medium">{t("Requisitos mínimos")}</th>
                 <th className="px-4 py-2 font-medium">{t("Ativo")}</th>
               </tr>
             </thead>
             <tbody>
               {tipos.map((tipo) => (
                 <LinhaDoTipo
-                  key={`${tipo.id}-${tipo.preco_cents}`}
+                  key={`${tipo.id}-${tipo.preco_cents}-${(tipo.requisitos ?? []).join("|")}`}
                   tipo={tipo}
                   podeEditar={podeEditar}
                   ocupado={isPending}
@@ -191,6 +192,26 @@ function LinhaDoTipo({
   const t = useT();
   const [texto, setTexto] = useState(centavosParaTexto(tipo.preco_cents));
   const sujo = precoParaCentavos(texto) !== tipo.preco_cents;
+  const requisitos = tipo.requisitos ?? [];
+  const [editandoRequisitos, setEditandoRequisitos] = useState(false);
+  const [textoDosRequisitos, setTextoDosRequisitos] = useState(requisitos.join("\n"));
+  const resumoDosRequisitos =
+    requisitos.length === 0
+      ? t("Nenhum")
+      : requisitos.length === 1
+        ? t("1 requisito")
+        : t("{n} requisitos").replace("{n}", String(requisitos.length));
+  const ajudaDosRequisitos = t("Um requisito por linha (até 12). O Leitor da conversa confere cada um na conversa do lead.");
+
+  function salvarRequisitos() {
+    const lista = textoDosRequisitos
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+    aoMudar({ requisitos: lista });
+    setEditandoRequisitos(false);
+  }
 
   function salvarValor() {
     const preco_cents = precoParaCentavos(texto);
@@ -246,6 +267,45 @@ function LinhaDoTipo({
           />
           {tipo.valor_confirmado ? t("Sim") : t("Não")}
         </label>
+      </td>
+      <td className="px-4 py-2 align-top">
+        {editandoRequisitos ? (
+          <div className="flex w-72 flex-col gap-2">
+            <textarea
+              aria-label={`${t("Requisitos mínimos")} — ${tipo.nome}`}
+              data-testid="tipo-de-lead-requisitos-texto"
+              className="min-h-24 rounded-md border border-border bg-background p-2 text-xs"
+              value={textoDosRequisitos}
+              onChange={(e) => setTextoDosRequisitos(e.target.value)}
+            />
+            <span className="text-xs text-muted-foreground">{ajudaDosRequisitos}</span>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" disabled={ocupado} data-testid="tipo-de-lead-salvar-requisitos" onClick={salvarRequisitos}>
+                {t("Salvar")}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setEditandoRequisitos(false)}>
+                {t("Cancelar")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs">
+            <span data-testid="tipo-de-lead-requisitos-resumo" title={requisitos.join(" · ")}>
+              {resumoDosRequisitos}
+            </span>
+            {podeEditar ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid="tipo-de-lead-editar-requisitos"
+                onClick={() => setEditandoRequisitos(true)}
+              >
+                {t("Editar")}
+              </Button>
+            ) : null}
+          </div>
+        )}
       </td>
       <td className="px-4 py-2">
         <label className="flex items-center gap-2 text-xs">
