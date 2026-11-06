@@ -131,6 +131,10 @@ CRONS="
 # retrato da que ja passou das 06:00 e ainda nao tem o do dia; a que falhou e
 # refeita na hora seguinte. Minuto 11, longe das outras varreduras de crm_leads.
 11 * * * *|300|api/v1/cron/dados-retrato
+# O AVISO NINGUEM RESPONDEU (PM-025, migration 9021). A cada 5 minutos: abre um
+# aviso na Central quando o lead escreveu e ninguem respondeu em 1 hora de
+# expediente, e resolve sozinho quando alguem responde. Desligado por empresa.
+*/5 * * * *|120|api/v1/cron/ninguem-respondeu
 # A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
 # do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
 # 43, longe das outras varreduras horarias. Chave desligada: sai na hora.

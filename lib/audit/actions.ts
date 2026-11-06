@@ -1260,6 +1260,11 @@ export const AUDIT_ACTIONS = [
   "dados.retrato_gerado",
   "dados.retrato_recusado",
   "dados.retrato_falhou",
+  // PM-025 §7: a rodada do aviso "Ninguém respondeu" que abriu ou resolveu
+  // algum aviso (a que não fez nada não audita); e as duas configurações.
+  "central.ninguem_respondeu_rodada",
+  "settings.ninguem_respondeu_atualizado",
+  "settings.alcance_do_leitor_atualizado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

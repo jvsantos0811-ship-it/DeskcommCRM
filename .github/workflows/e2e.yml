@@ -1318,6 +1318,7 @@ jobs:
         valor-por-tipo-de-lead.spec.ts
         qualidade-do-lead.spec.ts
         dados-qualidade-do-lead.spec.ts
+        aviso-ninguem-respondeu.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #
