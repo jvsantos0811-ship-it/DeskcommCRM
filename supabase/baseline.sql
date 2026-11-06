@@ -10202,6 +10202,9 @@ alter table public.agent_inbox_items
     -- (migration 9021, PM-025 §7) Um lead escreveu e ninguém respondeu em 1
     -- hora de expediente. Um aberto por conversa; resolve sozinho (#159: bloco único).
     'ninguem_respondeu',
+    -- (migration 9022, PM-027 §3) Um lead perdido ou desqualificado voltou a
+    -- escrever e a ficha mostra potencial. Um aberto por lead (#159: bloco único).
+    'lead_voltou',
     'other'
   ));
 
@@ -57992,6 +57995,194 @@ create policy conferencias_de_fim_da_conversa_select on public.conferencias_de_f
 revoke all on table public.conferencias_de_fim_da_conversa from public, anon, authenticated;
 grant select on table public.conferencias_de_fim_da_conversa to authenticated;
 grant all on table public.conferencias_de_fim_da_conversa to service_role;
+
+-- ---- Leitor da conversa: a Ficha do lead, o histórico, as rodadas, o checklist por tipo de lead e o aviso lead_voltou (migration 9022) ----
+-- Racional inteiro no cabeçalho da migration 9022. O kind novo entrou no bloco único do CHECK, acima.
+create unique index if not exists agent_inbox_lead_voltou_aberto_unico
+  on public.agent_inbox_items (organization_id, kind, ref_id)
+  where status = 'open' and kind = 'lead_voltou';
+
+-- ─── checklist de requisitos por tipo de lead (Regra v2 §2.2) ─────────────
+alter table public.catalog_products
+  add column if not exists requisitos text[] not null default '{}'::text[];
+
+comment on column public.catalog_products.requisitos is
+  'PM-027 / Regra v2 §2.2 (migration 9022): o checklist de requisitos mínimos do tipo de lead (ex.: "houve acidente", "carteira assinada na data"). O Leitor da conversa compara a conversa com ele. Vazio = sem checklist.';
+
+-- ─── a ficha do lead ───────────────────────────────────────────────────────
+create table if not exists public.crm_lead_ficha (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete cascade,
+  ficha jsonb not null,
+  -- Quem falou na conversa, medido no banco (agentes de IA, pessoas pelo CRM,
+  -- celular do escritório). Não é pedido ao modelo.
+  atendido_por jsonb not null default '{}'::jsonb,
+  modelo text not null,
+  versao_prompt text not null,
+  gatilho text not null,
+  lida_em timestamptz not null default now(),
+  -- A mensagem mais recente que a leitura viu: a seleção seguinte compara com ela.
+  mensagens_ate timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint crm_lead_ficha_um_por_lead unique (organization_id, lead_id)
+);
+
+create table if not exists public.crm_lead_ficha_historico (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete cascade,
+  ficha jsonb not null,
+  atendido_por jsonb not null default '{}'::jsonb,
+  modelo text not null,
+  versao_prompt text not null,
+  gatilho text not null,
+  lida_em timestamptz not null,
+  mensagens_ate timestamptz,
+  substituida_em timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'crm_lead_ficha_gatilho_check') then
+    alter table public.crm_lead_ficha
+      add constraint crm_lead_ficha_gatilho_check
+      check (gatilho in ('chat_novo', 'mensagem_do_lead', 'mensagem_da_equipe', 'lead_voltou'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'crm_lead_ficha_historico_gatilho_check') then
+    alter table public.crm_lead_ficha_historico
+      add constraint crm_lead_ficha_historico_gatilho_check
+      check (gatilho in ('chat_novo', 'mensagem_do_lead', 'mensagem_da_equipe', 'lead_voltou'));
+  end if;
+end $$;
+
+create index if not exists crm_lead_ficha_contato_idx on public.crm_lead_ficha (organization_id, contact_id);
+create index if not exists crm_lead_ficha_historico_lead_idx
+  on public.crm_lead_ficha_historico (organization_id, lead_id, substituida_em desc);
+create index if not exists crm_lead_ficha_historico_contato_idx on public.crm_lead_ficha_historico (organization_id, contact_id);
+
+comment on table public.crm_lead_ficha is
+  'PM-027 §4 (migration 9022): a Ficha do lead que o Leitor da conversa grava — fatos da conversa, cada um com o trecho que prova (schema em lib/dados/ficha.ts). Uma por lead; a anterior vai para crm_lead_ficha_historico. Leitura: quem vê a organização inteira; escrita só pelo service_role. Apagada na anonimização do contato.';
+comment on table public.crm_lead_ficha_historico is
+  'PM-027 §4 (migration 9022): as leituras anteriores da Ficha do lead, copiadas pelo gatilho trg_crm_lead_ficha_guarda_a_anterior. Leitura: quem vê a organização inteira; escrita só pelo gatilho e pelo service_role. Apagado na anonimização do contato.';
+
+create or replace function public.fn_crm_lead_ficha_guarda_a_anterior()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  insert into public.crm_lead_ficha_historico
+    (organization_id, lead_id, contact_id, ficha, atendido_por, modelo, versao_prompt, gatilho, lida_em, mensagens_ate)
+  values
+    (old.organization_id, old.lead_id, old.contact_id, old.ficha, old.atendido_por, old.modelo, old.versao_prompt,
+     old.gatilho, old.lida_em, old.mensagens_ate);
+  new.updated_at := now();
+  return new;
+end;
+$$;
+revoke execute on function public.fn_crm_lead_ficha_guarda_a_anterior() from public, anon;
+revoke execute on function public.fn_crm_lead_ficha_guarda_a_anterior() from authenticated;
+
+drop trigger if exists trg_crm_lead_ficha_guarda_a_anterior on public.crm_lead_ficha;
+create trigger trg_crm_lead_ficha_guarda_a_anterior
+  before update on public.crm_lead_ficha
+  for each row
+  when (old.lida_em is distinct from new.lida_em)
+  execute function public.fn_crm_lead_ficha_guarda_a_anterior();
+
+alter table public.crm_lead_ficha enable row level security;
+drop policy if exists tenant_isolation_crm_lead_ficha_select on public.crm_lead_ficha;
+create policy tenant_isolation_crm_lead_ficha_select on public.crm_lead_ficha
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_dados_ve_a_org_inteira(organization_id)
+  );
+revoke all on public.crm_lead_ficha from public, anon, authenticated;
+grant select on public.crm_lead_ficha to authenticated;
+grant all on public.crm_lead_ficha to service_role;
+
+alter table public.crm_lead_ficha_historico enable row level security;
+drop policy if exists tenant_isolation_crm_lead_ficha_historico_select on public.crm_lead_ficha_historico;
+create policy tenant_isolation_crm_lead_ficha_historico_select on public.crm_lead_ficha_historico
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    and public.fn_dados_ve_a_org_inteira(organization_id)
+  );
+revoke all on public.crm_lead_ficha_historico from public, anon, authenticated;
+grant select on public.crm_lead_ficha_historico to authenticated;
+grant all on public.crm_lead_ficha_historico to service_role;
+
+-- ─── LGPD: a anonimização apaga a ficha e o histórico do contato ───────────
+create or replace function public.fn_apagar_ficha_do_lead_ao_anonimizar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.is_anonymized is true and coalesce(old.is_anonymized, false) is not true then
+    delete from public.crm_lead_ficha
+     where organization_id = new.organization_id
+       and contact_id = new.id;
+    delete from public.crm_lead_ficha_historico
+     where organization_id = new.organization_id
+       and contact_id = new.id;
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function public.fn_apagar_ficha_do_lead_ao_anonimizar() from public, anon;
+revoke execute on function public.fn_apagar_ficha_do_lead_ao_anonimizar() from authenticated;
+
+drop trigger if exists trg_contacts_apaga_ficha_do_lead on public.contacts;
+create trigger trg_contacts_apaga_ficha_do_lead
+  after update of is_anonymized on public.contacts
+  for each row execute function public.fn_apagar_ficha_do_lead_ao_anonimizar();
+
+-- ─── as rodadas do Leitor ──────────────────────────────────────────────────
+create table if not exists public.leitor_rodadas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  -- O dia no fuso da organização.
+  dia date not null,
+  -- diaria = a das 06:00; manual = a do "Atualizar agora".
+  origem text not null default 'diaria',
+  iniciada_em timestamptz not null default now(),
+  terminada_em timestamptz,
+  lidos integer not null default 0,
+  falhas integer not null default 0,
+  ultimo_erro text
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'leitor_rodadas_origem_check') then
+    alter table public.leitor_rodadas
+      add constraint leitor_rodadas_origem_check check (origem in ('diaria', 'manual'));
+  end if;
+end $$;
+
+create unique index if not exists leitor_rodadas_uma_diaria_por_dia
+  on public.leitor_rodadas (organization_id, dia)
+  where origem = 'diaria';
+create index if not exists leitor_rodadas_abertas_idx
+  on public.leitor_rodadas (organization_id, iniciada_em desc)
+  where terminada_em is null;
+
+comment on table public.leitor_rodadas is
+  'PM-027 §3 (migration 9022): as rodadas do Leitor da conversa — a diária das 06:00 no fuso da organização (uma por dia) e as do "Atualizar agora". O retrato das 06:00 espera a diária terminar. Sem texto de conversa. Leitura: membro da organização; escrita só pelo service_role.';
+
+alter table public.leitor_rodadas enable row level security;
+drop policy if exists tenant_isolation_leitor_rodadas_select on public.leitor_rodadas;
+create policy tenant_isolation_leitor_rodadas_select on public.leitor_rodadas
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.leitor_rodadas from public, anon, authenticated;
+grant select on public.leitor_rodadas to authenticated;
+grant all on public.leitor_rodadas to service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

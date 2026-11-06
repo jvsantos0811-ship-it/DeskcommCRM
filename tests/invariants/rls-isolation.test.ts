@@ -690,6 +690,25 @@ beforeAll(() => {
           values (v_org, current_date, '{"leads": 1}'::jsonb);
         end if;
 
+        -- migration 9022 (fork): Ficha do lead do Leitor da conversa, a leitura
+        -- anterior (historico) e a rodada do Leitor. A ficha e o historico tem
+        -- trecho de conversa: leitura de quem ve a organizacao INTEIRA (bloco
+        -- dedicado no fim deste arquivo); a rodada e org-scoped sem gate.
+        if not exists (select 1 from public.crm_lead_ficha where organization_id = v_org) then
+          insert into public.crm_lead_ficha (organization_id, lead_id, contact_id, ficha, modelo, versao_prompt, gatilho)
+          select v_org, id, v_contact, '{"contato":"lead"}'::jsonb, 'rls/invariant', 'rls', 'mensagem_do_lead'
+            from public.crm_leads where organization_id = v_org limit 1;
+        end if;
+        if not exists (select 1 from public.crm_lead_ficha_historico where organization_id = v_org) then
+          insert into public.crm_lead_ficha_historico
+            (organization_id, lead_id, contact_id, ficha, modelo, versao_prompt, gatilho, lida_em)
+          select v_org, id, v_contact, '{"contato":"lead"}'::jsonb, 'rls/invariant', 'rls', 'chat_novo', now()
+            from public.crm_leads where organization_id = v_org limit 1;
+        end if;
+        if not exists (select 1 from public.leitor_rodadas where organization_id = v_org) then
+          insert into public.leitor_rodadas (organization_id, dia) values (v_org, current_date);
+        end if;
+
         -- migration 9004 (fork): painel de dados. Leitura org-scoped sem gate
         -- de papel; a escrita so o servidor faz (authenticated so tem SELECT).
         if not exists (select 1 from public.data_dashboards where organization_id = v_org) then
@@ -974,6 +993,14 @@ export const TABLES = [
   // quais muletas a IA do escritório usa e quanto. Sem texto de cliente, mas é
   // dado operacional da organização. Leitura org-scoped; escrita só do worker.
   "frases_proibidas_na_semana",
+  // migration 9022 (fork) — as rodadas do Leitor da conversa: só contagens e o
+  // último erro, mas dizem quanto o escritório conversa. Leitura org-scoped sem
+  // gate de papel; escrita só o cron.
+  "leitor_rodadas",
+  // ⚠️ `crm_lead_ficha` e `crm_lead_ficha_historico` (migration 9022) NÃO entram
+  // nesta lista, pelo mesmo motivo do retrato: a leitura é de quem vê a
+  // organização inteira. Bloco dedicado no fim deste arquivo e
+  // `tests/invariants/ficha-do-lead.test.ts`.
   // ⚠️ `crm_dados_retrato` (migration 9020) NÃO entra nesta lista: a leitura é
   // de quem vê a organização INTEIRA, e o usuário semeado é `agent` em "só os
   // seus" — o controle positivo falharia por ACERTO. A prova (as duas direções,
@@ -1069,4 +1096,45 @@ describe("RLS — crm_dados_retrato (retrato diário de Dados, migration 9020)",
     expect(contarVendoTodos(USER_A, ORG_B, ORG_A)).toBe(0);
     expect(contarVendoTodos(USER_B, ORG_A, ORG_B)).toBe(0);
   });
+});
+
+/**
+ * A Ficha do lead e o histórico (migration 9022) seguem a régua do retrato: o
+ * agent em "só os seus" não lê nem a da própria organização (a ficha traz trecho
+ * da conversa de leads de colegas); vendo todos, lê a da própria e ZERO do vizinho.
+ */
+describe("RLS — crm_lead_ficha e crm_lead_ficha_historico (Leitor da conversa, migration 9022)", () => {
+  function contarVendoTodos(tabela: string, userId: string, org: string, orgDoUsuario: string): number {
+    const out = sql(`
+      begin;
+      update public.organizations set settings = coalesce(settings, '{}'::jsonb) || '{"visibility_mode":"all"}'::jsonb
+       where id = '${orgDoUsuario}';
+      set local role authenticated;
+      select set_config('request.jwt.claims', '{"sub":"${userId}"}', true);
+      select 'n=' || count(*) from public.${tabela} where organization_id = '${org}';
+      rollback;
+    `);
+    const linha = out.split("\n").find((l) => l.startsWith("n="));
+    if (!linha) throw new Error(`unexpected psql output: ${out}`);
+    return Number(linha.slice(2));
+  }
+
+  for (const tabela of ["crm_lead_ficha", "crm_lead_ficha_historico"]) {
+    it(`${tabela}: os dois tenants têm linha (o seed existe)`, () => {
+      expect(Number(sql(
+        `select count(distinct organization_id) from public.${tabela} where organization_id in ('${ORG_A}','${ORG_B}');`,
+      ))).toBe(2);
+    });
+
+    it(`${tabela}: agent em "só os seus" não lê nada — nem da própria organização`, () => {
+      expect(countAs(USER_A, `select count(*) from public.${tabela} where organization_id = '${ORG_A}';`)).toBe(0);
+      expect(countAs(USER_A, `select count(*) from public.${tabela} where organization_id = '${ORG_B}';`)).toBe(0);
+    });
+
+    it(`${tabela}: agent que vê todos lê o da própria e ZERO do vizinho (controle positivo)`, () => {
+      expect(contarVendoTodos(tabela, USER_A, ORG_A, ORG_A)).toBeGreaterThan(0);
+      expect(contarVendoTodos(tabela, USER_A, ORG_B, ORG_A)).toBe(0);
+      expect(contarVendoTodos(tabela, USER_B, ORG_A, ORG_B)).toBe(0);
+    });
+  }
 });
