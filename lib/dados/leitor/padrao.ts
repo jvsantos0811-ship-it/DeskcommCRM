@@ -151,15 +151,15 @@ export async function situacaoDasOrganizacoes(admin: SupabaseClient, padrao: Pad
     funisPorOrg.set(f.organization_id, lista);
   }
   return ((orgsR.data ?? []) as Array<{ id: string; display_name: string | null; settings: unknown; created_at: string | null; status: string | null }>).map(
-    (o) => {
-      const efetiva = configEfetivaDoLeitor(configDoLeitor(o.settings), o.created_at, padrao);
-      const funis = funisPorOrg.get(o.id) ?? [];
-      const lidos = funisLidos(alcanceDaOrg(o.settings), funis);
+    (org) => {
+      const efetiva = configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao);
+      const funis = funisPorOrg.get(org.id) ?? [];
+      const lidos = funisLidos(alcanceDaOrg(org.settings), funis);
       return {
-        id: o.id,
-        nome: o.display_name ?? o.id,
+        id: org.id,
+        nome: org.display_name ?? org.id,
         escolha: efetiva.origem,
-        operando: ehOperante(o.status),
+        operando: ehOperante(org.status),
         ligado_em: efetiva.ligado ? efetiva.ligado_em : null,
         funis_lidos: funis.filter((f) => lidos.has(f.id)).map((f) => f.name),
       };
