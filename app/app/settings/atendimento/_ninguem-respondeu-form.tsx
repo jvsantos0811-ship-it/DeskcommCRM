@@ -71,11 +71,14 @@ export function NinguemRespondeuForm({ inicial, funis }: { inicial: Inicial; fun
           funis: funisAtuais,
           marcadores_que_desqualificam: listaDeMarcadores(marcadores),
         });
-        const r = await apiClient.patch<{ aviso: { ligado: boolean; ligado_em: string | null } }>(
+        // A rota responde no envelope `{ data }` (lib/api/wrappers.ts) e o
+        // apiClient devolve o corpo como veio — ler `r.aviso` direto quebrava o
+        // salvar depois de gravar, e o usuário via erro com tudo salvo.
+        const r = await apiClient.patch<{ data: { aviso: { ligado: boolean; ligado_em: string | null } } }>(
           "/api/v1/settings/ninguem-respondeu",
           { ligado },
         );
-        setLigadoEm(r.aviso.ligado_em);
+        setLigadoEm(r.data.aviso.ligado_em);
         setSalvo({ ligado, funis: funisAtuais, marcadores });
         toast.success(t("Aviso e alcance salvos."));
       } catch (err) {
