@@ -674,6 +674,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
 
   // ────────────────────────── Melhorar e testar ────────────────────────────
   {
+    id: "juiz_da_bateria",
+    rotulo: "Julgar a bateria do Leitor",
+    oQueFaz:
+      "Quando o modelo testado na bateria do Leitor da conversa e o gabarito discordam, lê a conversa e decide qual dos dois está certo. Nunca é o mesmo modelo que está sendo testado.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/dados/leitor/bateria-rodada.ts",
+    sintomaDeFalha:
+      "As divergências da bateria ficam como dúvida: o gabarito vale e o caso vai para a revisão do Gestor.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "flywheel_judge",
     rotulo: "Avaliar o próprio atendimento",
     oQueFaz:

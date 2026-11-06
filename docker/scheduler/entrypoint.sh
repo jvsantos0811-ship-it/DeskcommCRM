@@ -140,6 +140,10 @@ CRONS="
 # ultima leitura e, quando a diaria termina, gera o retrato de Dados do dia. So
 # roda onde o Leitor foi ligado com um modelo aprovado na bateria.
 */10 * * * *|120|api/v1/cron/leitor-da-conversa
+# A BATERIA DO LEITOR (PM-027, migration 9023). A cada minuto: avanca a rodada
+# que o dono pediu na area de administracao, caso a caso, com o juiz nas
+# divergencias. Sem rodada pedida, sai sem fazer nada.
+* * * * *|60|api/v1/cron/bateria-do-leitor
 # A COBRANCA DOS SEUS CLIENTES. De hora em hora: a reativacao chega pelo aviso
 # do provedor, em segundos, e a hora so pesa na regua, que conta em dias. Minuto
 # 43, longe das outras varreduras horarias. Chave desligada: sai na hora.
