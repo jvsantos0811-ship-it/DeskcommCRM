@@ -130,6 +130,10 @@ export type InboxKind =
   // respondeu em 1 hora de expediente. Um aberto por conversa; resolve sozinho
   // quando alguém responde (`lib/escalacao/ninguem-respondeu-rodada.ts`).
   | 'ninguem_respondeu'
+  // (migration 9022, PM-027 §3) Um lead perdido ou desqualificado voltou a
+  // escrever e o Leitor da conversa viu potencial. Um aberto por lead; a etapa
+  // não muda sozinha (`lib/dados/leitor/rodada.ts`).
+  | 'lead_voltou'
   | 'other';
 
 export interface InboxItemRow {

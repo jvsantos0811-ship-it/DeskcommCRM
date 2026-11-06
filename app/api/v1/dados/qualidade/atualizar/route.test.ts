@@ -12,6 +12,8 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/dados/leitor/rodadas", () => ({ rodadaManualDoLeitor: vi.fn(async () => null) }));
+vi.mock("@/lib/dados/leitor/ler-lead", () => ({ criarLeitor: vi.fn(() => vi.fn()) }));
 vi.mock("@/lib/dados/gerar-retrato", async (importOriginal) => {
   const real = await importOriginal<typeof GerarRetrato>();
   return { ...real, gerarRetratoDaOrg: vi.fn() };

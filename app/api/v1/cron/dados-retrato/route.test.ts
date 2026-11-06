@@ -5,7 +5,9 @@
  *    `soSeFaltar`, para rodar duas vezes não refazer);
  *  - organização parada fica de fora mesmo se o banco a listasse (o cinto);
  *  - uma organização que falha não para as outras, e a falha fica na auditoria;
- *  - rodada sem nada a fazer não audita; sem o segredo, 403 e nada roda.
+ *  - rodada sem nada a fazer não audita; sem o segredo, 403 e nada roda;
+ *  - organização com o Leitor da conversa ligado e a rodada diária aberta
+ *    espera (PM-027 §3) — quem gera o retrato dela é o fim da rodada.
  * O fuso, a hora e o "já tem o do dia" são do banco: `tests/invariants/retrato-de-dados.test.ts`.
  */
 import { NextRequest } from "next/server";
@@ -17,6 +19,8 @@ vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "segredo", INTERNAL_CRON_S
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/organizacao/operante", () => ({ idsDeOrgsParadas: vi.fn(async () => []) }));
+const esperaOLeitor = vi.fn(async (..._a: unknown[]) => false);
+vi.mock("@/lib/dados/leitor/rodadas", () => ({ retratoEsperaOLeitor: (...a: unknown[]) => esperaOLeitor(...a) }));
 vi.mock("@/lib/dados/gerar-retrato", async (importOriginal) => {
   const real = await importOriginal<typeof GerarRetrato>();
   return { ...real, gerarRetratoDaOrg: vi.fn() };
@@ -39,6 +43,11 @@ function admin(lista: Array<{ organization_id: string; dia: string }>) {
       pedidoAoBanco = { fn, ...args };
       return { data: lista, error: null };
     }),
+    from: () => ({
+      select: () => ({
+        in: async (_col: string, ids: string[]) => ({ data: ids.map((id) => ({ id, settings: {}, timezone: null })), error: null }),
+      }),
+    }),
   };
 }
 
@@ -59,6 +68,7 @@ const gravado = (gravou: boolean) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  esperaOLeitor.mockResolvedValue(false);
   pedidoAoBanco = null;
 });
 
@@ -116,5 +126,20 @@ describe("cron dados-retrato", () => {
     expect(audit).not.toHaveBeenCalled();
     expect((await GET(pedido(false))).status).toBe(403);
     expect(gerarRetratoDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("organização com a rodada diária do Leitor aberta espera; as outras seguem", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([
+        { organization_id: A, dia: "2026-11-05" },
+        { organization_id: B, dia: "2026-11-05" },
+      ]) as never,
+    );
+    esperaOLeitor.mockImplementation(async (...a: unknown[]) => (a[1] as { id: string }).id === A);
+    vi.mocked(gerarRetratoDaOrg).mockResolvedValueOnce(gravado(true));
+    const { GET } = await import("./route");
+    const corpo = (await (await GET(pedido())).json()) as { data: Record<string, number> };
+    expect(vi.mocked(gerarRetratoDaOrg).mock.calls.map((c) => c[1])).toEqual([B]);
+    expect(corpo.data).toMatchObject({ gerados: 1, esperando_o_leitor: 1 });
   });
 });

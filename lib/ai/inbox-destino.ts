@@ -190,6 +190,10 @@ export const POLITICAS_DE_AVISO = {
     refs: ["conversation"],
     orientacao: "Abra a conversa e responda o lead. Este aviso se resolve sozinho quando alguém da equipe ou a IA responder.",
   },
+  lead_voltou: {
+    refs: ["lead"],
+    orientacao: "Abra o negócio, leia o que o lead escreveu e decida se ele volta para o funil. A etapa não muda sozinha.",
+  },
   other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
@@ -206,6 +210,7 @@ const ROTULO_POR_KIND: Record<string, string> = {
   proposta_travada: "Abrir proposta",
   voice_call_missed: "Ligar de volta",
   ninguem_respondeu: "Responder o lead",
+  lead_voltou: "Abrir o negócio",
   // "Abrir o fluxo" convida a olhar; o aviso pede CONFERIR qual fluxo está
   // parado antes de ir ligá-lo no agente.
   followup_sem_agente: "Ver o fluxo parado",

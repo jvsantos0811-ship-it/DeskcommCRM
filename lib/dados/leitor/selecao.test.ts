@@ -19,7 +19,9 @@ const LIGADO_EM = new Date("2026-11-02T06:00-03:00"); // segunda
 const ctx = { ligadoEm: LIGADO_EM, expediente: CLINICA };
 const d = (s: string) => new Date(s);
 
-function candidato(p: Partial<CandidatoAoLeitor> & { conversa: Partial<CandidatoAoLeitor["conversa"]> }): CandidatoAoLeitor {
+function candidato(
+  p: Partial<Omit<CandidatoAoLeitor, "conversa">> & { conversa: Partial<CandidatoAoLeitor["conversa"]> },
+): CandidatoAoLeitor {
   return {
     posicao: p.posicao ?? "com_potencial",
     leituraAnterior: p.leituraAnterior === undefined ? { mensagensAte: d("2026-11-02T08:00-03:00") } : p.leituraAnterior,

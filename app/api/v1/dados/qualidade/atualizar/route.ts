@@ -15,6 +15,8 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { ErroDoRetrato, gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import { criarLeitor } from "@/lib/dados/leitor/ler-lead";
+import { rodadaManualDoLeitor } from "@/lib/dados/leitor/rodadas";
 import { proximoAtualizar } from "@/lib/dados/resposta";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
@@ -65,6 +67,10 @@ export async function POST(): Promise<Response> {
   const proximo = proximoAtualizar(geradoAntes, agora);
   if (geradoAntes && proximo) return recusar(geradoAntes, proximo);
 
+  // PM-027 §3: o Leitor da conversa (se ligado) lê antes do retrato. Passada
+  // curta: o que não couber o cron continua. Nunca lança.
+  const leitura = await rodadaManualDoLeitor(admin, orgId, { agora, ler: criarLeitor(admin), requestId });
+
   let resultado;
   try {
     resultado = await gerarRetratoDaOrg(admin, orgId, "manual", { agora });
@@ -93,7 +99,13 @@ export async function POST(): Promise<Response> {
   });
 
   return ok(
-    { dia: resultado.dia, gerado_em: resultado.geradoEm, proximo_atualizar_em: resultado.proximoEm, leads: resultado.leads },
+    {
+      dia: resultado.dia,
+      gerado_em: resultado.geradoEm,
+      proximo_atualizar_em: resultado.proximoEm,
+      leads: resultado.leads,
+      leitor: leitura ? { lidos: leitura.lidos, restantes: leitura.restantes, parou: leitura.parou } : null,
+    },
     { requestId },
   );
 }

@@ -25,6 +25,8 @@
   "contracts": [],
   "passagens_entre_agentes": [],
   "registro_da_conversa": [],
+  "ficha_do_lead": [],
+  "ficha_do_lead_historico": [],
   "tasks": [],
   "webhook_captures": [],
   "audit_log_extract": [],

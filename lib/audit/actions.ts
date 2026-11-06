@@ -1265,6 +1265,10 @@ export const AUDIT_ACTIONS = [
   "central.ninguem_respondeu_rodada",
   "settings.ninguem_respondeu_atualizado",
   "settings.alcance_do_leitor_atualizado",
+  // PM-027 §3: uma passada do Leitor da conversa que leu algum lead ou terminou
+  // a rodada (a que não fez nada não audita; metadata: origem, dia, lidos,
+  // falhas, restantes, avisos, parou).
+  "leitor.rodada",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

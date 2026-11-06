@@ -121,6 +121,8 @@ export const KIND_LABEL = {
   task_overdue: "Uma tarefa venceu sem conclusão",
   // PM-027 §7: o rótulo diz o fato — um lead esperando e ninguém do lado de cá.
   ninguem_respondeu: "Um lead escreveu e ninguém respondeu",
+  // PM-027 §3: o lead saiu da conta (perdido ou desqualificado) e voltou a falar.
+  lead_voltou: "Um lead perdido voltou a escrever",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
