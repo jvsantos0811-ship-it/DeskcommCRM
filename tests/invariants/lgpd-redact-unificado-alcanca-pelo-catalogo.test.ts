@@ -336,6 +336,15 @@ const DECISOES: Record<string, Decisao> = {
       "9022 (fork, PM-027): as leituras anteriores da Ficha do lead, com os mesmos trechos; " +
       "apagadas pelo mesmo gatilho (fn_apagar_ficha_do_lead_ao_anonimizar).",
   },
+  leitor_bateria_casos: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9023 (fork, PM-027): o caso da bateria do Leitor guarda a conversa do contato copiada e " +
+      "congelada (e, em cascata, a resposta do modelo e a decisão do juiz). A virada de " +
+      "is_anonymized APAGA o caso pelo gatilho trg_contacts_apaga_caso_da_bateria " +
+      "(fn_apagar_caso_da_bateria_ao_anonimizar). Não há trilha a preservar.",
+  },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   before_send_traces: {
     decidida: "manter",
