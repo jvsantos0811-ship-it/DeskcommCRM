@@ -104,8 +104,11 @@ function ficha(desde: string) {
 async function ligarLeitor(ligado: boolean): Promise<void> {
   // O alcance volta ao padrão (todos os funis de venda, sem marcador): outra spec
   // da mesma parte (o aviso "Ninguém respondeu") deixa só um funil escolhido.
+  // A escolha explícita (PM-027 · PR B): "própria" liga sem depender do modelo padrão
+  // da instalação, e "desligado" fica desligado mesmo que outra spec grave um padrão.
   const leitor = {
     ...((semeado.settingsAntes.leitor as Record<string, unknown> | undefined) ?? {}),
+    escolha: ligado ? "propria" : "desligado",
     ligado,
     funis: null,
     marcadores_que_desqualificam: [],

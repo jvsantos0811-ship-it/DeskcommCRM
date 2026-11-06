@@ -146,7 +146,18 @@ function cenario(leitorLigado = true): Tabelas {
   });
   const contatos = ["c1", "c2", "c3", "c3b", "c4", "c5", "c6", "c7", "c8", "c9", "c-interno", "x1", "x2", "x3"];
   return {
-    organizations: [{ id: ORG, timezone: "America/Sao_Paulo", settings: { leitor: { ligado: leitorLigado } } }],
+    organizations: [
+      {
+        id: ORG,
+        timezone: "America/Sao_Paulo",
+        created_at: "2026-09-01T12:00:00.000Z",
+        settings: {
+          leitor: leitorLigado
+            ? { escolha: "propria", ligado: true, ligado_em: "2026-10-01T12:00:00.000Z", modelo: { provider: "anthropic", model_id: "claude-haiku-5-5" } }
+            : { ligado: false },
+        },
+      },
+    ],
     crm_pipelines: [
       { id: VENDAS, organization_id: ORG, is_archived: false, is_client_pipeline: false },
       { id: CLIENTES, organization_id: ORG, is_archived: false, is_client_pipeline: true },
@@ -226,6 +237,26 @@ describe("esperandoAEquipeDaOrg", () => {
   it("com o Leitor desligado o painel não existe", async () => {
     const r = await esperandoAEquipeDaOrg(bancoEmMemoria(cenario(false)) as never, ORG, AGORA);
     expect(r).toEqual({ ligado: false, leads: [], falhas: 0 });
+  });
+
+  it("quem nunca mexeu no Leitor e segue o modelo padrão da instalação também tem o painel", async () => {
+    const t = cenario(false);
+    t.organizations![0]!.settings = {};
+    expect((await esperandoAEquipeDaOrg(bancoEmMemoria(t) as never, ORG, AGORA)).ligado).toBe(false);
+    t.platform_config = [
+      {
+        chave: "LEITOR_MODELO_PADRAO",
+        valor: JSON.stringify({
+          modelo: { provider: "anthropic", model_id: "claude-haiku-5-5" },
+          reserva: null,
+          ativo_desde: "2026-10-01T12:00:00.000Z",
+          definido_em: "2026-10-01T12:00:00.000Z",
+        }),
+      },
+    ];
+    const r = await esperandoAEquipeDaOrg(bancoEmMemoria(t) as never, ORG, AGORA);
+    expect(r.ligado).toBe(true);
+    expect(r.leads.map((l) => l.lead_id)).toEqual(["L2", "L4b", "L5", "L9", "L1"]);
   });
 
   it("com funil, só os leads dele (o quadro com ?esperando=equipe)", async () => {
