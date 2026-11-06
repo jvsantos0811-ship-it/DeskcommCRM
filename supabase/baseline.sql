@@ -58230,6 +58230,9 @@ create table if not exists public.leitor_bateria_rodadas (
   -- Sinal de vida: a rodada parada há muito tempo é retomada.
   atualizada_em timestamptz not null default now(),
   terminada_em timestamptz,
+  -- Os casos da rodada, fixados no começo: gabarito corrigido no meio (versão
+  -- nova) não entra na mesma rodada.
+  casos uuid[] not null default '{}'::uuid[],
   casos_total integer not null default 0,
   casos_feitos integer not null default 0,
   acertos integer not null default 0,

@@ -50,13 +50,14 @@ export type ResultadoDaLeitura =
 
 export type Leitor = (e: EntradaDaLeitura) => Promise<ResultadoDaLeitura>;
 
-type Classificar = (
+export type Classificar = (
   model: LanguageModel,
   sistema: string,
   conversa: string,
 ) => Promise<{ ficha: FichaDoLeitor; promptTokens: number; completionTokens: number }>;
 
-const classificarComModelo: Classificar = async (model, sistema, conversa) => {
+/** A leitura em si (também usada pela bateria, com o modelo que ela testa). */
+export const lerComModelo: Classificar = async (model, sistema, conversa) => {
   const r = await generateObject({
     model,
     schema: fichaDoLeitorSchema,
@@ -82,7 +83,7 @@ export function idDoModeloAprovado(m: ModeloDoLeitor): string {
 }
 
 /** O Leitor de produção. `classificar` existe para o teste. */
-export function criarLeitor(admin: ReturnType<typeof createAdminClient>, classificar: Classificar = classificarComModelo): Leitor {
+export function criarLeitor(admin: ReturnType<typeof createAdminClient>, classificar: Classificar = lerComModelo): Leitor {
   return async (e) => {
     const aprovado = idDoModeloAprovado(e.aprovado);
     const resolvido = await resolverModeloDoPonto(PONTO_DO_LEITOR, e.organizationId, aprovado);
