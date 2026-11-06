@@ -7,6 +7,11 @@
  * (a de origem dos casos, por padrão); sem ela, a chave da instalação
  * (`resolveLanguageModel`, que cobre gateway, OpenRouter, Anthropic e OpenAI).
  * Sem nenhuma das duas, `null`: a rodada para com "sem chave", nunca troca de modelo.
+ *
+ * `modeloDaInstalacao` é o degrau da instalação, num lugar só: a tela Provedores
+ * pergunta "tem chave?" com ele (`instalacaoAtendeOModelo`), e a leitura monta o
+ * modelo com ele. Assim a tela nunca diz "tem chave" para um modelo que a
+ * leitura não consegue montar, nem o contrário.
  */
 import type { LanguageModel } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -28,6 +33,20 @@ export interface ModeloMontado {
 
 export function idDaEscolha(e: EscolhaDeModelo): string {
   return e.model_id.includes("/") ? e.model_id : `${e.provider}/${e.model_id}`;
+}
+
+/** O modelo pela chave da INSTALAÇÃO (gateway, OpenRouter, Anthropic ou OpenAI do `.env`). `null` = nenhuma atende. */
+export function modeloDaInstalacao(escolha: EscolhaDeModelo): LanguageModel | null {
+  try {
+    return resolveLanguageModel(idDaEscolha(escolha));
+  } catch {
+    return null;
+  }
+}
+
+/** A instalação tem chave para este modelo? A mesma pergunta que a leitura faz. */
+export function instalacaoAtendeOModelo(escolha: EscolhaDeModelo): boolean {
+  return modeloDaInstalacao(escolha) !== null;
 }
 
 export async function montarModeloEscolhido(
@@ -55,10 +74,6 @@ export async function montarModeloEscolhido(
       if (model) return { model, modelId: completo, origem: "credencial_da_organizacao" };
     }
   }
-  try {
-    const model = resolveLanguageModel(completo);
-    return model ? { model, modelId: completo, origem: "instalacao" } : null;
-  } catch {
-    return null;
-  }
+  const model = modeloDaInstalacao(escolha);
+  return model ? { model, modelId: completo, origem: "instalacao" } : null;
 }
