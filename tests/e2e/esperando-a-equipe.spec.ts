@@ -67,7 +67,14 @@ const sufixo = String(Date.now()).slice(-8);
 const ESPERA = `Espera Equipe E2E ${sufixo}`;
 const ATENDIDO = `Atendido Equipe E2E ${sufixo}`;
 const diasAtras = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
-const semeado = { pipeline: "", sessao: "", contatos: [] as string[], leads: [] as string[], settingsAntes: {} as Record<string, unknown> };
+const semeado = {
+  pipeline: "",
+  sessao: "",
+  contatos: [] as string[],
+  leads: [] as string[],
+  settingsAntes: {} as Record<string, unknown>,
+  criouRetrato: false,
+};
 
 function ficha(desde: string) {
   return {
@@ -95,7 +102,14 @@ function ficha(desde: string) {
 }
 
 async function ligarLeitor(ligado: boolean): Promise<void> {
-  const leitor = { ...((semeado.settingsAntes.leitor as Record<string, unknown> | undefined) ?? {}), ligado };
+  // O alcance volta ao padrão (todos os funis de venda, sem marcador): outra spec
+  // da mesma parte (o aviso "Ninguém respondeu") deixa só um funil escolhido.
+  const leitor = {
+    ...((semeado.settingsAntes.leitor as Record<string, unknown> | undefined) ?? {}),
+    ligado,
+    funis: null,
+    marcadores_que_desqualificam: [],
+  };
   const { error } = await admin
     .from("organizations")
     .update({ settings: { ...semeado.settingsAntes, leitor } })
@@ -208,14 +222,20 @@ async function cenario(): Promise<void> {
 async function abrirGestao(page: Page): Promise<void> {
   await page.goto("/app/dados?aba=gestao");
   await expect(page.getByTestId("aba-de-dados-gestao")).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
-  // Gestão só aparece com retrato: sem ele, monta pelo "Atualizar agora".
-  if (await page.getByTestId("dados-sem-retrato").isVisible({ timeout: 10_000 }).catch(() => false)) {
+  // Gestão só aparece com retrato. Espera a tela decidir (outra spec da parte apaga
+  // o retrato ao terminar) e, sem retrato, monta pelo "Atualizar agora".
+  const semRetrato = page.getByTestId("dados-sem-retrato");
+  const gestao = page.getByTestId("cartao-leads-hoje");
+  await expect(semRetrato.or(gestao)).toBeVisible({ timeout: 30_000 });
+  if (await semRetrato.isVisible()) {
     const gravou = page.waitForResponse(
       (r) => r.url().includes("/api/v1/dados/qualidade/atualizar") && r.request().method() === "POST",
       { timeout: 60_000 },
     );
     await page.getByTestId("dados-atualizar-agora").click();
     expect((await gravou).status()).toBe(200);
+    semeado.criouRetrato = true;
+    await expect(gestao).toBeVisible({ timeout: 30_000 });
   }
 }
 
@@ -238,6 +258,7 @@ test.describe("PM-027 §6 — painel Esperando a equipe", () => {
       await admin.from("contacts").delete().in("id", semeado.contatos);
     }
     if (semeado.sessao) await admin.from("channel_sessions").delete().eq("id", semeado.sessao);
+    if (semeado.criouRetrato) await admin.from("crm_dados_retrato").delete().eq("organization_id", creds.org_id);
   });
 
   test("o gerente vê quem espera a equipe, abre o funil filtrado e tira o filtro", async ({ page }) => {
