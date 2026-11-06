@@ -99,6 +99,7 @@ function bancoEmMemoria(t: Tabelas) {
       eq: (col: string, v: unknown) => (filtros.push((l) => valor(l, col) === v), b),
       in: (col: string, vs: unknown[]) => (filtros.push((l) => vs.includes(l[col])), b),
       gte: (col: string, v: string) => (filtros.push((l) => String(l[col] ?? "") >= v), b),
+      lte: (col: string, v: string) => (filtros.push((l) => String(l[col] ?? "") <= v), b),
       is: (col: string, v: unknown) => (filtros.push((l) => (l[col] ?? null) === v), b),
       // Só a forma que `pegarRodada` usa: pendente, ou rodando e parada antes do limite.
       or: (expr: string) => {
