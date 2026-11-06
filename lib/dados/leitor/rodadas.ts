@@ -15,7 +15,11 @@
  *    depois refaz o retrato. Se não couber tudo, o cron continua a rodada.
  *
  * Organização sem o Leitor ligado (ou sem modelo aprovado) não tem rodada: o
- * retrato segue como sempre.
+ * retrato segue como sempre. "Ligado" é o da configuração EFETIVA: quem nunca
+ * mexeu segue o modelo padrão da instalação (`padrao.ts`), lido uma vez por
+ * cron. A primeira diária de uma organização que nasceu depois do padrão passar
+ * a valer é auditada (`leitor.ligado_pelo_padrao`); as que já existiam são
+ * auditadas quando o dono grava o padrão.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -26,8 +30,9 @@ import { logger } from "@/lib/logger";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
-import { configDoLeitor, leitorPodeRodar } from "./config";
+import { configDoLeitor, configEfetivaDoLeitor, leitorPodeRodar, type ConfigEfetivaDoLeitor, type PadraoDoLeitor } from "./config";
 import type { Leitor } from "./ler-lead";
+import { lerPadraoDoLeitor } from "./padrao";
 import { passadaDoLeitor, type OrgDoLeitor, type ResultadoDaPassada } from "./rodada";
 
 /** O cron tem 120 s no agendador; a passada não começa leitura nova depois disto. */
@@ -98,6 +103,45 @@ async function auditarPassada(orgId: string, origem: string, dia: string, p: Res
 
 // ─── o cron ────────────────────────────────────────────────────────────────
 
+/**
+ * A organização que nasceu depois de o padrão da instalação passar a valer
+ * começa a ler na primeira diária dela: é ali que fica registrado que ela passou
+ * a ler por causa do padrão (as que já existiam são registradas quando o dono
+ * grava o padrão — `app/api/v1/admin/bateria-do-leitor/padrao`). Nunca lança.
+ */
+async function auditarSeNasceuNoPadrao(
+  admin: SupabaseClient,
+  org: OrgDoLeitor,
+  efetiva: ConfigEfetivaDoLeitor,
+  padrao: PadraoDoLeitor | null,
+  requestId?: string,
+): Promise<void> {
+  try {
+    if (efetiva.origem !== "padrao" || !padrao || !org.created_at) return;
+    if (Date.parse(org.created_at) <= Date.parse(padrao.ativo_desde)) return;
+    const { data, error } = await admin
+      .from("leitor_rodadas")
+      .select("id")
+      .eq("organization_id", org.id)
+      .eq("origem", "diaria")
+      .limit(2);
+    if (error || (data ?? []).length !== 1) return;
+    await audit({
+      organizationId: org.id,
+      action: "leitor.ligado_pelo_padrao",
+      resourceType: "organization",
+      resourceId: org.id,
+      metadata: { ligado_em: efetiva.ligado_em, modelo: padrao.modelo, reserva: padrao.reserva, quando: "primeira_diaria" },
+      ...(requestId ? { requestId } : {}),
+    });
+  } catch (err) {
+    logger.warn("[leitor] não consegui registrar a organização que passou a ler pelo padrão", {
+      organization_id: org.id,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export interface ResultadoDoCron {
   organizacoes: number;
   lidos: number;
@@ -113,16 +157,21 @@ export async function cronDoLeitor(
 ): Promise<ResultadoDoCron> {
   const r: ResultadoDoCron = { organizacoes: 0, lidos: 0, falhas: 0, avisos: 0, terminadas: 0, retratos: 0 };
   const limite = Date.now() + (deps.orcamentoMs ?? ORCAMENTO_DO_CRON_MS);
-  const { data: orgs, error } = await admin
+  const padrao = await lerPadraoDoLeitor(admin);
+  // Sem padrão na instalação, só lê quem ligou o seu; com padrão, toda organização
+  // operante é candidata, e a configuração efetiva decide.
+  let consulta = admin
     .from("organizations")
-    .select("id, settings, timezone, display_name, locale, status")
-    .eq("status", STATUS_OPERANTE)
-    .eq("settings->leitor->>ligado", "true");
+    .select("id, settings, timezone, display_name, locale, status, created_at")
+    .eq("status", STATUS_OPERANTE);
+  if (!padrao) consulta = consulta.eq("settings->leitor->>ligado", "true");
+  const { data: orgs, error } = await consulta;
   if (error) throw new Error(`organizacoes: ${error.message}`);
 
   for (const org of (orgs ?? []) as Array<OrgDoLeitor & { status: string }>) {
     if (Date.now() >= limite) break;
-    if (!ehOperante(org.status) || !leitorPodeRodar(configDoLeitor(org.settings)).pode) continue;
+    const efetiva = configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao);
+    if (!ehOperante(org.status) || !leitorPodeRodar(efetiva).pode) continue;
     r.organizacoes += 1;
     try {
       const fuso = fusoUtilizavel(org.timezone);
@@ -130,6 +179,7 @@ export async function cronDoLeitor(
       if (horaNoFuso(deps.agora, fuso) >= HORA_DO_RETRATO) {
         const { error: eIns } = await admin.from("leitor_rodadas").insert({ organization_id: org.id, dia, origem: "diaria" });
         if (eIns && eIns.code !== "23505") throw new Error(`abrir a diária: ${eIns.message}`);
+        if (!eIns) await auditarSeNasceuNoPadrao(admin, org, efetiva, padrao, deps.requestId);
       }
       const { data: abertasData, error: eAb } = await admin
         .from("leitor_rodadas")
@@ -141,7 +191,7 @@ export async function cronDoLeitor(
       const abertas = (abertasData ?? []) as RodadaAberta[];
       if (abertas.length === 0) continue;
 
-      const p = await passadaDoLeitor(admin, org, { agora: deps.agora, ler: deps.ler, ateMs: limite });
+      const p = await passadaDoLeitor(admin, org, { agora: deps.agora, ler: deps.ler, ateMs: limite, padrao });
       r.lidos += p.lidos;
       r.falhas += p.falhas;
       r.avisos += p.avisos;
@@ -189,11 +239,13 @@ export async function rodadaManualDoLeitor(
   try {
     const { data: org, error } = await admin
       .from("organizations")
-      .select("id, settings, timezone, display_name, locale")
+      .select("id, settings, timezone, display_name, locale, created_at")
       .eq("id", orgId)
       .maybeSingle();
     if (error || !org) return null;
-    if (!leitorPodeRodar(configDoLeitor((org as OrgDoLeitor).settings)).pode) return null;
+    const padrao = await lerPadraoDoLeitor(admin);
+    const efetiva = configEfetivaDoLeitor(configDoLeitor((org as OrgDoLeitor).settings), (org as OrgDoLeitor).created_at, padrao);
+    if (!leitorPodeRodar(efetiva).pode) return null;
     const dia = diaNoFuso(deps.agora, fusoUtilizavel((org as OrgDoLeitor).timezone));
     const { data: nova, error: eIns } = await admin
       .from("leitor_rodadas")
@@ -205,6 +257,7 @@ export async function rodadaManualDoLeitor(
       agora: deps.agora,
       ler: deps.ler,
       ateMs: Date.now() + (deps.orcamentoMs ?? ORCAMENTO_MANUAL_MS),
+      padrao,
     });
     const fechar = terminou(p);
     await registrarPassada(admin, orgId, { id: (nova as { id: string }).id, lidos: 0, falhas: 0 }, p, fechar);
@@ -228,10 +281,11 @@ export async function rodadaManualDoLeitor(
  */
 export async function retratoEsperaOLeitor(
   admin: SupabaseClient,
-  org: Pick<OrgDoLeitor, "id" | "settings" | "timezone">,
+  org: Pick<OrgDoLeitor, "id" | "settings" | "timezone" | "created_at">,
   agora: Date,
+  padrao: PadraoDoLeitor | null,
 ): Promise<boolean> {
-  if (!leitorPodeRodar(configDoLeitor(org.settings)).pode) return false;
+  if (!leitorPodeRodar(configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao)).pode) return false;
   const fuso = fusoUtilizavel(org.timezone);
   const dia = diaNoFuso(agora, fuso);
   const { data, error } = await admin

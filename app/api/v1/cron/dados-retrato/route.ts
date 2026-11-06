@@ -26,6 +26,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { ErroDoRetrato, gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { retratoEsperaOLeitor } from "@/lib/dados/leitor/rodadas";
 import { HORA_DO_RETRATO } from "@/lib/dados/retrato";
 import { logger } from "@/lib/logger";
@@ -53,24 +54,27 @@ async function handle(req: NextRequest): Promise<Response> {
 
   // O Leitor ligado faz o retrato esperar a rodada diária (até 3 horas).
   const agora = new Date();
-  const orgsDoAlvo = new Map<string, { id: string; settings: unknown; timezone: string | null }>();
+  type OrgDoAlvo = { id: string; settings: unknown; timezone: string | null; created_at: string | null };
+  const orgsDoAlvo = new Map<string, OrgDoAlvo>();
   if (alvo.length > 0) {
     const { data: orgs } = await admin
       .from("organizations")
-      .select("id, settings, timezone")
+      .select("id, settings, timezone, created_at")
       .in(
         "id",
         alvo.map((o) => o.organization_id),
       );
-    for (const org of (orgs ?? []) as Array<{ id: string; settings: unknown; timezone: string | null }>) orgsDoAlvo.set(org.id, org);
+    for (const org of (orgs ?? []) as OrgDoAlvo[]) orgsDoAlvo.set(org.id, org);
   }
+  // Quem segue o modelo padrão do Leitor também está "ligado": o padrão é lido uma vez.
+  const padraoDoLeitor = alvo.length > 0 ? await lerPadraoDoLeitor(admin) : null;
 
   let gerados = 0;
   let falhas = 0;
   let esperando = 0;
   for (const o of alvo) {
     const org = orgsDoAlvo.get(o.organization_id);
-    if (org && (await retratoEsperaOLeitor(admin, org, agora))) {
+    if (org && (await retratoEsperaOLeitor(admin, org, agora, padraoDoLeitor))) {
       esperando += 1;
       continue;
     }

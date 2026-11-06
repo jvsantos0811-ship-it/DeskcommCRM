@@ -33,7 +33,8 @@ import {
 } from "@/lib/dados/esperando-a-equipe";
 import { expedienteDaOrg } from "@/lib/dados/expediente";
 import { lerFicha } from "@/lib/dados/ficha";
-import { configDoLeitor } from "@/lib/dados/leitor/config";
+import { configDoLeitor, configEfetivaDoLeitor } from "@/lib/dados/leitor/config";
+import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { MOTIVO_ATENDIMENTO_MANUAL } from "@/lib/escalacao/atendimento-manual";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { lerTextosAutomaticos } from "@/lib/messaging/textos-automaticos";
@@ -125,12 +126,16 @@ export async function esperandoAEquipeDaOrg(
 ): Promise<EsperandoAEquipeDaOrg> {
   const { data: org, error: orgErr } = await admin
     .from("organizations")
-    .select("settings, timezone")
+    .select("settings, timezone, created_at")
     .eq("id", orgId)
     .maybeSingle();
   if (orgErr) throw new Error(`organizacao: ${orgErr.message}`);
   const settings = (org as { settings: unknown } | null)?.settings ?? null;
-  if (!configDoLeitor(settings).ligado) return { ligado: false, leads: [], falhas: 0 };
+  // "Ligado" é o da configuração EFETIVA: quem nunca mexeu segue o modelo padrão da instalação.
+  const criadaEm = (org as { created_at?: string | null } | null)?.created_at ?? null;
+  if (!configEfetivaDoLeitor(configDoLeitor(settings), criadaEm, await lerPadraoDoLeitor(admin)).ligado) {
+    return { ligado: false, leads: [], falhas: 0 };
+  }
   const expediente = expedienteDaOrg(settings, (org as { timezone: string | null } | null)?.timezone ?? null);
   const alcance = alcanceDaOrg(settings);
 
