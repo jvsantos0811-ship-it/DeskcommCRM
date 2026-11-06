@@ -12,6 +12,12 @@
  *     nenhuma, a opção fica desabilitada). No CI não há chave de IA na
  *     instalação nem na empresa: a prova aqui é o "sem chave"; a da instalação
  *     tem a prova de unidade (`lib/dados/leitor/leitor-da-org.test.ts`).
+ *  3. O dono escolhe o MODELO PADRÃO do Leitor na mesma página (só aprovados) e a
+ *     empresa que nunca mexeu passa a mostrar "Ligado pelo padrão da instalação";
+ *     sem chave (o CI não tem), o cartão diz o motivo. O admin desliga e fica
+ *     desligado; "Seguir o padrão da instalação" volta. As regras de data (nada
+ *     antes de o padrão valer, empresa nova desde que nasceu) estão nas provas
+ *     de unidade (`padrao.test.ts`, `rodada.test.ts`).
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -43,6 +49,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  await db.from("platform_config").delete().eq("chave", "LEITOR_MODELO_PADRAO");
   await db.from("leitor_bateria_rodadas").delete().in("id", rodadasCriadas.length ? rodadasCriadas : ["00000000-0000-0000-0000-000000000000"]);
   await db.from("leitor_bateria_rodadas").delete().eq("model_id", "claude-haiku-5-5").in("status", ["pendente", "rodando"]);
   await db.from("leitor_bateria_casos").delete().like("caso_id", "E2E-%");
@@ -153,4 +160,55 @@ test("o admin da empresa vê o cartão do Leitor: desligado, a nota e o seletor 
 
   fs.mkdirSync(EVIDENCIA, { recursive: true });
   await cartao.screenshot({ path: path.join(EVIDENCIA, "2-cartao-do-leitor.png") });
+});
+
+test("o dono escolhe o modelo padrão do Leitor, só entre os aprovados", async ({ page }) => {
+  await loginComoDono(page, creds);
+  await page.goto("/admin/bateria-do-leitor");
+  const bloco = page.getByTestId("bateria-padrao");
+  await expect(bloco).toBeVisible({ timeout: 30_000 });
+  await expect(bloco.getByTestId("bateria-padrao-atual")).toHaveText("Sem padrão: o Leitor não liga sozinho em nenhuma empresa.");
+  // Só o aprovado (a rodada terminada do caso anterior) aparece para escolher.
+  await expect(bloco.getByTestId("bateria-padrao-modelo").locator(`option[value="${MODELO}"]`)).toHaveCount(1);
+  await expect(bloco.getByTestId("bateria-padrao-modelo").locator(`option[value="anthropic/claude-opus-5-5"]`)).toHaveCount(0);
+
+  await bloco.getByTestId("bateria-padrao-modelo").selectOption(MODELO);
+  const gravou = page.waitForResponse((r) => r.url().includes("/api/v1/admin/bateria-do-leitor/padrao") && r.request().method() === "PUT");
+  await bloco.getByTestId("bateria-padrao-salvar").click();
+  expect((await gravou).status()).toBe(200);
+  await expect(bloco.getByTestId("bateria-padrao-atual")).toContainText("valendo desde", { timeout: 15_000 });
+  // As empresas que nunca mexeram passam a seguir o padrão.
+  await expect(bloco.locator('[data-escolha="padrao"]')).not.toContainText("(0)");
+
+  fs.mkdirSync(EVIDENCIA, { recursive: true });
+  await bloco.screenshot({ path: path.join(EVIDENCIA, "3-padrao-do-dono.png") });
+});
+
+test("a empresa que nunca mexeu fica ligada pelo padrão; desligada, não volta sozinha", async ({ page }) => {
+  creds = await loginComoAdmin(page, creds);
+  await page.goto("/app/ai/providers");
+  const cartao = page.getByTestId("cartao-do-leitor");
+  await expect(cartao).toBeVisible({ timeout: 30_000 });
+  await expect(cartao.getByTestId("leitor-ligado-desde")).toContainText("Ligado pelo padrão da instalação:");
+  await expect(cartao.getByTestId("leitor-estado")).toHaveAttribute("data-origem", "padrao");
+  // No CI não há chave de IA: o cartão diz que não lê, e por quê (não troca de modelo sozinho).
+  if ((await cartao.getByTestId("leitor-estado").textContent()) === "Sem chave") {
+    await expect(cartao.getByTestId("leitor-sem-chave")).toContainText("o Leitor não lê nesta empresa");
+  }
+  fs.mkdirSync(EVIDENCIA, { recursive: true });
+  await cartao.screenshot({ path: path.join(EVIDENCIA, "4-cartao-ligado-pelo-padrao.png") });
+
+  const salvou = () => page.waitForResponse((r) => r.url().includes("/api/v1/ai/leitor") && r.request().method() === "PATCH");
+  let resposta = salvou();
+  await cartao.getByTestId("leitor-desligar").click();
+  expect((await resposta).status()).toBe(200);
+  await expect(cartao.getByTestId("leitor-estado")).toHaveText("Desligado", { timeout: 15_000 });
+  await expect(cartao.getByTestId("leitor-ligado-desde")).toContainText("O padrão da instalação não liga o Leitor de novo sozinho.");
+  await page.reload();
+  await expect(cartao.getByTestId("leitor-estado")).toHaveText("Desligado", { timeout: 30_000 });
+
+  resposta = salvou();
+  await cartao.getByTestId("leitor-seguir-padrao").click();
+  expect((await resposta).status()).toBe(200);
+  await expect(cartao.getByTestId("leitor-ligado-desde")).toContainText("Ligado pelo padrão da instalação:", { timeout: 15_000 });
 });

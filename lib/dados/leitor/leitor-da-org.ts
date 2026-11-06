@@ -16,7 +16,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ultimaRodadaPorModelo, type RodadaNaTela } from "./bateria-admin";
-import { configDoLeitor, type ConfigDoLeitor, type ModeloDoLeitor } from "./config";
+import {
+  configDoLeitor,
+  configEfetivaDoLeitor,
+  type ConfigEfetivaDoLeitor,
+  type ModeloDoLeitor,
+  type PadraoDoLeitor,
+} from "./config";
 import { instalacaoAtendeOModelo } from "./modelo-escolhido";
 import {
   CASOS_PARA_UMA_BATERIA_ROBUSTA,
@@ -56,7 +62,17 @@ export interface ModeloNoCartao {
 export type OrigemDaChave = "empresa" | "instalacao";
 
 export interface DadosDoLeitor {
-  config: ConfigDoLeitor;
+  /** O que vale agora (com o padrão da instalação no lugar, quando a organização o segue). */
+  config: ConfigEfetivaDoLeitor;
+  /** O último modelo e reserva que a própria organização escolheu (o cartão os oferece). */
+  escolhaPropria: { modelo: ModeloDoLeitor | null; reserva: ModeloDoLeitor | null };
+  /** O modelo padrão da instalação, se o dono já escolheu um. */
+  padrao: { modelo: ModeloDoLeitor; reserva: ModeloDoLeitor | null; ativoDesde: string } | null;
+  /**
+   * Ligado, mas sem conseguir ler: o modelo que vale (principal) não tem chave
+   * nesta organização nem na instalação. O Leitor não troca de modelo sozinho.
+   */
+  semChaveParaOModelo: boolean;
   modelos: ModeloNoCartao[];
   bateriaPequena: boolean;
   casosNaBateria: number | null;
@@ -81,6 +97,8 @@ function noCartao(r: RodadaNaTela | undefined): ModeloNoCartao["bateria"] {
 export interface OpcoesDoCartao {
   /** A instalação tem chave para este modelo? O padrão é a pergunta da leitura; o teste injeta. */
   instalacaoAtende?: (m: { provider: string; model_id: string }) => boolean;
+  /** O modelo padrão da instalação (lido com o cliente de serviço por quem chama; `platform_config` não tem policy). */
+  padrao?: PadraoDoLeitor | null;
 }
 
 /**
@@ -128,7 +146,7 @@ export function modelosNoCartao(
 export async function dadosDoLeitor(db: SupabaseClient, orgId: string, opcoes: OpcoesDoCartao = {}): Promise<DadosDoLeitor> {
   const desde = new Date(Date.now() - 30 * DIA_MS).toISOString();
   const [orgR, catalogoR, credR, usoR, rodadas] = await Promise.all([
-    db.from("organizations").select("settings").eq("id", orgId).maybeSingle(),
+    db.from("organizations").select("settings, created_at").eq("id", orgId).maybeSingle(),
     db
       .from("ai_models")
       .select("provider, model_id, display_name, input_price_per_million_cents, output_price_per_million_cents")
@@ -153,7 +171,11 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string, opcoes: O
   ]);
   if (orgR.error) throw new Error(orgR.error.message);
   if (catalogoR.error) throw new Error(catalogoR.error.message);
-  const config = configDoLeitor((orgR.data as { settings?: unknown } | null)?.settings);
+  const linhaDaOrg = orgR.data as { settings?: unknown; created_at?: string | null } | null;
+  const crua = configDoLeitor(linhaDaOrg?.settings);
+  const padrao = opcoes.padrao ?? null;
+  const config = configEfetivaDoLeitor(crua, linhaDaOrg?.created_at ?? null, padrao);
+  const instalacaoAtende = opcoes.instalacaoAtende ?? instalacaoAtendeOModelo;
   const comChave = new Set(((credR.data ?? []) as Array<{ provider: string }>).map((c) => c.provider));
   const leituras = (usoR.data ?? []) as Array<{ input_tokens: number | null; output_tokens: number | null }>;
   const uso =
@@ -169,12 +191,20 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string, opcoes: O
     comChave,
     rodadas,
     uso,
-    opcoes.instalacaoAtende ?? instalacaoAtendeOModelo,
+    instalacaoAtende,
   );
   const maisRecente = [...rodadas.values()].sort((a, b) => String(b.terminada_em).localeCompare(String(a.terminada_em)))[0];
   const casos = maisRecente?.casos_total ?? null;
+  const valendo = config.ligado && config.modelo ? config.modelo : null;
+  const modeloQueVale = valendo ? modelos.find((m) => m.provider === valendo.provider && m.model_id === valendo.model_id) : undefined;
+  const semChaveParaOModelo =
+    valendo !== null &&
+    !(modeloQueVale ? modeloQueVale.temChave : comChave.has(valendo.provider) || instalacaoAtende(valendo));
   return {
     config,
+    escolhaPropria: { modelo: crua.modelo, reserva: crua.reserva },
+    padrao: padrao ? { modelo: padrao.modelo, reserva: padrao.reserva, ativoDesde: padrao.ativo_desde } : null,
+    semChaveParaOModelo,
     modelos,
     bateriaPequena: casos === null || casos < CASOS_PARA_UMA_BATERIA_ROBUSTA,
     casosNaBateria: casos,
