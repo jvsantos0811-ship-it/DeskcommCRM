@@ -153,7 +153,7 @@ function cenario(): Tabelas {
   return {
     leitor_bateria_casos: [
       caso("k1", "B10", true, gabaritoParaOBanco({ tipo: "regra_v2", ficha: B10.ficha, banco: B10.banco })),
-      caso("k2", "EQ1", true, gabaritoParaOBanco({ tipo: "parcial", ficha: { esperando_a_equipe: espera }, banco: vazia.banco })),
+      caso("k2", "EQ1", true, gabaritoParaOBanco({ tipo: "parcial", ficha: { esperando_a_equipe: { ...espera, prova: "" } }, banco: vazia.banco })),
       caso("k3", "CL9", false, gabaritoParaOBanco({ tipo: "parcial", ficha: { contato: "cliente" }, banco: vazia.banco })),
     ],
     leitor_bateria_rodadas: [

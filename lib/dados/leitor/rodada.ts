@@ -246,6 +246,7 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
         sistema,
         conversa: transcreverConversa(mensagens, expediente.timezone),
         aprovado: pode.modelo,
+        reserva: config.reserva,
       });
       if (leitura.tipo === "sem_modelo" || leitura.tipo === "modelo_diferente" || leitura.tipo === "teto") {
         r.parou = leitura.tipo;

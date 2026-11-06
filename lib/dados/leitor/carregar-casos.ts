@@ -159,14 +159,15 @@ export async function carregarCasos(
   entrada: { formato: FormatoDosCasos; origemOrganizationId: string | null; arquivo: unknown; substituir: boolean },
 ): Promise<ResultadoDaCarga> {
   const r: ResultadoDaCarga = { criados: [], ignorados: [] };
-  let origem: { id: string; display_name: string | null; timezone: string | null; settings: unknown } | null = null;
+  type Origem = { id: string; display_name: string | null; timezone: string | null; settings: unknown };
+  let origem: Origem | null = null;
   if (entrada.origemOrganizationId) {
     const { data } = await admin
       .from("organizations")
       .select("id, display_name, timezone, settings")
       .eq("id", entrada.origemOrganizationId)
       .maybeSingle();
-    origem = (data as typeof origem) ?? null;
+    origem = (data as Origem | null) ?? null;
   }
 
   if (entrada.formato === "regra_v2") {
