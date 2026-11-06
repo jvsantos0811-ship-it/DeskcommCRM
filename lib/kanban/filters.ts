@@ -93,6 +93,13 @@ export interface LeadFilters {
    * do painel leva este parâmetro, para o quadro mostrar a mesma quantidade.
    */
   recorte?: "painel";
+  /**
+   * PM-027 §6: `?esperando=equipe` — só os leads do painel "Esperando a equipe"
+   * de Dados. Quem são vem do servidor (a regra usa a ficha do Leitor e as
+   * mensagens), e chega em `ContextoDosFiltros.esperandoAEquipe`; enquanto não
+   * chega, nenhum card passa — o quadro não mostra "todos" por engano.
+   */
+  esperando?: "equipe";
 }
 
 /** `?nivel=a` vale A: o link é colado à mão. Fora da lista, sem filtro. */
@@ -170,7 +177,8 @@ export function filtroLigado(f: LeadFilters): boolean {
       f.temperatura ||
       f.servico?.trim() ||
       f.situacao ||
-      f.recorte,
+      f.recorte ||
+      f.esperando,
   );
 }
 
@@ -207,6 +215,7 @@ export function filtersFromParams(
     servico: sp.get("servico")?.trim() || undefined,
     situacao: situacaoDoParametro(sp.get("situacao")),
     recorte: sp.get("recorte") === "painel" ? "painel" : undefined,
+    esperando: sp.get("esperando") === "equipe" ? "equipe" : undefined,
   };
 }
 
@@ -227,6 +236,7 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.servico?.trim()) p.set("servico", f.servico.trim());
   if (f.situacao) p.set("situacao", f.situacao);
   if (f.recorte) p.set("recorte", f.recorte);
+  if (f.esperando) p.set("esperando", f.esperando);
   return p.toString();
 }
 
@@ -238,6 +248,8 @@ export function filtersToParams(f: LeadFilters): string {
  */
 export interface ContextoDosFiltros {
   categoriaDo?: (motivo: string) => string | undefined;
+  /** Os leads do painel "Esperando a equipe" (`?esperando=equipe`). */
+  esperandoAEquipe?: ReadonlySet<string>;
 }
 
 export function applyFilters(
@@ -335,6 +347,7 @@ export function applyFilters(
     if (f.servico?.trim() && !interesseCasa(l.qualidade?.interesse, f.servico)) return false;
     if (f.situacao && !l.qualidade?.situacoes.includes(f.situacao)) return false;
     if (f.recorte === "painel" && l.noRecorteDoPainel !== true) return false;
+    if (f.esperando === "equipe" && !contexto?.esperandoAEquipe?.has(l.id)) return false;
     return true;
   });
 }
