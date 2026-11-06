@@ -30,6 +30,7 @@ import { GruposSheet } from "./GruposSheet";
 import { PairingOptions } from "./PairingOptions";
 import { ChannelAcervo } from "./ChannelAcervo";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { FunilDoNumero } from "./FunilDoNumero";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -569,7 +570,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
             const vivaNoTransporte = dependeDoTransporte(c);
             const podeExcluir = wahaConfigured || !vivaNoTransporte;
             return (
-              <Card key={c.id} className="flex flex-col gap-3 p-4">
+              <Card key={c.id} className="flex flex-col gap-3 p-4" data-testid={`conexao-${c.id}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -596,6 +597,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                <FunilDoNumero channelId={c.id} />
                 {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">

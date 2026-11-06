@@ -61557,3 +61557,34 @@ grant select on public.recusas_da_ia to authenticated;
 grant all on public.recusas_da_ia to service_role;
 
 
+
+
+-- ---- funil de entrada por número: abre card sim/não, funil e etapa de cada conexão (migration 9025) ----
+-- Racional inteiro no cabeçalho da migration 9025.
+alter table public.channel_sessions
+  add column if not exists abre_card boolean not null default true,
+  add column if not exists funil_de_entrada_id uuid,
+  add column if not exists etapa_de_entrada_id uuid;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_funil_de_entrada_mesma_org
+    foreign key (organization_id, funil_de_entrada_id)
+    references public.crm_pipelines (organization_id, id)
+    on delete set null (funil_de_entrada_id);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.channel_sessions
+    add constraint channel_sessions_etapa_de_entrada_mesma_org
+    foreign key (organization_id, etapa_de_entrada_id)
+    references public.crm_stages (organization_id, id)
+    on delete set null (etapa_de_entrada_id);
+exception when duplicate_object then null; end $$;
+
+comment on column public.channel_sessions.abre_card is
+  'Conversa nova por este número abre card no funil? false = só a conversa entra (contato, mensagens, Inbox); o card não nasce (motivo numero_sem_funil). Padrão true.';
+comment on column public.channel_sessions.funil_de_entrada_id is
+  'Funil onde nasce o card das conversas novas deste número. NULL = funil padrão da empresa. Funil arquivado: o card nasce no padrão e a tela avisa.';
+comment on column public.channel_sessions.etapa_de_entrada_id is
+  'Etapa de entrada dentro de funil_de_entrada_id. NULL = primeira etapa aberta do funil.';

@@ -179,6 +179,17 @@ const fotoDaMemoria: Foto = (db, org) =>
       .limit(50),
   );
 
+/** O ajuste de funil do número (migration 9025): só configuração da conexão. */
+const fotoDoNumero: Foto = (db, org, args) =>
+  tentar(() =>
+    db
+      .from("channel_sessions")
+      .select("id, abre_card, funil_de_entrada_id, etapa_de_entrada_id")
+      .eq("organization_id", org)
+      .eq("id", String(args.channel_session_id))
+      .maybeSingle(),
+  );
+
 const fotoDoAgente: Foto = async (db, org, args) => {
   const agente = await tentar(() =>
     db.from("ai_agents").select("id, published_version_id").eq("organization_id", org).eq("id", String(args.agent_id)).maybeSingle(),
@@ -241,6 +252,8 @@ export const LEITURAS_DA_PORTA_ADMIN: Record<string, FerramentaDaPortaAdmin> = {
   // Exclusivas da porta Admin (`ferramentas-do-agente.ts`, fora de `allTools`).
   crm_list_ai_agents: {},
   crm_get_ai_agent_prompt: {},
+  // Exclusiva da porta Admin (`ferramentas-do-numero.ts`): números e o funil de cada um.
+  crm_list_channel_numbers: {},
   // Para achar o id do que mexer — com máscara: ids, etapa, status, datas, valores.
   crm_list_leads: { projetar: { leads: MASCARA_DO_NEGOCIO, ...PAGINA } },
   crm_list_conversations: { projetar: { conversations: MASCARA_DA_CONVERSA, ...PAGINA } },
@@ -276,6 +289,8 @@ export const ESCRITAS_DA_PORTA_ADMIN: Record<string, FerramentaDaPortaAdmin> = {
   crm_save_ai_agent_draft: { foto: fotoDoAgente },
   crm_request_ai_agent_publish: { foto: fotoDoAgente, aviso: avisoDoPedidoDePublicacao },
   crm_revert_ai_agent_version: { foto: fotoDoAgente },
+  // Exclusiva da porta Admin (`ferramentas-do-numero.ts`): abre card sim/não, funil e etapa do número.
+  crm_set_channel_entry_funnel: { foto: fotoDoNumero },
 };
 
 export function regraDaPortaAdmin(nome: string): FerramentaDaPortaAdmin | null {

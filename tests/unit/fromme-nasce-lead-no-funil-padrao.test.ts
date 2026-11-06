@@ -75,6 +75,8 @@ interface Cena {
    * caso, retirar o `if (!ehEco)` do nascimento passava com 7/7.
    */
   ecoEmVoo?: boolean;
+  /** O número está marcado "não abre card" em Conexões › Funil (migration 9025). */
+  numeroSemCard?: boolean;
   rpcs: Array<{ nome: string; args: Record<string, unknown> }>;
   inserts: Record<string, Array<Record<string, unknown>>>;
   conversationUpdates: Array<Record<string, unknown>>;
@@ -129,6 +131,14 @@ function makeAdmin(c: Cena, opcoes: Opcoes = {}) {
         return { data: { bot_silenced_until: null }, error: null };
       }
       if (name === "contacts" && mode === "select") return { data: CONTATO_NOVO, error: null };
+      if (name === "channel_sessions" && mode === "select" && selectCols.includes("abre_card")) {
+        // O ajuste de funil do número (9025). Sem a cena pedir, a linha não
+        // vem — e o nascimento vale o padrão, como antes da 9025.
+        return {
+          data: c.numeroSemCard ? { abre_card: false, funil_de_entrada_id: null, etapa_de_entrada_id: null } : null,
+          error: null,
+        };
+      }
       if (name === "crm_pipelines") return { data: c.funilPadrao ? { id: "funil-padrao" } : null, error: null };
       if (name === "crm_stages") return { data: c.funilPadrao ? { id: "etapa-1" } : null, error: null };
       if (name === "crm_leads" && mode === "select") {
@@ -302,6 +312,19 @@ describe("#2448 · a conversa que começa pelo celular nasce no funil padrão", 
     expect(c.inserts["messages"]).toHaveLength(1);
     expect(nascimentos(c)).toHaveLength(0);
     expect(c.inserts["crm_lead_activities"]).toBeUndefined();
+  });
+
+  it("número marcado \"não abre card\" (9025) → a mensagem entra, o card não nasce, e o motivo fica no log", async () => {
+    const c = novaCena({ numeroSemCard: true });
+    await enviar(c);
+
+    expect(c.inserts["messages"]).toHaveLength(1);
+    expect(nascimentos(c)).toHaveLength(0);
+    expect(c.inserts["crm_lead_activities"]).toBeUndefined();
+    expect(logger.info).toHaveBeenCalledWith(
+      "waha.ingest: lead nao criado a partir do celular",
+      expect.objectContaining({ motivo: "numero_sem_funil" }),
+    );
   });
 
   it("organização SEM funil padrão → não há card, e o motivo de configuração fica visível", async () => {
