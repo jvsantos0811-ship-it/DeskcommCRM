@@ -25,8 +25,9 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 
-import { configDoLeitor, leitorPodeRodar } from "./config";
+import { configDoLeitor, configEfetivaDoLeitor, leitorPodeRodar, type PadraoDoLeitor } from "./config";
 import type { Leitor } from "./ler-lead";
+import { lerPadraoDoLeitor } from "./padrao";
 import { montarPromptDoLeitor, transcreverConversa, VERSAO_DO_PROMPT, type MensagemParaOLeitor, type VariaveisDoPrompt } from "./prompt";
 import { decidirLeitura } from "./selecao";
 
@@ -47,6 +48,8 @@ export interface OrgDoLeitor {
   timezone: string | null;
   display_name: string | null;
   locale: string | null;
+  /** Quando a organização nasceu: quem segue o padrão da instalação não lê nada antes disso. */
+  created_at: string | null;
 }
 
 export interface ResultadoDaPassada {
@@ -67,6 +70,8 @@ export interface DepsDaPassada {
   ateMs: number;
   maxLeituras?: number;
   ehInterno?: (db: SupabaseClient, orgId: string, contactId: string) => Promise<boolean>;
+  /** O modelo padrão da instalação, já lido por quem chama; ausente = a passada lê. */
+  padrao?: PadraoDoLeitor | null;
 }
 
 interface ConversaRow {
@@ -132,7 +137,8 @@ export function atendidoPor(mensagens: MensagemRow[], agentes: string[]): Atendi
 
 export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, deps: DepsDaPassada): Promise<ResultadoDaPassada> {
   const r: ResultadoDaPassada = { candidatos: 0, lidos: 0, falhas: 0, restantes: 0, avisos: 0, parou: null, ultimoErro: null };
-  const config = configDoLeitor(org.settings);
+  const padrao = deps.padrao !== undefined ? deps.padrao : await lerPadraoDoLeitor(admin);
+  const config = configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao);
   const pode = leitorPodeRodar(config);
   if (!pode.pode) {
     r.parou = pode.porque;
@@ -265,7 +271,15 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
       if (item.gatilho === "lead_voltou") {
         const banco = fatosDoBanco(item.lead, abertosPorContato.get(contato) ?? [], mensagens, item.ultimaEntrada);
         const c = classificarFicha({ ficha: leitura.ficha, banco }, agora);
-        if (!FORA_DA_VENDA.has(c.situacao) && (await abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, expediente.timezone, idioma, t))) {
+        // PM-027 §3, exceção 1 (caso LV1): o contato já tem OUTRO card com
+        // potencial aberto — novo ou antigo —, então o lead já está no funil por
+        // ele. A ficha é gravada, mas o aviso não abre.
+        const outroCardAberto = (abertosPorContato.get(contato) ?? []).some((o) => o.id !== item.lead.id);
+        if (
+          !outroCardAberto &&
+          !FORA_DA_VENDA.has(c.situacao) &&
+          (await abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, expediente.timezone, idioma, t))
+        ) {
           r.avisos += 1;
         }
       }

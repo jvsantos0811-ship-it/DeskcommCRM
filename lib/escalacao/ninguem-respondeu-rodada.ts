@@ -23,6 +23,7 @@ import { expedienteDaOrg } from "@/lib/dados/expediente";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
+import { ehMensagemAutomatica, lerTextosAutomaticos } from "@/lib/messaging/textos-automaticos";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -30,10 +31,8 @@ import type { ConferidorDoFim } from "./conferir-fim-da-conversa";
 import {
   avaliarConversa,
   configDoAviso,
-  CONVERSAS_PARA_CONFIRMAR_AUTOMATICA,
   KIND_DO_AVISO,
   melhorPosicao,
-  pareceRespostaAutomatica,
   textoDoAviso,
   type MensagemDaConversa,
 } from "./ninguem-respondeu";
@@ -220,7 +219,9 @@ async function rodadaDaOrganizacao(
     }
   }
 
-  const automaticaPorTexto = new Map<string, boolean>();
+  // Os textos que esta organização usa como mensagem automática do celular
+  // (PM-027 §6). Pedidos ao banco só quando alguma conversa tem saída do celular.
+  let automaticos: Set<string> | null = null;
   let leituras = 0;
 
   for (const conversa of conversas.values()) {
@@ -233,7 +234,10 @@ async function rodadaDaOrganizacao(
       const etapa = listaPos.find((p) => p.posicao === posicao)?.etapa ?? null;
 
       const mensagens = await lerMensagens(admin, orgId, conversa.id);
-      await marcarAutomaticas(admin, orgId, mensagens, agora, automaticaPorTexto);
+      if (mensagens.some((m) => m.direction === "outbound" && m.sent_via === "external_device")) {
+        automaticos ??= await lerTextosAutomaticos(admin, orgId, agora);
+        for (const m of mensagens) if (ehMensagemAutomatica(m, automaticos)) m.automatica = true;
+      }
 
       const avaliacao = avaliarConversa({
         mensagens,
@@ -302,37 +306,6 @@ async function lerMensagens(admin: Admin, orgId: string, conversationId: string)
     .limit(MENSAGENS_LIDAS);
   if (error) throw new Error(`mensagens: ${error.message}`);
   return ((data ?? []) as MensagemDaConversa[]).reverse();
-}
-
-/** Marca `automatica` nas saídas do celular que são a resposta automática do WhatsApp Business. */
-async function marcarAutomaticas(
-  admin: Admin,
-  orgId: string,
-  mensagens: MensagemDaConversa[],
-  agora: Date,
-  cache: Map<string, boolean>,
-): Promise<void> {
-  for (let i = 0; i < mensagens.length; i += 1) {
-    const m = mensagens[i]!;
-    if (!pareceRespostaAutomatica(m, i > 0 ? mensagens[i - 1]! : null)) continue;
-    const texto = (m.body ?? "").trim();
-    let automatica = cache.get(texto);
-    if (automatica === undefined) {
-      const { data } = await admin
-        .from("messages")
-        .select("conversation_id")
-        .eq("organization_id", orgId)
-        .eq("direction", "outbound")
-        .eq("sent_via", "external_device")
-        .eq("body", m.body ?? "")
-        .gte("created_at", new Date(agora.getTime() - 30 * DIA_MS).toISOString())
-        .limit(50);
-      const distintas = new Set(((data ?? []) as Array<{ conversation_id: string }>).map((x) => x.conversation_id));
-      automatica = distintas.size >= CONVERSAS_PARA_CONFIRMAR_AUTOMATICA;
-      cache.set(texto, automatica);
-    }
-    if (automatica) m.automatica = true;
-  }
 }
 
 async function lerConferencia(

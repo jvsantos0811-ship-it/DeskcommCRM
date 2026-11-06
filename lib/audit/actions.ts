@@ -1281,6 +1281,10 @@ export const AUDIT_ACTIONS = [
   "leitor.bateria_terminada",
   "leitor.bateria_casos_carregados",
   "settings.leitor_atualizado",
+  // O modelo padrão do Leitor, da instalação (antes e depois), e cada organização
+  // que passou a ler por causa dele (metadata: ligado_em, modelo, reserva, quando).
+  "leitor.padrao_definido",
+  "leitor.ligado_pelo_padrao",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

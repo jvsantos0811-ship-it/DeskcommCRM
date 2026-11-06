@@ -1,18 +1,29 @@
 /**
- * O CARTÃO DO LEITOR NA TELA PROVEDORES — PM-027 §8, com a decisão do dono de
+ * O CARTÃO DO LEITOR NA TELA PROVEDORES — PM-027 §8, com as decisões do dono de
  * 06/11 (a aprovação na bateria vale para a instalação; cada escritório liga o
- * seu, só com modelo aprovado).
+ * seu, só com modelo aprovado; o Leitor usa a mesma chave de IA que o resto do
+ * CRM já usa — nenhum escritório precisa cadastrar chave própria).
  *
  * Para cada modelo: preço do catálogo, custo estimado por mês nesta organização
  * (leituras de lead dos últimos 30 dias × tokens médios × preço), nota na bateria
- * (acertos/total, data), tempo médio, se está aprovado e se a organização tem a
- * chave daquele provedor. As leituras são pela sessão do usuário (RLS): as
- * rodadas da bateria só expõem números.
+ * (acertos/total, data), tempo médio, se está aprovado e DE ONDE vem a chave:
+ * a credencial da própria organização (ativa e validada) ou, sem ela, a chave da
+ * instalação — a mesma escada da leitura (`montarModeloEscolhido`), perguntada
+ * pela mesma função (`instalacaoAtendeOModelo`), para a tela e a leitura nunca
+ * divergirem. As leituras são pela sessão do usuário (RLS): as rodadas da
+ * bateria só expõem números.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ultimaRodadaPorModelo, type RodadaNaTela } from "./bateria-admin";
-import { configDoLeitor, type ConfigDoLeitor, type ModeloDoLeitor } from "./config";
+import {
+  configDoLeitor,
+  configEfetivaDoLeitor,
+  type ConfigEfetivaDoLeitor,
+  type ModeloDoLeitor,
+  type PadraoDoLeitor,
+} from "./config";
+import { instalacaoAtendeOModelo } from "./modelo-escolhido";
 import {
   CASOS_PARA_UMA_BATERIA_ROBUSTA,
   custoEstimadoPorMes,
@@ -42,11 +53,26 @@ export interface ModeloNoCartao {
     tempoMedioMs: number | null;
     aprovado: boolean;
   } | null;
+  /** Há chave para este modelo: a da organização ou a da instalação. */
   temChave: boolean;
+  /** De onde vem a chave; `null` = nenhuma (o modelo fica desabilitado na escolha). */
+  origemDaChave: OrigemDaChave | null;
 }
 
+export type OrigemDaChave = "empresa" | "instalacao";
+
 export interface DadosDoLeitor {
-  config: ConfigDoLeitor;
+  /** O que vale agora (com o padrão da instalação no lugar, quando a organização o segue). */
+  config: ConfigEfetivaDoLeitor;
+  /** O último modelo e reserva que a própria organização escolheu (o cartão os oferece). */
+  escolhaPropria: { modelo: ModeloDoLeitor | null; reserva: ModeloDoLeitor | null };
+  /** O modelo padrão da instalação, se o dono já escolheu um. */
+  padrao: { modelo: ModeloDoLeitor; reserva: ModeloDoLeitor | null; ativoDesde: string } | null;
+  /**
+   * Ligado, mas sem conseguir ler: o modelo que vale (principal) não tem chave
+   * nesta organização nem na instalação. O Leitor não troca de modelo sozinho.
+   */
+  semChaveParaOModelo: boolean;
   modelos: ModeloNoCartao[];
   bateriaPequena: boolean;
   casosNaBateria: number | null;
@@ -68,10 +94,59 @@ function noCartao(r: RodadaNaTela | undefined): ModeloNoCartao["bateria"] {
   };
 }
 
-export async function dadosDoLeitor(db: SupabaseClient, orgId: string): Promise<DadosDoLeitor> {
+export interface OpcoesDoCartao {
+  /** A instalação tem chave para este modelo? O padrão é a pergunta da leitura; o teste injeta. */
+  instalacaoAtende?: (m: { provider: string; model_id: string }) => boolean;
+  /** O modelo padrão da instalação (lido com o cliente de serviço por quem chama; `platform_config` não tem policy). */
+  padrao?: PadraoDoLeitor | null;
+}
+
+/**
+ * A lista de modelos do cartão, sem banco: catálogo, provedores com credencial
+ * da organização, rodadas da bateria e uso. A chave da instalação é avaliada uma
+ * vez por modelo, e só quando a organização não tem a sua daquele provedor.
+ */
+export function modelosNoCartao(
+  catalogo: ModeloDoCatalogo[],
+  provedoresComChaveDaEmpresa: Set<string>,
+  rodadas: Map<string, RodadaNaTela>,
+  uso: DadosDoLeitor["uso"],
+  instalacaoAtende: (m: { provider: string; model_id: string }) => boolean,
+): ModeloNoCartao[] {
+  const principais = new Set(MODELOS_PRINCIPAIS_DO_LEITOR.map((p) => `${p.provider}/${p.model_id}`));
+  const ordem = new Map(MODELOS_PRINCIPAIS_DO_LEITOR.map((p, i) => [`${p.provider}/${p.model_id}`, i]));
+  return catalogo
+    .map((m): ModeloNoCartao => {
+      const k = `${m.provider}/${m.model_id}`;
+      const origemDaChave: OrigemDaChave | null = provedoresComChaveDaEmpresa.has(m.provider)
+        ? "empresa"
+        : instalacaoAtende(m)
+          ? "instalacao"
+          : null;
+      return {
+        provider: m.provider,
+        model_id: m.model_id,
+        nome: nomeDoModelo(m),
+        principal: principais.has(k),
+        precoEntrada: m.input_price_per_million_cents,
+        precoSaida: m.output_price_per_million_cents,
+        custoPorMesCents: custoEstimadoPorMes(m, uso),
+        bateria: noCartao(rodadas.get(k)),
+        temChave: origemDaChave !== null,
+        origemDaChave,
+      };
+    })
+    .sort((a, b) => {
+      const oa = ordem.get(`${a.provider}/${a.model_id}`) ?? 999;
+      const ob = ordem.get(`${b.provider}/${b.model_id}`) ?? 999;
+      return oa - ob;
+    });
+}
+
+export async function dadosDoLeitor(db: SupabaseClient, orgId: string, opcoes: OpcoesDoCartao = {}): Promise<DadosDoLeitor> {
   const desde = new Date(Date.now() - 30 * DIA_MS).toISOString();
   const [orgR, catalogoR, credR, usoR, rodadas] = await Promise.all([
-    db.from("organizations").select("settings").eq("id", orgId).maybeSingle(),
+    db.from("organizations").select("settings, created_at").eq("id", orgId).maybeSingle(),
     db
       .from("ai_models")
       .select("provider, model_id, display_name, input_price_per_million_cents, output_price_per_million_cents")
@@ -96,7 +171,11 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string): Promise<
   ]);
   if (orgR.error) throw new Error(orgR.error.message);
   if (catalogoR.error) throw new Error(catalogoR.error.message);
-  const config = configDoLeitor((orgR.data as { settings?: unknown } | null)?.settings);
+  const linhaDaOrg = orgR.data as { settings?: unknown; created_at?: string | null } | null;
+  const crua = configDoLeitor(linhaDaOrg?.settings);
+  const padrao = opcoes.padrao ?? null;
+  const config = configEfetivaDoLeitor(crua, linhaDaOrg?.created_at ?? null, padrao);
+  const instalacaoAtende = opcoes.instalacaoAtende ?? instalacaoAtendeOModelo;
   const comChave = new Set(((credR.data ?? []) as Array<{ provider: string }>).map((c) => c.provider));
   const leituras = (usoR.data ?? []) as Array<{ input_tokens: number | null; output_tokens: number | null }>;
   const uso =
@@ -107,32 +186,25 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string): Promise<
           saidaMedia: leituras.reduce((a, l) => a + (l.output_tokens ?? 0), 0) / leituras.length,
         }
       : null;
-  const principais = new Set(MODELOS_PRINCIPAIS_DO_LEITOR.map((p) => `${p.provider}/${p.model_id}`));
-  const ordem = new Map(MODELOS_PRINCIPAIS_DO_LEITOR.map((p, i) => [`${p.provider}/${p.model_id}`, i]));
-  const modelos = ((catalogoR.data ?? []) as ModeloDoCatalogo[])
-    .map((m): ModeloNoCartao => {
-      const k = `${m.provider}/${m.model_id}`;
-      return {
-        provider: m.provider,
-        model_id: m.model_id,
-        nome: nomeDoModelo(m),
-        principal: principais.has(k),
-        precoEntrada: m.input_price_per_million_cents,
-        precoSaida: m.output_price_per_million_cents,
-        custoPorMesCents: custoEstimadoPorMes(m, uso),
-        bateria: noCartao(rodadas.get(k)),
-        temChave: comChave.has(m.provider),
-      };
-    })
-    .sort((a, b) => {
-      const oa = ordem.get(`${a.provider}/${a.model_id}`) ?? 999;
-      const ob = ordem.get(`${b.provider}/${b.model_id}`) ?? 999;
-      return oa - ob;
-    });
+  const modelos = modelosNoCartao(
+    (catalogoR.data ?? []) as ModeloDoCatalogo[],
+    comChave,
+    rodadas,
+    uso,
+    instalacaoAtende,
+  );
   const maisRecente = [...rodadas.values()].sort((a, b) => String(b.terminada_em).localeCompare(String(a.terminada_em)))[0];
   const casos = maisRecente?.casos_total ?? null;
+  const valendo = config.ligado && config.modelo ? config.modelo : null;
+  const modeloQueVale = valendo ? modelos.find((m) => m.provider === valendo.provider && m.model_id === valendo.model_id) : undefined;
+  const semChaveParaOModelo =
+    valendo !== null &&
+    !(modeloQueVale ? modeloQueVale.temChave : comChave.has(valendo.provider) || instalacaoAtende(valendo));
   return {
     config,
+    escolhaPropria: { modelo: crua.modelo, reserva: crua.reserva },
+    padrao: padrao ? { modelo: padrao.modelo, reserva: padrao.reserva, ativoDesde: padrao.ativo_desde } : null,
+    semChaveParaOModelo,
     modelos,
     bateriaPequena: casos === null || casos < CASOS_PARA_UMA_BATERIA_ROBUSTA,
     casosNaBateria: casos,
@@ -142,7 +214,10 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string): Promise<
 
 export type RecusaDoLeitor = "modelo_nao_aprovado" | "sem_chave" | "reserva_igual" | "reserva_nao_aprovada" | "sem_modelo";
 
-/** Pode ligar (ou trocar) com este modelo e esta reserva? */
+/**
+ * Pode ligar (ou trocar) com este modelo e esta reserva? `sem_chave` só quando
+ * não há chave NENHUMA para o modelo — nem da organização, nem da instalação.
+ */
 export function conferirEscolha(
   d: Pick<DadosDoLeitor, "modelos">,
   modelo: ModeloDoLeitor | null,

@@ -4,9 +4,16 @@
  * O CARTÃO DO LEITOR DA CONVERSA na tela Provedores (PM-027 §8).
  *
  * Mostra, por modelo, o preço do catálogo, o custo estimado por mês nesta
- * empresa, a nota na bateria (acertos/total, com a data) e o tempo médio. Liga o
- * Leitor só com modelo aprovado na bateria (100% nos casos que bloqueiam) e com a
- * chave do provedor cadastrada; a reserva segue a mesma régua. A bateria roda na
+ * empresa, a nota na bateria (acertos/total, com a data), o tempo médio e de onde
+ * vem a chave (a da empresa, a da instalação ou nenhuma). Liga o Leitor só com
+ * modelo aprovado na bateria (100% nos casos que bloqueiam) e com chave para ele —
+ * sem chave própria, vale a da instalação (decisão de 06/11); a reserva segue a
+ * mesma régua.
+ *
+ * Quem nunca mexeu segue o MODELO PADRÃO DA INSTALAÇÃO (decisão do dono de 06/11:
+ * o Leitor liga sozinho em toda empresa) e o cartão diz isso ("Ligado pelo
+ * padrão da instalação: …"). O admin pode trocar por outro modelo aprovado,
+ * voltar ao padrão ou desligar; desligado, o padrão não o religa sozinho. A bateria roda na
  * área do dono da plataforma (a aprovação vale para todos os escritórios,
  * decisão de 06/11): aqui o dono vê o atalho "Testar na bateria".
  */
@@ -20,6 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import type { EscolhaDoLeitor } from "@/lib/dados/leitor/config";
 import type { DadosDoLeitor, ModeloNoCartao } from "@/lib/dados/leitor/leitor-da-org";
 
 type Dados = DadosDoLeitor & { podeEditar: boolean; ehDonoDaPlataforma: boolean };
@@ -29,6 +37,12 @@ const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.
 function dolares(cents: number | null): string {
   if (cents === null) return "—";
   return `US$ ${(cents / 100).toFixed(2)}`;
+}
+
+function rotuloDaChave(m: ModeloNoCartao, t: (s: string) => string): string {
+  if (m.origemDaChave === "empresa") return t("chave da empresa");
+  if (m.origemDaChave === "instalacao") return t("usa a chave da instalação");
+  return t("sem chave");
 }
 
 function precoPorMilhao(m: ModeloNoCartao): string {
@@ -49,8 +63,8 @@ export function CartaoDoLeitor() {
 
   const aplicar = useCallback((d: Dados) => {
     setDados(d);
-    setModelo(d.config.modelo ? chave(d.config.modelo) : "");
-    setReserva(d.config.reserva ? chave(d.config.reserva) : "");
+    setModelo(d.escolhaPropria.modelo ? chave(d.escolhaPropria.modelo) : "");
+    setReserva(d.escolhaPropria.reserva ? chave(d.escolhaPropria.reserva) : "");
     setPrefixos(d.config.prefixos_de_anuncio.join(", "));
     setTermo(d.config.termo_do_contrato);
   }, []);
@@ -104,20 +118,30 @@ export function CartaoDoLeitor() {
     return m ? { provider: m.provider, model_id: m.model_id } : null;
   };
 
-  function salvar(ligar: boolean) {
+  /** `escolha` ausente = só os prefixos e o termo mudam. */
+  function salvar(escolha: EscolhaDoLeitor | null) {
     startTransition(async () => {
       try {
         await apiClient.patch<{ data: unknown }>("/api/v1/ai/leitor", {
-          ligado: ligar,
-          modelo: modelo ? comoModelo(modelo) : null,
-          reserva: reserva ? comoModelo(reserva) : null,
+          ...(escolha ? { escolha } : {}),
+          ...(escolha === "propria"
+            ? { modelo: modelo ? comoModelo(modelo) : null, reserva: reserva ? comoModelo(reserva) : null }
+            : {}),
           prefixos_de_anuncio: prefixos
             .split(",")
             .map((p) => p.trim())
             .filter(Boolean),
           termo_do_contrato: termo.trim() || "contrato",
         });
-        toast.success(ligar ? t("Leitor da conversa ligado.") : t("Leitor da conversa desligado."));
+        toast.success(
+          escolha === "desligado"
+            ? t("Leitor da conversa desligado.")
+            : escolha === "padrao"
+              ? t("O Leitor segue o padrão da instalação.")
+              : escolha === "propria"
+                ? t("Leitor da conversa ligado.")
+                : t("Salvo."),
+        );
         await carregar();
       } catch (err) {
         toast.error(err instanceof Error ? t(err.message) : t("Não consegui salvar."));
@@ -125,11 +149,35 @@ export function CartaoDoLeitor() {
     });
   }
 
-  const ligadoDesde = dados.config.ligado && dados.config.ligado_em
-    ? t("Ligado desde {quando}, com {modelo}.")
-        .replace("{quando}", new Date(dados.config.ligado_em).toLocaleString())
-        .replace("{modelo}", dados.config.modelo ? (porChave.get(chave(dados.config.modelo))?.nome ?? dados.config.modelo.model_id) : "—")
-    : t("Desligado. Os painéis de Dados seguem com a regra de antes.");
+  const nomeDe = (m: { provider: string; model_id: string } | null) => (m ? (porChave.get(chave(m))?.nome ?? m.model_id) : "—");
+  const origem = dados.config.origem;
+  const quando = dados.config.ligado_em ? new Date(dados.config.ligado_em).toLocaleString() : "—";
+  let ligadoDesde: string;
+  if (origem === "padrao" && dados.padrao) {
+    ligadoDesde = (
+      dados.padrao.reserva
+        ? t("Ligado pelo padrão da instalação: {modelo} (reserva: {reserva}), desde {quando}.")
+        : t("Ligado pelo padrão da instalação: {modelo}, desde {quando}.")
+    )
+      .replace("{modelo}", nomeDe(dados.padrao.modelo))
+      .replace("{reserva}", nomeDe(dados.padrao.reserva))
+      .replace("{quando}", quando);
+  } else if (origem === "padrao") {
+    ligadoDesde = t("A instalação ainda não tem um modelo padrão do Leitor. Escolha um modelo aprovado para ligar nesta empresa.");
+  } else if (origem === "desligado") {
+    ligadoDesde = t("Desligado nesta empresa. O padrão da instalação não liga o Leitor de novo sozinho.");
+  } else if (dados.config.ligado && dados.config.ligado_em) {
+    ligadoDesde = t("Ligado desde {quando}, com {modelo}.").replace("{quando}", quando).replace("{modelo}", nomeDe(dados.config.modelo));
+  } else {
+    ligadoDesde = t("Desligado. Os painéis de Dados seguem com a regra de antes.");
+  }
+  const semChave = dados.semChaveParaOModelo
+    ? t("Sem chave para {modelo}: o Leitor não lê nesta empresa até existir uma. Cadastre a chave em IA › Credenciais ou escolha outro modelo.").replace(
+        "{modelo}",
+        nomeDe(dados.config.modelo),
+      )
+    : null;
+  const estado = !dados.config.ligado ? "desligado" : dados.semChaveParaOModelo ? "sem_chave" : "ligado";
   const avisoDaBateria = dados.bateriaPequena
     ? dados.casosNaBateria
       ? t("A bateria ainda é pequena ({n} casos). A nota vale, mas siga validando antes de tratar o modelo como definitivo.").replace(
@@ -159,13 +207,18 @@ export function CartaoDoLeitor() {
             {t("Lê, uma vez por dia, a conversa dos leads que tiveram mensagem nova e preenche a ficha que os painéis de Dados usam.")}
           </p>
         </div>
-        <Badge variant={dados.config.ligado ? "default" : "outline"} data-testid="leitor-estado">
-          {dados.config.ligado ? t("Ligado") : t("Desligado")}
+        <Badge variant={estado === "ligado" ? "default" : "outline"} data-testid="leitor-estado" data-origem={origem}>
+          {estado === "ligado" ? t("Ligado") : estado === "sem_chave" ? t("Sem chave") : t("Desligado")}
         </Badge>
       </div>
       <p className="text-sm" data-testid="leitor-ligado-desde">
         {ligadoDesde}
       </p>
+      {semChave ? (
+        <p className="rounded-md border border-border bg-muted/40 p-2 text-xs" data-testid="leitor-sem-chave">
+          {semChave}
+        </p>
+      ) : null}
       {avisoDaBateria ? (
         <p className="rounded-md border border-border bg-muted/40 p-2 text-xs" data-testid="leitor-aviso-bateria">
           {avisoDaBateria}
@@ -189,7 +242,9 @@ export function CartaoDoLeitor() {
                 <tr key={chave(m)} className="border-t border-border" data-testid="leitor-modelo" data-modelo={chave(m)}>
                   <td className="py-1 pr-3">
                     <span className="font-medium">{m.nome}</span>
-                    {!m.temChave ? <span className="block text-muted-foreground">{t("sem chave nesta empresa")}</span> : null}
+                    <span className="block text-muted-foreground" data-testid="leitor-origem-da-chave" data-origem={m.origemDaChave ?? "nenhuma"}>
+                      {rotuloDaChave(m, t)}
+                    </span>
                   </td>
                   <td className="py-1 pr-3 tabular-nums">{precoPorMilhao(m)}</td>
                   <td className="py-1 pr-3 tabular-nums">{dolares(m.custoPorMesCents)}</td>
@@ -265,12 +320,22 @@ export function CartaoDoLeitor() {
             <Input data-testid="leitor-termo" value={termo} onChange={(e) => setTermo(e.target.value)} />
           </label>
           {semAprovado ? <p className="text-xs text-muted-foreground md:col-span-2">{semAprovado}</p> : null}
-          <div className="flex gap-2 md:col-span-2">
-            <Button type="button" size="sm" disabled={salvando || !modelo} data-testid="leitor-ligar" onClick={() => salvar(true)}>
-              {dados.config.ligado ? t("Salvar") : t("Ligar o Leitor")}
+          <div className="flex flex-wrap gap-2 md:col-span-2">
+            <Button type="button" size="sm" disabled={salvando || !modelo} data-testid="leitor-ligar" onClick={() => salvar("propria")}>
+              {origem === "propria" && dados.config.ligado ? t("Salvar") : t("Usar este modelo nesta empresa")}
             </Button>
+            {dados.padrao && origem !== "padrao" ? (
+              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-seguir-padrao" onClick={() => salvar("padrao")}>
+                {t("Seguir o padrão da instalação")}
+              </Button>
+            ) : null}
+            {origem !== "propria" ? (
+              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-salvar-textos" onClick={() => salvar(null)}>
+                {t("Salvar prefixos e termo")}
+              </Button>
+            ) : null}
             {dados.config.ligado ? (
-              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-desligar" onClick={() => salvar(false)}>
+              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-desligar" onClick={() => salvar("desligado")}>
                 {t("Desligar")}
               </Button>
             ) : null}

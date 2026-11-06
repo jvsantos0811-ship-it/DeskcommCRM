@@ -12,7 +12,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
-vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+const audit = vi.fn(async (..._a: unknown[]) => undefined);
+vi.mock("@/lib/audit", () => ({ audit: (...a: unknown[]) => audit(...a) }));
 const gerarRetrato = vi.fn(async (..._a: unknown[]) => ({ gravado: true, dia: "2026-11-06", leads: 3, apagados: 0 }));
 vi.mock("@/lib/dados/gerar-retrato", () => ({ gerarRetratoDaOrg: (...a: unknown[]) => gerarRetrato(...a) }));
 
@@ -20,6 +21,7 @@ import type { FichaDoLeitor } from "@/lib/dados/ficha";
 
 import type { Leitor, ResultadoDaLeitura } from "./ler-lead";
 import { passadaDoLeitor, type OrgDoLeitor } from "./rodada";
+import { CHAVE_DO_PADRAO_DO_LEITOR } from "./padrao";
 import { cronDoLeitor, retratoEsperaOLeitor } from "./rodadas";
 
 type Linha = Record<string, unknown>;
@@ -123,7 +125,14 @@ const LIGADO_EM = "2026-11-02T09:00:00.000Z";
 const MODELO = { provider: "anthropic", model_id: "claude-haiku-5-5" };
 
 function org(leitor: Record<string, unknown> = { ligado: true, ligado_em: LIGADO_EM, modelo: MODELO }): OrgDoLeitor {
-  return { id: ORG, settings: { leitor }, timezone: "America/Sao_Paulo", display_name: "Clínica Teste", locale: "pt-BR" };
+  return {
+    id: ORG,
+    settings: { leitor },
+    timezone: "America/Sao_Paulo",
+    display_name: "Clínica Teste",
+    locale: "pt-BR",
+    created_at: "2026-09-01T12:00:00.000Z",
+  };
 }
 
 function ficha(over: Partial<FichaDoLeitor> = {}): FichaDoLeitor {
@@ -242,6 +251,7 @@ const deps = (ler: Leitor, extra: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   gerarRetrato.mockClear();
+  audit.mockClear();
 });
 
 describe("uma passada do Leitor", () => {
@@ -250,8 +260,12 @@ describe("uma passada do Leitor", () => {
     const ler = sempreLe();
     expect((await passadaDoLeitor(bancoEmMemoria(t) as never, org({ ligado: false }), deps(ler))).parou).toBe("desligado");
     expect(
-      (await passadaDoLeitor(bancoEmMemoria(t) as never, org({ ligado: true, ligado_em: LIGADO_EM }), deps(ler))).parou,
+      (await passadaDoLeitor(bancoEmMemoria(t) as never, org({ escolha: "propria", ligado: true, ligado_em: LIGADO_EM }), deps(ler))).parou,
     ).toBe("sem_modelo");
+    // Ligado sem modelo e sem escolha gravada (forma que nenhuma tela grava): segue o padrão — e sem padrão, desligado.
+    expect(
+      (await passadaDoLeitor(bancoEmMemoria(t) as never, org({ ligado: true, ligado_em: LIGADO_EM }), deps(ler))).parou,
+    ).toBe("desligado");
     expect(ler).not.toHaveBeenCalled();
   });
 
@@ -288,6 +302,23 @@ describe("uma passada do Leitor", () => {
   it("lead que voltou sem potencial (a ficha diz que recusou) é lido, mas não abre aviso", async () => {
     const t = cenario();
     const r = await passadaDoLeitor(bancoEmMemoria(t) as never, org(), deps(sempreLe(ficha({ recusou: true }))));
+    expect(r.avisos).toBe(0);
+    expect(t.agent_inbox_items).toHaveLength(0);
+  });
+
+  it("LV1: o contato já tem outro card aberto (mais NOVO que o perdido) — a ficha é gravada, o aviso não abre", async () => {
+    const t = cenario();
+    t.crm_leads!.push({
+      id: "l-voltou-aberto",
+      organization_id: ORG,
+      contact_id: "c-voltou",
+      pipeline_id: FUNIL,
+      stage_id: ATIVA,
+      tags: [],
+      created_at: "2026-10-20T12:00:00.000Z",
+    });
+    const r = await passadaDoLeitor(bancoEmMemoria(t) as never, org(), deps(sempreLe()));
+    expect(t.crm_lead_ficha!.some((f) => f.lead_id === "l-voltou")).toBe(true);
     expect(r.avisos).toBe(0);
     expect(t.agent_inbox_items).toHaveLength(0);
   });
@@ -338,15 +369,87 @@ describe("as rodadas do Leitor", () => {
     const db = bancoEmMemoria(t) as never;
     const o = org();
     // Antes da diária abrir, até as 09:00 locais, espera.
-    expect(await retratoEsperaOLeitor(db, o, AGORA)).toBe(true);
+    expect(await retratoEsperaOLeitor(db, o, AGORA, null)).toBe(true);
     t.leitor_rodadas = [
       { organization_id: ORG, origem: "diaria", dia: "2026-11-06", iniciada_em: "2026-11-06T09:00:00.000Z", terminada_em: null },
     ];
-    expect(await retratoEsperaOLeitor(db, o, AGORA)).toBe(true);
-    expect(await retratoEsperaOLeitor(db, o, new Date("2026-11-06T12:30:00.000Z"))).toBe(false);
+    expect(await retratoEsperaOLeitor(db, o, AGORA, null)).toBe(true);
+    expect(await retratoEsperaOLeitor(db, o, new Date("2026-11-06T12:30:00.000Z"), null)).toBe(false);
     t.leitor_rodadas[0]!.terminada_em = "2026-11-06T09:10:00.000Z";
-    expect(await retratoEsperaOLeitor(db, o, AGORA)).toBe(false);
+    expect(await retratoEsperaOLeitor(db, o, AGORA, null)).toBe(false);
     // Leitor desligado: nunca espera.
-    expect(await retratoEsperaOLeitor(db, org({ ligado: false }), AGORA)).toBe(false);
+    expect(await retratoEsperaOLeitor(db, org({ ligado: false }), AGORA, null)).toBe(false);
+  });
+});
+
+describe("o modelo padrão da instalação (PM-027: o Leitor ligado em toda empresa)", () => {
+  const SONNET = { provider: "anthropic", model_id: "claude-sonnet-5-5" };
+  const comPadrao = (t: Tabelas, o: OrgDoLeitor, ativoDesde = LIGADO_EM) => {
+    t.organizations = [{ ...o, status: "active" }];
+    t.platform_config = [
+      {
+        chave: CHAVE_DO_PADRAO_DO_LEITOR,
+        valor: JSON.stringify({ modelo: MODELO, reserva: null, ativo_desde: ativoDesde, definido_em: ativoDesde }),
+      },
+    ];
+    return t;
+  };
+  const auditadas = () => audit.mock.calls.map((c) => c[0] as { action: string; organizationId?: string; metadata?: Record<string, unknown> }).filter((a) => a.action === "leitor.ligado_pelo_padrao");
+
+  it("sem padrão, a organização que nunca mexeu não lê", async () => {
+    const t = cenario();
+    t.organizations = [{ ...org({}), status: "active" }];
+    const ler = sempreLe();
+    const r = await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    expect(r.organizacoes).toBe(0);
+    expect(ler).not.toHaveBeenCalled();
+  });
+
+  it("com padrão, a que nunca mexeu lê com o modelo padrão, desde que ele passou a valer", async () => {
+    const t = comPadrao(cenario(), org({}));
+    const ler = sempreLe();
+    const r = await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    expect(r).toMatchObject({ organizacoes: 1, lidos: 2 });
+    expect(vi.mocked(ler).mock.calls[0]![0].aprovado).toEqual(MODELO);
+    // Já existia quando o padrão passou a valer: quem registra é a gravação do padrão, não a diária.
+    expect(auditadas()).toHaveLength(0);
+  });
+
+  it("sem carga inicial: o padrão que passa a valer depois das conversas não lê nada de antes", async () => {
+    const t = comPadrao(cenario(), org({}), "2026-11-05T15:00:00.000Z");
+    const ler = sempreLe();
+    const r = await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    expect(r.lidos).toBe(0);
+    expect(ler).not.toHaveBeenCalled();
+  });
+
+  it("quem desligou continua desligado com o padrão", async () => {
+    const t = comPadrao(cenario(), org({ escolha: "desligado", ligado: false, ligado_em: null, modelo: SONNET }));
+    const ler = sempreLe();
+    const r = await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    expect(r.organizacoes).toBe(0);
+    expect(ler).not.toHaveBeenCalled();
+  });
+
+  it("quem escolheu o seu modelo continua com o dele", async () => {
+    const t = comPadrao(cenario(), org({ escolha: "propria", ligado: true, ligado_em: LIGADO_EM, modelo: SONNET }));
+    const ler = sempreLe();
+    await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    expect(vi.mocked(ler).mock.calls[0]![0].aprovado).toEqual(SONNET);
+  });
+
+  it("organização nova lê só a partir de quando nasceu, e a primeira diária fica registrada (uma vez)", async () => {
+    const nova = { ...org({}), created_at: "2026-11-05T12:30:00.000Z" };
+    const t = comPadrao(cenario(), nova);
+    const ler = sempreLe();
+    const r = await cronDoLeitor(bancoEmMemoria(t) as never, { agora: AGORA, ler, orcamentoMs: 60_000 });
+    // O chat novo (12:00) é de antes de ela nascer; o lead que voltou escreveu às 13:00.
+    expect(r.lidos).toBe(1);
+    expect(t.crm_lead_ficha!.map((f) => f.lead_id)).toEqual(["l-voltou"]);
+    expect(auditadas()).toEqual([
+      expect.objectContaining({ organizationId: ORG, metadata: expect.objectContaining({ ligado_em: "2026-11-05T12:30:00.000Z", modelo: MODELO }) }),
+    ]);
+    await cronDoLeitor(bancoEmMemoria(t) as never, { agora: new Date("2026-11-06T10:05:00.000Z"), ler: sempreLe(), orcamentoMs: 60_000 });
+    expect(auditadas()).toHaveLength(1);
   });
 });

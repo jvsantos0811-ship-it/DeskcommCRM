@@ -58338,6 +58338,67 @@ create trigger trg_contacts_apaga_caso_da_bateria
   after update of is_anonymized on public.contacts
   for each row execute function public.fn_apagar_caso_da_bateria_ao_anonimizar();
 
+-- ---- os textos automáticos do celular: painel Esperando a equipe e aviso Ninguém respondeu (migration 9024) ----
+-- Racional inteiro no cabeçalho da migration 9024.
+create index if not exists messages_celular_saida_idx
+  on public.messages (organization_id, created_at)
+  where direction = 'outbound' and sent_via = 'external_device';
+
+create or replace function public.fn_textos_automaticos_do_celular(
+  p_org uuid,
+  p_desde timestamptz,
+  p_segundos integer default 60,
+  p_min_conversas integer default 3
+)
+returns table (texto text, conversas integer, vezes integer, no_prazo integer)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with saidas as (
+    select m.conversation_id,
+           lower(btrim(regexp_replace(coalesce(m.body, ''), '\s+', ' ', 'g'))) as texto,
+           m.created_at
+      from public.messages m
+     where m.organization_id = p_org
+       and m.direction = 'outbound'
+       and m.sent_via = 'external_device'
+       and m.created_at >= p_desde
+  ),
+  com_o_lead as (
+    select s.conversation_id, s.texto, s.created_at, l.created_at as do_lead
+      from saidas s
+      left join lateral (
+        select i.created_at
+          from public.messages i
+         where i.conversation_id = s.conversation_id
+           and i.organization_id = p_org
+           and i.direction = 'inbound'
+           and i.created_at <= s.created_at
+         order by i.created_at desc
+         limit 1
+      ) l on true
+     where s.texto <> ''
+  )
+  select c.texto,
+         count(distinct c.conversation_id)::integer,
+         count(*)::integer,
+         (count(*) filter (
+            where c.do_lead is not null
+              and c.created_at - c.do_lead <= make_interval(secs => p_segundos)
+         ))::integer
+    from com_o_lead c
+   group by c.texto
+  having count(distinct c.conversation_id) >= p_min_conversas
+$$;
+
+revoke execute on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) from public, anon, authenticated;
+grant execute on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) to service_role;
+
+comment on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) is
+  'PM-027 §6 (migration 9024): os textos que o celular do escritório mandou IGUAIS em 3+ conversas desde p_desde, com quantas vezes saíram até p_segundos depois da mensagem do lead. A decisão (80% no prazo = automático) mora em lib/messaging/textos-automaticos.ts. Só o service_role executa.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

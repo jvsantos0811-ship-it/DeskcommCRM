@@ -127,3 +127,20 @@ describe("v3 §8 — `?recorte=painel`: o mesmo recorte do painel de Dados", () 
     expect(ids(applyFilters(comRecorte, { recorte: "painel" }))).toEqual(["no-painel"]);
   });
 });
+
+describe("PM-027 §6 — `?esperando=equipe`: os leads do painel \"Esperando a equipe\"", () => {
+  const leads = [lead("esperando", q({ nivel: "A" })), lead("atendido", q({ nivel: "A" }))];
+
+  it("ida e volta pela URL, e liga a barra; valor desconhecido é ignorado", () => {
+    expect(filtersFromParams(sp("esperando=equipe")).esperando).toBe("equipe");
+    expect(filtersFromParams(sp("esperando=lead")).esperando).toBeUndefined();
+    expect(filtersToParams({ esperando: "equipe" })).toBe("esperando=equipe");
+    expect(filtroLigado({ esperando: "equipe" })).toBe(true);
+  });
+
+  it("deixa só quem o servidor disse que espera — e ninguém enquanto a lista não chega", () => {
+    expect(ids(applyFilters(leads, { esperando: "equipe" }, { esperandoAEquipe: new Set(["esperando"]) }))).toEqual(["esperando"]);
+    expect(ids(applyFilters(leads, { esperando: "equipe" }))).toEqual([]);
+    expect(ids(applyFilters(leads, {}, { esperandoAEquipe: new Set(["esperando"]) }))).toEqual(["esperando", "atendido"]);
+  });
+});

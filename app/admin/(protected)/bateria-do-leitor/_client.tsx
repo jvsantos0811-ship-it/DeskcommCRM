@@ -4,7 +4,9 @@
  * A página da bateria do Leitor (PM-027 §8–§9) para o dono da plataforma:
  *  1. os casos (quantos, de onde) e "Carregar casos" a partir do arquivo do Gestor;
  *  2. "Testar na bateria": o modelo, o juiz (nunca o mesmo) e a empresa cuja chave paga;
- *  3. as rodadas, com o placar, e caso a caso com a decisão do juiz.
+ *  3. as rodadas, com o placar, e caso a caso com a decisão do juiz;
+ *  4. o modelo padrão do Leitor da instalação (`_padrao.tsx`), com que toda
+ *     empresa que não escolheu outro modelo nem desligou passa a ler.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -19,6 +21,9 @@ import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import type { ResultadoNaTela, ResumoDaBateria, RodadaNaTela } from "@/lib/dados/leitor/bateria-admin";
 import { nomeDoModelo } from "@/lib/dados/leitor/modelos-principais";
+import type { PadraoNaTela } from "@/lib/dados/leitor/padrao";
+
+import { PadraoDoLeitorNaBateria } from "./_padrao";
 
 const TAMANHO_MAXIMO = 2 * 1024 * 1024;
 const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.model_id}`;
@@ -28,7 +33,8 @@ export function BateriaDoLeitorClient() {
   const queryClient = useQueryClient();
   const consulta = useQuery({
     queryKey: ["admin", "bateria-do-leitor"],
-    queryFn: () => apiClient.get<{ data: ResumoDaBateria }>("/api/v1/admin/bateria-do-leitor").then((r) => r.data),
+    queryFn: () =>
+      apiClient.get<{ data: ResumoDaBateria & { padrao: PadraoNaTela } }>("/api/v1/admin/bateria-do-leitor").then((r) => r.data),
     refetchInterval: 20_000,
   });
   const resumo = consulta.data ?? null;
@@ -138,6 +144,7 @@ export function BateriaDoLeitorClient() {
           {avisoDaBateria}
         </p>
       ) : null}
+      <PadraoDoLeitorNaBateria padrao={resumo.padrao} aoSalvar={recarregar} />
 
       <Card className="space-y-3 p-4">
         <h2 className="font-medium">{t("Casos")}</h2>

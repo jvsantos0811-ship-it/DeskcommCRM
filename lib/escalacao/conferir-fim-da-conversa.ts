@@ -25,8 +25,9 @@ import { computeCost } from "@/lib/ai/cost";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { registrarChamadaDeIa } from "@/lib/ai/usage/registrar-chamada";
-import { configDoLeitor } from "@/lib/dados/leitor/config";
+import { configDoLeitor, configEfetivaDoLeitor } from "@/lib/dados/leitor/config";
 import { idDoModeloAprovado, PONTO_DO_LEITOR } from "@/lib/dados/leitor/ler-lead";
+import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 import type { MensagemDaConversa } from "./ninguem-respondeu";
@@ -117,9 +118,17 @@ export async function modeloHerdadoDoLeitor(
       .eq("is_enabled", true)
       .maybeSingle();
     if (e1 || proprio) return null;
-    const { data: org, error: e2 } = await admin.from("organizations").select("settings").eq("id", organizationId).maybeSingle();
+    const { data: org, error: e2 } = await admin
+      .from("organizations")
+      .select("settings, created_at")
+      .eq("id", organizationId)
+      .maybeSingle();
     if (e2 || !org) return null;
-    const modelo = configDoLeitor((org as { settings?: unknown }).settings).modelo;
+    const linha = org as { settings?: unknown; created_at?: string | null };
+    // A configuração EFETIVA: quem segue o padrão da instalação herda o modelo padrão;
+    // sem ele, o último modelo aprovado que a própria organização escolheu (como antes).
+    const crua = configDoLeitor(linha.settings);
+    const modelo = configEfetivaDoLeitor(crua, linha.created_at ?? null, await lerPadraoDoLeitor(admin)).modelo ?? crua.modelo;
     return modelo ? idDoModeloAprovado(modelo) : null;
   } catch {
     return null;
