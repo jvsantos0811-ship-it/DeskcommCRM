@@ -30,6 +30,12 @@ export interface ModeloDoCatalogo {
   output_price_per_million_cents: number | null;
 }
 
+/** O nome do modelo para a tela: o do catálogo; sem ele, o id. */
+export function nomeDoModelo(m: Pick<ModeloDoCatalogo, "display_name" | "model_id">): string {
+  const doCatalogo = m.display_name;
+  return doCatalogo !== null && doCatalogo.trim() !== "" ? doCatalogo : m.model_id;
+}
+
 /** Os principais que ainda estão no catálogo, na ordem da lista. */
 export function principaisNoCatalogo(catalogo: ModeloDoCatalogo[]): ModeloDoCatalogo[] {
   const porChave = new Map(catalogo.map((m) => [`${m.provider}/${m.model_id}`, m]));

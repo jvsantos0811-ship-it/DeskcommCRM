@@ -17,6 +17,7 @@ import {
   CASOS_PARA_UMA_BATERIA_ROBUSTA,
   custoEstimadoPorMes,
   MODELOS_PRINCIPAIS_DO_LEITOR,
+  nomeDoModelo,
   type ModeloDoCatalogo,
 } from "./modelos-principais";
 
@@ -114,7 +115,7 @@ export async function dadosDoLeitor(db: SupabaseClient, orgId: string): Promise<
       return {
         provider: m.provider,
         model_id: m.model_id,
-        nome: m.display_name ?? m.model_id,
+        nome: nomeDoModelo(m),
         principal: principais.has(k),
         precoEntrada: m.input_price_per_million_cents,
         precoSaida: m.output_price_per_million_cents,

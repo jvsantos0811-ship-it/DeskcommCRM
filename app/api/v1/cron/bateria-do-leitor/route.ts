@@ -41,8 +41,7 @@ async function handle(req: NextRequest): Promise<Response> {
         organizationId: null,
         bypassedRls: true,
         resourceType: "leitor_bateria_rodadas",
-        resourceId: r.rodada,
-        metadata: { ...(data ?? {}), parou: r.parou },
+        metadata: { ...(data ?? {}), rodada_id: r.rodada, parou: r.parou },
         requestId,
       });
     }

@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import type { ResultadoNaTela, ResumoDaBateria, RodadaNaTela } from "@/lib/dados/leitor/bateria-admin";
+import { nomeDoModelo } from "@/lib/dados/leitor/modelos-principais";
 
 const TAMANHO_MAXIMO = 2 * 1024 * 1024;
 const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.model_id}`;
@@ -238,7 +239,7 @@ export function BateriaDoLeitorClient() {
               <option value="">{t("Automático (Opus 5.5; testando o Opus, GPT-6.1 Sol)")}</option>
               {resumo.principais.map((p) => (
                 <option key={chave(p)} value={chave(p)}>
-                  {p.display_name ?? p.model_id}
+                  {nomeDoModelo(p)}
                 </option>
               ))}
             </select>
@@ -257,7 +258,7 @@ export function BateriaDoLeitorClient() {
               const r = ultimaPorModelo.get(chave(m));
               return (
                 <tr key={chave(m)} className="border-t border-border" data-testid="bateria-modelo" data-modelo={chave(m)}>
-                  <td className="py-1 pr-3 font-medium">{m.display_name ?? m.model_id}</td>
+                  <td className="py-1 pr-3 font-medium">{nomeDoModelo(m)}</td>
                   <td className="py-1 pr-3">{r ? <ResumoDaRodada r={r} /> : t("Sem teste")}</td>
                   <td className="py-1 pr-3 text-right">
                     <Button
