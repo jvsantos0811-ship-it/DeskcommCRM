@@ -136,7 +136,10 @@ test("o admin da empresa vê o cartão do Leitor: desligado, a nota e o seletor 
   const opcao = cartao.getByTestId("leitor-escolher-modelo").locator(`option[value="${MODELO}"]`);
   await expect(opcao).toHaveCount(1);
   if (await haiku.getByText("sem chave nesta empresa").count()) {
-    await expect(opcao).toBeDisabled();
+    // `toBeDisabled()` não lê o `disabled` de um <option> (medido no CI: o
+    // Playwright achou `<option disabled …>` e respondeu "enabled"). A
+    // propriedade do elemento é a pergunta certa.
+    await expect(opcao).toHaveJSProperty("disabled", true);
     await expect(cartao.getByTestId("leitor-ligar")).toBeDisabled();
   }
 
