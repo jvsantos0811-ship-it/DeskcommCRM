@@ -7,8 +7,8 @@
  * classificado como lead.
  *
  * A ficha da bateria está no formato CURTO do Gestor (`contou`, `bola`, `fala`…);
- * `daBateria` traduz para a ficha do Leitor e os fatos do banco — se a tradução
- * errar um campo, a bateria acusa.
+ * `daFormaCurta` (lib/dados/leitor/bateria.ts) traduz para a ficha do Leitor e os
+ * fatos do banco — se a tradução errar um campo, a bateria acusa.
  *
  * SABOTAGEM:
  * - trocar a ordem de duas linhas de `situacaoDaFicha` (ex.: Recusou antes de
@@ -21,31 +21,9 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { FatosDoBanco, FichaDoLeitor } from "./ficha";
+import { daFormaCurta, type FichaCurta } from "./leitor/bateria";
 import { classificarFicha, estadoSemFicha, type EntradaDaRegra, textoDaAcao, textoDoAlerta } from "./regra-da-ficha";
 
-interface FichaCurta {
-  contato: FichaDoLeitor["contato"];
-  interesse?: string;
-  contou?: FichaDoLeitor["contou_o_caso"];
-  requisitos?: FichaDoLeitor["requisitos"];
-  falta?: string;
-  negociacao?: FichaDoLeitor["negociacao"];
-  objecao?: FichaDoLeitor["objecao"];
-  bola?: FichaDoLeitor["proximo_passo_com"];
-  fala?: string;
-  palavras?: boolean;
-  risco?: boolean;
-  confirmar?: boolean;
-  duplicado?: boolean;
-  espera?: string;
-  fora_area?: boolean;
-  sem_caso?: boolean;
-  recusou?: boolean;
-  outro_advogado_ativo?: boolean;
-  ilegivel?: boolean;
-  nunca_respondido?: boolean;
-}
 interface Caso {
   id: string;
   ficha: FichaCurta;
@@ -57,45 +35,7 @@ const bateria = JSON.parse(
 
 const AGORA = new Date(bateria.relogio_da_regra);
 
-/** "29/10 10:15" (São Paulo, 2026) → instante. */
-function instanteDaFala(fala: string | undefined): Date | null {
-  if (!fala) return null;
-  const m = /^(\d{2})\/(\d{2}) (\d{2}):(\d{2})$/.exec(fala);
-  if (!m) throw new Error(`fala fora do formato: ${fala}`);
-  return new Date(`2026-${m[2]}-${m[1]}T${m[3]}:${m[4]}:00-03:00`);
-}
-
-function daBateria(f: FichaCurta): EntradaDaRegra {
-  const ficha: FichaDoLeitor = {
-    contato: f.contato,
-    interesse: f.interesse ?? null,
-    interesse_texto: null,
-    contou_o_caso: f.contou ?? "nao",
-    requisitos: f.requisitos ?? "a_confirmar",
-    requisitos_faltando: f.falta ? [f.falta] : [],
-    requisito_em_risco: f.risco ?? false,
-    negociacao: f.negociacao ?? "nenhuma",
-    objecao: f.objecao ?? "nenhuma",
-    fora_da_area: f.fora_area ?? false,
-    sem_caso: f.sem_caso ?? false,
-    recusou: f.recusou ?? false,
-    ja_atendido_por_outro: f.outro_advogado_ativo ?? false,
-    confirmar_assinatura: f.confirmar ?? false,
-    midia_nao_entendida: f.ilegivel ?? false,
-    aguardando: f.espera ? { evento: f.espera, data: null } : null,
-    proximo_passo_com: f.bola ?? "lead",
-    palavras_proprias: f.palavras ?? false,
-    esperando_a_equipe: null,
-    provas: {},
-  };
-  const banco: FatosDoBanco = {
-    ultima_fala_do_lead: instanteDaFala(f.fala),
-    duplicado: f.duplicado ?? false,
-    nunca_respondido: f.nunca_respondido ?? false,
-    midia_nao_entendida: false,
-  };
-  return { ficha, banco };
-}
+const daBateria = (f: FichaCurta): EntradaDaRegra => daFormaCurta(f, 2026);
 
 const semTraducao = (s: string) => s;
 // Na Bórbora o funil de quem já é cliente se chama "Operacional"; a regra não
