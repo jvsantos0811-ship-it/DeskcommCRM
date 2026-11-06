@@ -1,6 +1,6 @@
 /**
  * QUEM É "LEAD COM POTENCIAL" — o alcance do Leitor da conversa, do painel
- * "Esperando a equipe" e do aviso "Ninguém respondeu" (PM-025 §2).
+ * "Esperando a equipe" e do aviso "Ninguém respondeu" (PM-027 §2).
  *
  * Configurável por organização (`organizations.settings.leitor`), e NUNCA por
  * nome de funil, de etapa ou de cliente: vale para escritório, clínica e
@@ -15,7 +15,7 @@
  * para montar o padrão — o alcance não lhe dá um segundo sentido (anti-padrão 2):
  * quem escolhe os funis à mão escolhe inclusive o de clientes, se quiser.
  *
- * "Pode voltar" (PM-025 §3, exceção 1): o lead de um funil lido que está fora
+ * "Pode voltar" (PM-027 §3, exceção 1): o lead de um funil lido que está fora
  * por etapa de PERDA ou por marcador que desqualifica. Se ele manda mensagem
  * nova, volta a ser lido e entra no aviso — a etapa não muda, a equipe decide.
  * Ganho, etapa arquivada e funil não lido não "voltam".

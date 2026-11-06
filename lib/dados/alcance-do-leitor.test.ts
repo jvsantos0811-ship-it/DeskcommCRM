@@ -9,7 +9,7 @@ import {
   type LeadNoAlcance,
 } from "./alcance-do-leitor";
 
-// Nomes de propósito diferentes da Bórbora: o alcance não pode depender de nome (PM-025 §9.2).
+// Nomes de propósito diferentes da Bórbora: o alcance não pode depender de nome (PM-027 §9.2).
 const VENDAS = "11111111-1111-4111-8111-111111111111";
 const POS_VENDA = "22222222-2222-4222-8222-222222222222";
 const ARQUIVADO = "33333333-3333-4333-8333-333333333333";

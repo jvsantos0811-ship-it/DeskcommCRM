@@ -1,6 +1,6 @@
 /**
  * "A CONVERSA TERMINOU?" — a leitura curta do aviso Ninguém respondeu
- * (PM-025 §7, 2ª camada). Ponto de IA `conferir_fim_da_conversa`.
+ * (PM-027 §7, 2ª camada). Ponto de IA `conferir_fim_da_conversa`.
  *
  * Só roda quando a forma da última mensagem não decide (`decidirPelaForma`
  * devolveu "indeciso") e o lead já esperou 1 hora de expediente. Lê as últimas

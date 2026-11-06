@@ -1,5 +1,5 @@
 /**
- * "UM LEAD ESCREVEU E NINGUÉM RESPONDEU" — a regra do aviso (PM-025 §7).
+ * "UM LEAD ESCREVEU E NINGUÉM RESPONDEU" — a regra do aviso (PM-027 §7).
  *
  * Dispara quando a última mensagem é do lead e nem a IA nem uma pessoa da
  * equipe (inclusive pelo celular do escritório) respondeu em 1 hora, contada

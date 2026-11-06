@@ -1,5 +1,5 @@
 /**
- * A RODADA DO AVISO "NINGUÉM RESPONDEU" (PM-025 §7) — a parte com banco.
+ * A RODADA DO AVISO "NINGUÉM RESPONDEU" (PM-027 §7) — a parte com banco.
  *
  * O cron `ninguem-respondeu` chama isto a cada 5 minutos. Para cada organização
  * ATIVA que ligou o aviso (`settings.ninguem_respondeu`):

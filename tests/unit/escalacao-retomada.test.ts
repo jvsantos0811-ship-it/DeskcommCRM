@@ -67,7 +67,7 @@ interface CenarioBanco {
    * como o Postgres faria.
    */
   marcaNaEscrita?: boolean;
-  /** A última mensagem da conversa (PM-025 §0: a do cliente acorda a IA). */
+  /** A última mensagem da conversa (PM-027 §0: a do cliente acorda a IA). */
   ultimaMensagem?: Record<string, unknown> | null;
 }
 
@@ -430,7 +430,7 @@ describe("devolver o atendimento ao agente", () => {
     expect(res.ok).toBe(true);
   });
 
-  // PM-025 §0: 12 devoluções em 21 dias com o cliente esperando, nenhuma
+  // PM-027 §0: 12 devoluções em 21 dias com o cliente esperando, nenhuma
   // respondida — a IA só voltava a falar na PRÓXIMA mensagem dele.
   it("cliente esperando: devolver acorda a IA para a mensagem dele", async () => {
     const cap = novaCaptura();

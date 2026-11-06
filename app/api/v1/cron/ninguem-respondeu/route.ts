@@ -1,6 +1,6 @@
 /**
  * GET/POST /api/v1/cron/ninguem-respondeu — o aviso "Um lead escreveu e ninguém
- * respondeu" (PM-025 §7), a cada 5 minutos (`docker/scheduler/entrypoint.sh`).
+ * respondeu" (PM-027 §7), a cada 5 minutos (`docker/scheduler/entrypoint.sh`).
  *
  * A regra mora em `lib/escalacao/ninguem-respondeu.ts` e a parte com banco em
  * `lib/escalacao/ninguem-respondeu-rodada.ts`. Esta rota só autoriza, chama e

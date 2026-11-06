@@ -1411,7 +1411,7 @@ export const DICIONARIO: Traducoes = {
   "Sábado": { es: "Sábado" },
   "Horário da equipe salvo.": { es: "Horario del equipo guardado." },
   "Horário da equipe": { es: "Horario del equipo" },
-  // PM-025 §2 e §7 — aviso "Ninguém respondeu" e alcance dos leads com potencial
+  // PM-027 §2 e §7 — aviso "Ninguém respondeu" e alcance dos leads com potencial
   "Horário da equipe não cadastrado: usando seg–sex, 8h–18h": { es: "Horario del equipo no registrado: usando lun–vie, 8h–18h" },
   "O lead escreveu em {dia} às {hora} e ninguém respondeu.": { es: "El lead escribió el {dia} a las {hora} y nadie respondió." },
   "Etapa: {etapa}.": { es: "Etapa: {etapa}." },

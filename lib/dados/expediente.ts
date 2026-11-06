@@ -1,5 +1,5 @@
 /**
- * DIAS ÚTEIS CONTADOS EM HORAS DE EXPEDIENTE (PM-025 §3).
+ * DIAS ÚTEIS CONTADOS EM HORAS DE EXPEDIENTE (PM-027 §3).
  *
  * Os prazos do Leitor da conversa, do painel "Esperando a equipe" e do aviso
  * "Ninguém respondeu" não são de relógio corrido: contam só o tempo em que a
@@ -38,7 +38,7 @@ export interface Expediente {
 const HORA_MS = 60 * 60 * 1000;
 const FUSO_PADRAO = "America/Sao_Paulo";
 
-/** O padrão da PM-025 quando a organização não cadastrou o horário da equipe. */
+/** O padrão da PM-027 quando a organização não cadastrou o horário da equipe. */
 export const JANELAS_PADRAO: readonly JanelaDeExpediente[] = [1, 2, 3, 4, 5].map((dow) => ({
   dow,
   start: "08:00",

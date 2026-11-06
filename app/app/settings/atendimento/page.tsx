@@ -71,7 +71,7 @@ export default async function AtendimentoSettingsPage() {
   const frasePadrao = fraseSeguraPadrao((data as { locale?: string | null } | null)?.locale ?? null);
   const fraseInicial = fraseSeguraConfigurada(settings) ?? "";
   const assinaturaInicial = { humanos: assinatura.humanos, ia: assinatura.ia, nome_ia: assinatura.nomeIa };
-  // PM-025 §2 e §7: o aviso "Ninguém respondeu" e quem conta como lead com potencial.
+  // PM-027 §2 e §7: o aviso "Ninguém respondeu" e quem conta como lead com potencial.
   const { data: funisData } = await supabase
     .from("crm_pipelines")
     .select("id, name, is_client_pipeline")

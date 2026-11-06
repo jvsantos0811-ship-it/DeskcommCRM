@@ -1,7 +1,7 @@
 "use client";
 /**
  * O aviso "Um lead escreveu e ninguém respondeu" e o alcance dos leads com
- * potencial (PM-025 §2 e §7). Porta de `settings.ninguem_respondeu` e
+ * potencial (PM-027 §2 e §7). Porta de `settings.ninguem_respondeu` e
  * `settings.leitor` (funis e marcadores que desqualificam). Gravação em
  * `/api/v1/settings/alcance-do-leitor` e `/api/v1/settings/ninguem-respondeu`.
  */

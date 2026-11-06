@@ -1,5 +1,5 @@
 /**
- * A CONVERSA TERMINOU? — 1ª camada do aviso "Ninguém respondeu" (PM-025 §7).
+ * A CONVERSA TERMINOU? — 1ª camada do aviso "Ninguém respondeu" (PM-027 §7).
  *
  * O aviso dispara quando a última mensagem é do lead e ninguém (IA ou pessoa,
  * inclusive pelo celular) respondeu em 1 hora de expediente. Mas "obrigado",

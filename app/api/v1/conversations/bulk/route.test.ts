@@ -458,7 +458,7 @@ describe("POST /api/v1/conversations/bulk", () => {
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledTimes(2);
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: ORG_A }),
-      // A rota acorda a IA no fim, depois do agente do roteador (PM-025 §0).
+      // A rota acorda a IA no fim, depois do agente do roteador (PM-027 §0).
       { conversationId: CONV_A, acordarIa: false },
     );
     expect(devolverAtendimentoAoAgente).toHaveBeenCalledWith(

@@ -1,7 +1,7 @@
 /**
  * DEVOLVER À IA COM O CLIENTE ESPERANDO TEM DE ACORDAR A IA.
  *
- * ─── O defeito (PM-025 §0, medido na Bórbora em 06/11/2026) ─────────────────
+ * ─── O defeito (PM-027 §0, medido na Bórbora em 06/11/2026) ─────────────────
  *
  * `devolverAtendimentoAoAgente` solta as três travas, re-autoriza o contato e
  * emite `ai.handoff_resolved` — mas nada disso pede um turno. O único que pede
