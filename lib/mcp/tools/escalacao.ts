@@ -390,6 +390,8 @@ export const crmResumeAiAttendance: McpToolDefinition<typeof retomarInputShape> 
       conversation_id: resultado.conversationId,
       resumed: true,
       already_with_agent: resultado.jaEstavaComOAgente,
+      // PM-025 §0: a última mensagem era do cliente e a IA já foi chamada a respondê-la.
+      customer_reply_requested: resultado.despertar === "acordou",
       human_continuity: {
         had_human_attendance: resultado.continuidade.houveAtendimentoHumano,
         summary: resultado.continuidade.resumo,
