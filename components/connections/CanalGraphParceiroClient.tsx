@@ -13,6 +13,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { FunilDoNumero } from "./FunilDoNumero";
 
 /**
  * Conectar um número pelo parceiro que espelha a Cloud API — recorte do PR
@@ -150,6 +151,7 @@ export function CanalGraphParceiroClient() {
         )}
 
         {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
+        {estado?.channel_session_id && <FunilDoNumero channelId={estado.channel_session_id} />}
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="graph-parceiro-token">{t("Token de acesso")}</Label>

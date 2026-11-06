@@ -4241,6 +4241,7 @@ export type Database = {
       }
       channel_sessions: {
         Row: {
+          abre_card: boolean
           archived_at: string | null
           consecutive_health_fails: number
           created_at: string
@@ -4248,6 +4249,8 @@ export type Database = {
           daily_message_limit: number
           display_name: string | null
           engine: string
+          etapa_de_entrada_id: string | null
+          funil_de_entrada_id: string | null
           id: string
           is_warmup_complete: boolean | null
           last_health_check_at: string | null
@@ -4277,6 +4280,7 @@ export type Database = {
           zernio_token_encrypted: string | null
         }
         Insert: {
+          abre_card?: boolean
           archived_at?: string | null
           consecutive_health_fails?: number
           created_at?: string
@@ -4284,6 +4288,8 @@ export type Database = {
           daily_message_limit?: number
           display_name?: string | null
           engine?: string
+          etapa_de_entrada_id?: string | null
+          funil_de_entrada_id?: string | null
           id?: string
           is_warmup_complete?: boolean | null
           last_health_check_at?: string | null
@@ -4313,6 +4319,7 @@ export type Database = {
           zernio_token_encrypted?: string | null
         }
         Update: {
+          abre_card?: boolean
           archived_at?: string | null
           consecutive_health_fails?: number
           created_at?: string
@@ -4320,6 +4327,8 @@ export type Database = {
           daily_message_limit?: number
           display_name?: string | null
           engine?: string
+          etapa_de_entrada_id?: string | null
+          funil_de_entrada_id?: string | null
           id?: string
           is_warmup_complete?: boolean | null
           last_health_check_at?: string | null

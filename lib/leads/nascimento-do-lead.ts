@@ -44,6 +44,14 @@
  * possível) é pior nos dois eixos. O que continua valendo sem exceção é a frase
  * seguinte.
  *
+ * E a 9025 deu a cada NÚMERO (`channel_sessions`) a palavra sobre os novos que
+ * chegam por ele: abrir card ou não (`abre_card`) e em qual funil/etapa
+ * (`funil_de_entrada_id`/`etapa_de_entrada_id`). Não é segundo lugar para a
+ * mesma verdade: o padrão continua sendo `is_default`, e o número só existe
+ * para quem precisa de outro (o número de uso interno que não é venda, o número
+ * de uma segunda área). Sem ajuste, nada muda. A ordem completa está no passo 3
+ * de `garantirLeadDaConversa`.
+ *
  * Isto vale para o produto inteiro, não para uma organização: uma clínica, uma
  * imobiliária e um infoprodutor montam funis diferentes, e nenhum nome de funil
  * aparece neste arquivo.
@@ -107,6 +115,7 @@ export type MotivoSemLead =
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
+  | "numero_sem_funil" // o número por onde a conversa chegou está marcado "não abre card" (Conexões, migration 9025)
   | "erro"; // qualquer falha de escrita
 
 export type NascimentoDoLead =
@@ -122,6 +131,103 @@ export interface DadosDoNascimento {
   nomeDoContato: string | null;
   /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
   origem?: OrigemDoNascimento;
+  /**
+   * O NÚMERO (conexão, `channel_sessions.id`) por onde a conversa chegou.
+   *
+   * Decide duas coisas, pelo ajuste do próprio número (migration 9025): se a
+   * conversa nova abre card (`abre_card`) e em qual funil/etapa. Ausente — o
+   * voice-agent, que não tem conexão, e todo chamador antigo — vale o padrão
+   * de sempre: abre card no funil padrão da empresa.
+   */
+  channelSessionId?: string | null;
+}
+
+/**
+ * O ajuste de funil de UM número (Conexões › cada número › Funil).
+ *
+ * Padrão `{ abreCard: true, funilId: null, etapaId: null }` = "Sim · funil
+ * padrão da empresa · primeira etapa", que é o comportamento de antes da 9025.
+ */
+export interface FunilDoNumero {
+  abreCard: boolean;
+  /** NULL = funil padrão da empresa. */
+  funilId: string | null;
+  /** NULL = primeira etapa aberta do funil. */
+  etapaId: string | null;
+}
+
+/** O texto do aviso na linha do tempo do card (vai junto do motivo do nascimento). */
+const TEXTO_DO_AVISO: Record<AvisoDoFunilDoNumero, string> = {
+  funil_arquivado: "o funil escolhido para este número foi arquivado; entrou no funil padrão",
+  funil_sem_etapa: "o funil escolhido para este número não tem etapa aberta; entrou no funil padrão",
+  etapa_indisponivel: "a etapa escolhida para este número não está disponível; entrou na primeira etapa do funil",
+};
+
+export const FUNIL_DO_NUMERO_PADRAO: FunilDoNumero = Object.freeze({
+  abreCard: true,
+  funilId: null,
+  etapaId: null,
+}) as FunilDoNumero;
+
+/**
+ * Por que o card NÃO nasceu onde o número pediu (e nasceu no padrão, ou na
+ * primeira etapa). Vai para a timeline do card, para o log e para o aviso da
+ * tela do número.
+ */
+export type AvisoDoFunilDoNumero =
+  | "funil_arquivado" // o funil escolhido foi arquivado (ou excluído): o card nasce no funil padrão
+  | "funil_sem_etapa" // o funil escolhido não tem etapa aberta: o card nasce no funil padrão
+  | "etapa_indisponivel"; // a etapa escolhida foi arquivada ou é de ganho/perda: o card nasce na primeira etapa do funil
+
+/**
+ * Lê o ajuste do número. NUNCA lança e nunca impede o card de nascer por falha
+ * própria: sem número, número não achado ou erro de leitura valem o padrão.
+ * Um card no funil padrão é visível e corrigível; um card que deixou de nascer
+ * porque a leitura falhou é a pessoa sumir — a doença que este arquivo cura.
+ */
+export async function lerFunilDoNumero(
+  db: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string | null | undefined,
+): Promise<FunilDoNumero> {
+  if (!channelSessionId) return FUNIL_DO_NUMERO_PADRAO;
+  try {
+    const { data, error } = await db
+      .from("channel_sessions")
+      .select("abre_card, funil_de_entrada_id, etapa_de_entrada_id")
+      .eq("organization_id", organizationId)
+      .eq("id", channelSessionId)
+      .maybeSingle();
+    if (error || !data) {
+      if (error) {
+        logger.warn("nascimento-do-lead: ajuste de funil do número não lido (vale o padrão)", {
+          organization_id: organizationId,
+          channel_session_id: channelSessionId,
+          error: error.message.slice(0, 120),
+        });
+      }
+      return FUNIL_DO_NUMERO_PADRAO;
+    }
+    const linha = data as {
+      abre_card?: boolean | null;
+      funil_de_entrada_id?: string | null;
+      etapa_de_entrada_id?: string | null;
+    };
+    return {
+      // Só `false` explícito fecha: coluna ausente (banco ainda sem a 9025)
+      // ou nula vale o padrão, que é abrir.
+      abreCard: linha.abre_card !== false,
+      funilId: linha.funil_de_entrada_id ?? null,
+      etapaId: linha.funil_de_entrada_id ? (linha.etapa_de_entrada_id ?? null) : null,
+    };
+  } catch (err) {
+    logger.warn("nascimento-do-lead: ajuste de funil do número não lido (vale o padrão)", {
+      organization_id: organizationId,
+      channel_session_id: channelSessionId,
+      error: err instanceof Error ? err.message.slice(0, 120) : "desconhecido",
+    });
+    return FUNIL_DO_NUMERO_PADRAO;
+  }
 }
 
 /**
@@ -184,20 +290,109 @@ export async function funilDeEntrada(
   ehCliente = false,
 ): Promise<{ pipelineId: string; stageId: string } | { erro: MotivoSemLead }> {
   if (ehCliente) {
-    const { data: funilDeClientes } = await db
-      .from("crm_pipelines")
+    const deClientes = await funilDeClientes(db, organizationId);
+    if (deClientes) return deClientes;
+  }
+  return funilPadrao(db, organizationId);
+}
+
+/**
+ * O funil de quem JÁ é cliente (`is_client_pipeline`, migration 0262), com a
+ * primeira etapa. `null` quando não há funil marcado ou ele não tem etapa
+ * utilizável — e quem chama segue para o próximo destino, nunca para "não nasce".
+ */
+async function funilDeClientes(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<{ pipelineId: string; stageId: string } | null> {
+  const { data: funil } = await db
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_client_pipeline", true)
+    .eq("is_archived", false)
+    .maybeSingle();
+  if (!funil) return null;
+  const stageId = await primeiraEtapa(db, organizationId, funil.id as string);
+  return stageId ? { pipelineId: funil.id as string, stageId } : null;
+}
+
+/**
+ * O destino que o NÚMERO pediu (Conexões › Funil, migration 9025), já com o
+ * conserto quando o pedido não é mais viável.
+ *
+ * Exportada pela mesma razão de `funilDeEntrada`: a tela do número diz "os
+ * cards deste número nascem em X › Y" perguntando AQUI, em vez de reimplementar
+ * a regra e divergir dela.
+ *
+ * Regra de conserto (nunca "não nasce" por causa do ajuste):
+ *   - sem funil escolhido → funil padrão da empresa;
+ *   - funil escolhido arquivado ou excluído → funil padrão, com aviso
+ *     `funil_arquivado`;
+ *   - funil escolhido sem etapa aberta → funil padrão, com aviso
+ *     `funil_sem_etapa`;
+ *   - etapa escolhida arquivada, de ganho/perda ou de outro funil → primeira
+ *     etapa do funil escolhido, com aviso `etapa_indisponivel`.
+ *
+ * Perder o lead é pior que errar o funil: o aviso vai para a timeline do card e
+ * para a tela do número, e quem configurou conserta.
+ */
+export async function destinoDoNumero(
+  db: SupabaseClient,
+  organizationId: string,
+  ajuste: FunilDoNumero,
+): Promise<
+  | { pipelineId: string; stageId: string; doNumero: boolean; aviso: AvisoDoFunilDoNumero | null }
+  | { erro: MotivoSemLead; aviso: AvisoDoFunilDoNumero | null }
+> {
+  const padrao = async (aviso: AvisoDoFunilDoNumero | null) => {
+    const destino = await funilPadrao(db, organizationId);
+    return "erro" in destino
+      ? { erro: destino.erro, aviso }
+      : { ...destino, doNumero: false, aviso };
+  };
+
+  if (!ajuste.funilId) return padrao(null);
+
+  const { data: funil } = await db
+    .from("crm_pipelines")
+    .select("id, is_archived")
+    .eq("organization_id", organizationId)
+    .eq("id", ajuste.funilId)
+    .maybeSingle();
+  if (!funil || (funil as { is_archived?: boolean }).is_archived === true) return padrao("funil_arquivado");
+
+  if (ajuste.etapaId) {
+    const { data: etapa } = await db
+      .from("crm_stages")
       .select("id")
       .eq("organization_id", organizationId)
-      .eq("is_client_pipeline", true)
+      .eq("pipeline_id", ajuste.funilId)
+      .eq("id", ajuste.etapaId)
       .eq("is_archived", false)
+      .eq("is_won", false)
+      .eq("is_lost", false)
       .maybeSingle();
-
-    if (funilDeClientes) {
-      const stageId = await primeiraEtapa(db, organizationId, funilDeClientes.id as string);
-      if (stageId) return { pipelineId: funilDeClientes.id as string, stageId };
+    if (etapa) {
+      return { pipelineId: ajuste.funilId, stageId: (etapa as { id: string }).id, doNumero: true, aviso: null };
     }
   }
 
+  const stageId = await primeiraEtapa(db, organizationId, ajuste.funilId);
+  if (!stageId) return padrao("funil_sem_etapa");
+  return {
+    pipelineId: ajuste.funilId,
+    stageId,
+    doNumero: true,
+    aviso: ajuste.etapaId ? "etapa_indisponivel" : null,
+  };
+}
+
+/** O funil padrão da empresa (`is_default`), com a primeira etapa. */
+async function funilPadrao(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<{ pipelineId: string; stageId: string } | { erro: MotivoSemLead }> {
   const { data: funil } = await db
     .from("crm_pipelines")
     .select("id")
@@ -294,6 +489,17 @@ export async function garantirLeadDaConversa(
 
   if (existente) return { criado: false, motivo: "ja_existe" };
 
+  // 2b · o NÚMERO por onde a conversa chegou abre card? (migration 9025)
+  //
+  // Depois do "já existe" de propósito: a mensagem número dez de uma conversa
+  // que já tem card não paga esta leitura. E antes de campanha e de cliente que
+  // volta: "este número não abre card" é decisão explícita de quem configurou a
+  // conexão (o número de uso interno, o de cobrança), e vale para tudo que
+  // chega por ele. A conversa, o contato e as mensagens continuam entrando — só
+  // o card não nasce.
+  const ajusteDoNumero = await lerFunilDoNumero(db, organizationId, dados.channelSessionId);
+  if (!ajusteDoNumero.abreCard) return { criado: false, motivo: "numero_sem_funil" };
+
   // 3 · onde entra
   //
   // Cliente que volta a escrever não é captação: ele tem histórico, e o funil de
@@ -314,15 +520,39 @@ export async function garantirLeadDaConversa(
   // escolha mais específica, e quem montou a campanha sabe onde quer medir o
   // resultado dela. Campanha sem funil declarado, ou conversa que não nasceu de
   // campanha, seguem a regra da 0262 sem diferença nenhuma.
+  //
+  // A ordem inteira, da escolha mais específica para a mais geral:
+  //   campanha que declara funil → funil de clientes (quem já é cliente) →
+  //   funil escolhido no NÚMERO (9025) → funil padrão da empresa.
+  // Cliente que volta ganha do número porque o funil de clientes existe para
+  // separar quem já é cliente de quem é novo, venha por onde vier; o número só
+  // muda o lugar dos NOVOS.
   const origemDaCampanha = await origemDeCampanhaDaConversa(db, organizationId, conversationId);
-  const destino = origemDaCampanha?.pipelineId
-    ? await destinoDaCampanha(
-        db,
-        organizationId,
-        origemDaCampanha.pipelineId,
-        origemDaCampanha.stageId,
-      )
-    : await funilDeEntrada(db, organizationId, ehCliente);
+  let avisoDoNumero: AvisoDoFunilDoNumero | null = null;
+  let peloNumero = false;
+  let destino: { pipelineId: string; stageId: string } | { erro: MotivoSemLead };
+  if (origemDaCampanha?.pipelineId) {
+    destino = await destinoDaCampanha(db, organizationId, origemDaCampanha.pipelineId, origemDaCampanha.stageId);
+  } else {
+    const deClientes = ehCliente ? await funilDeClientes(db, organizationId) : null;
+    if (deClientes) {
+      destino = deClientes;
+    } else {
+      const doNumero = await destinoDoNumero(db, organizationId, ajusteDoNumero);
+      avisoDoNumero = doNumero.aviso;
+      peloNumero = "erro" in doNumero ? false : doNumero.doNumero;
+      destino = "erro" in doNumero ? { erro: doNumero.erro } : { pipelineId: doNumero.pipelineId, stageId: doNumero.stageId };
+      if (avisoDoNumero) {
+        // O card nasce mesmo assim (no padrão ou na primeira etapa); o log diz
+        // por que não nasceu onde o número pedia, para quem for investigar.
+        logger.warn("nascimento-do-lead: destino do número indisponível, card no conserto", {
+          organization_id: organizationId,
+          channel_session_id: dados.channelSessionId ?? null,
+          aviso: avisoDoNumero,
+        });
+      }
+    }
+  }
   if ("erro" in destino) return { criado: false, motivo: destino.erro };
 
   // 4 · o card.
@@ -437,8 +667,24 @@ export async function garantirLeadDaConversa(
     // nasceu naquele funil. Sem esta distinção, o cliente antigo aparece num
     // quadro diferente do resto sem explicação nenhuma, e quem vê conclui que
     // alguém arrastou.
-    reason: ehCliente ? "cliente conhecido voltou a escrever" : origem.motivo,
-    payload: { conversation_id: conversationId, cliente: ehCliente },
+    reason: ehCliente
+      ? "cliente conhecido voltou a escrever"
+      : peloNumero
+        ? `${origem.motivo} (funil escolhido para este número)`
+        : avisoDoNumero
+          ? `${origem.motivo} (${TEXTO_DO_AVISO[avisoDoNumero]})`
+          : origem.motivo,
+    payload: {
+      conversation_id: conversationId,
+      cliente: ehCliente,
+      // Por qual número (conexão) a conversa chegou, e se o funil foi o dele.
+      // Só quando há número: o voice-agent e os chamadores antigos ficam com o
+      // payload de sempre.
+      ...(dados.channelSessionId
+        ? { channel_session_id: dados.channelSessionId, funil_do_numero: peloNumero }
+        : {}),
+      ...(avisoDoNumero ? { aviso_do_numero: avisoDoNumero } : {}),
+    },
   });
   if (!registro.ok) {
     // O lead existe e é o que importa; a linha da timeline falhou. Devolver erro

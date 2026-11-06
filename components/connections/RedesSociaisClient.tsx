@@ -23,6 +23,7 @@ import { apiClient } from "@/lib/api/client";
 import { canalDesativado } from "@/lib/channels/desativado";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { FunilDoNumero } from "./FunilDoNumero";
 import { RenomearConexao } from "./RenomearConexao";
 
 type Account = {
@@ -423,6 +424,7 @@ export function RedesSociaisClient() {
                           )}
                     </p>
                     <ChannelAiAccess channelId={account.channel.id} phoneTesting={false} />
+                    <FunilDoNumero channelId={account.channel.id} />
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">

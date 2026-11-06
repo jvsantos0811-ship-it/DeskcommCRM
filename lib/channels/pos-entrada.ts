@@ -428,6 +428,9 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       conversationId: entrada.conversationId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
+      // O número decide se o card nasce e em qual funil (Conexões › Funil,
+      // migration 9025). Vale para todo provedor: todos passam por aqui.
+      channelSessionId: entrada.channelSessionId,
     });
 
     // Os DOIS desfechos viram log. Sem a linha do "não criou", o silêncio de

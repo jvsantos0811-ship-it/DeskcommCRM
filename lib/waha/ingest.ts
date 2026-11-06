@@ -1266,6 +1266,9 @@ async function nascerLeadDaConversaPeloCelular(
       // batiza é o cadastro (`rotuloDoContato`), como no caminho recebido.
       nomeDoContato: null,
       origem: ORIGEM_DO_WHATSAPP_OPERADOR,
+      // Número marcado "não abre card" (Conexões › Funil, migration 9025)
+      // também não abre pela primeira mensagem enviada do celular.
+      channelSessionId: session.id,
     });
     logger.info(
       nascimento.criado

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { allTools } from "../tools";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
+import { FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN } from "./ferramentas-do-numero";
 import { ESCRITAS_DA_PORTA_ADMIN, LEITURAS_DA_PORTA_ADMIN, NUNCA_NA_PORTA_ADMIN } from "./porta-admin";
 import { ferramentasDaPorta } from "./server";
 
@@ -65,7 +66,9 @@ describe("ferramentasDaPorta('admin') — a fronteira da porta Admin", () => {
   });
 
   it("toda ferramenta citada na lista existe no CRM, com a categoria certa", () => {
-    const porNome = new Map([...allTools, ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN].map((t) => [t.name, t]));
+    const porNome = new Map(
+      [...allTools, ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN, ...FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN].map((t) => [t.name, t]),
+    );
     for (const nome of Object.keys(LEITURAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("read");
     for (const nome of Object.keys(ESCRITAS_DA_PORTA_ADMIN)) expect(porNome.get(nome)?.category, nome).toBe("write");
   });
@@ -122,5 +125,31 @@ describe("ferramentas do prompt do agente — só na porta Admin", () => {
         "crm_save_ai_agent_draft",
       ].sort(),
     );
+  });
+});
+
+describe("ferramentas do funil de cada número — só na porta Admin", () => {
+  const doNumero = FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN.map((t) => t.name);
+
+  it("são exatamente listar e gravar", () => {
+    expect([...doNumero].sort()).toEqual(["crm_list_channel_numbers", "crm_set_channel_entry_funnel"]);
+  });
+
+  it("não estão em allTools (nem no /api/mcp comum, nem na lista dos agentes de atendimento)", () => {
+    const deTodos = new Set(allTools.map((t) => t.name));
+    for (const nome of doNumero) expect(deTodos.has(nome), nome).toBe(false);
+  });
+
+  it("estão na porta Admin e não na Leitura", () => {
+    const admin = new Set(ferramentasDaPorta("admin").map((t) => t.name));
+    const leitura = new Set(ferramentasDaPorta("leitura").map((t) => t.name));
+    for (const nome of doNumero) {
+      expect(admin.has(nome), nome).toBe(true);
+      expect(leitura.has(nome), nome).toBe(false);
+    }
+  });
+
+  it("a gravação tira foto do antes e depois na auditoria", () => {
+    expect(ESCRITAS_DA_PORTA_ADMIN.crm_set_channel_entry_funnel?.foto).toBeTypeOf("function");
   });
 });

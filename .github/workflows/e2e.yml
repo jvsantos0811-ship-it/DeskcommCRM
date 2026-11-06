@@ -1321,6 +1321,7 @@ jobs:
         dados-qualidade-do-lead.spec.ts
         aviso-ninguem-respondeu.spec.ts
         esperando-a-equipe.spec.ts
+        funil-de-entrada-por-numero.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

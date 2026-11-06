@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Funil de entrada por número",
+    "subtitle": "Cada conexão decide se a conversa nova abre card no funil, e em qual funil e etapa (migration 9025)",
+    "output": "funil-de-entrada-por-numero.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operação" },
+    { "id": "entrada", "label": "Entrada de mensagem" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "consumidores", "label": "Consumo" }
+  ],
+  "mainPath": ["cartao", "rota", "sessao", "nascimento", "card"],
+  "nodes": [
+    { "id": "cartao", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões › cada número › Funil (FunilDoNumero)" },
+    { "id": "operador_ia", "lane": "operador", "col": 1, "type": "external", "label": "Porta Admin da agência: crm_list_channel_numbers / crm_set_channel_entry_funnel" },
+    { "id": "rota", "lane": "servidor", "col": 2, "type": "route", "label": "GET/PATCH /api/v1/channel-sessions/[id]/funil — admin, conferência em lib/channels/funil-do-numero.ts" },
+    { "id": "sessao", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions.abre_card, funil_de_entrada_id, etapa_de_entrada_id (FK composta com a organização)" },
+    { "id": "audit", "lane": "banco", "col": 3, "type": "database", "label": "api_audit_log / channel.entry_funnel_updated (antes e depois)" },
+    { "id": "recebida", "lane": "entrada", "col": 2, "type": "worker", "label": "Mensagem recebida (pos-entrada, todo provedor)" },
+    { "id": "celular", "lane": "entrada", "col": 2, "type": "worker", "label": "Primeira mensagem enviada do celular" },
+    { "id": "nascimento", "lane": "servidor", "col": 4, "type": "service", "label": "garantirLeadDaConversa: número Não → numero_sem_funil; campanha → clientes → número → padrão" },
+    { "id": "card", "lane": "consumidores", "col": 5, "type": "frontend", "label": "Quadro do funil escolhido + linha do tempo com o motivo e o aviso" },
+    { "id": "ninguem", "lane": "consumidores", "col": 5, "type": "worker", "label": "Aviso Ninguém respondeu: conversa sem card fica de fora (sem_negocio)" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "cartao", "to": "rota", "label": "salva Sim/Não, funil e etapa" },
+    { "id": "e2", "from": "operador_ia", "to": "sessao", "label": "mesma conferência da tela" },
+    { "id": "e3", "from": "rota", "to": "sessao", "label": "grava só no número desta empresa" },
+    { "id": "e4", "from": "rota", "to": "audit", "label": "registra antes e depois" },
+    { "id": "e5", "from": "recebida", "to": "nascimento", "label": "passa o channelSessionId" },
+    { "id": "e6", "from": "celular", "to": "nascimento", "label": "passa o channelSessionId" },
+    { "id": "e7", "from": "sessao", "to": "nascimento", "label": "lê o ajuste (falha = padrão)" },
+    { "id": "e8", "from": "nascimento", "to": "card", "label": "card no funil do número, ou no padrão com aviso" },
+    { "id": "e9", "from": "nascimento", "to": "ninguem", "label": "sem card, sem aviso" },
+    { "id": "e10", "from": "card", "to": "cartao", "label": "o cartão mostra onde os cards nascem hoje" }
+  ]
+}
