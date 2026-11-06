@@ -22,6 +22,11 @@ export const tipoDeLeadPatchSchema = z
     preco_cents: tipoDeLeadCreateSchema.shape.preco_cents,
     valor_confirmado: z.boolean(),
     ativo: z.boolean(),
+    /**
+     * O checklist de requisitos mínimos do tipo (Regra v2 §2.2, migration 9022):
+     * o Leitor da conversa confere cada item na conversa. Vazio = sem checklist.
+     */
+    requisitos: z.array(z.string().trim().min(1).max(160)).max(12),
   })
   .partial();
 
@@ -36,9 +41,10 @@ export interface TipoDeLeadNaTela {
   moeda: string;
   valor_confirmado: boolean;
   ativo: boolean;
+  requisitos: string[];
 }
 
-export const COLUNAS_DO_TIPO_DE_LEAD = "id, nome, categoria, preco_cents, moeda, valor_confirmado, ativo";
+export const COLUNAS_DO_TIPO_DE_LEAD = "id, nome, categoria, preco_cents, moeda, valor_confirmado, ativo, requisitos";
 
 /** O código interno do item no catálogo: `tl-` + o nome sem acento, em minúsculas. */
 export function codigoDoTipoDeLead(nome: string): string {

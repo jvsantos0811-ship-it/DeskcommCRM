@@ -308,6 +308,15 @@ export interface FichaDoLeadRow {
   lida_em: string;
 }
 
+/** A conversa dele copiada e congelada como caso da bateria do Leitor (fork, 9023). */
+export interface CasoDaBateriaRow {
+  caso_id: string;
+  versao: number;
+  relogio: string;
+  conversa: string;
+  criado_em: string;
+}
+
 export interface RegistroDaConversaRow {
   id: string;
   tipo: string;
@@ -752,6 +761,8 @@ export interface ExportPayload {
    */
   ficha_do_lead?: FichaDoLeadRow[];
   ficha_do_lead_historico?: FichaDoLeadRow[];
+  /** Casos da bateria do Leitor feitos com a conversa dele (fork, 9023). */
+  casos_da_bateria_do_leitor?: CasoDaBateriaRow[];
   tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
@@ -1734,6 +1745,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Casos da bateria do Leitor (fork, 9023) — a conversa dele copiada e
+  // congelada. O gatilho da 9023 apaga na anonimização; este bloco é a outra metade.
+  let casos_da_bateria_do_leitor: CasoDaBateriaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("leitor_bateria_casos")
+      .select("caso_id, versao, relogio, conversa, criado_em")
+      .eq("origem_organization_id", organizationId)
+      .eq("origem_contact_id", contactId)
+      .order("criado_em", { ascending: false })
+      .limit(50);
+    if (error) {
+      logger.warn("[lgpd-export-worker] casos da bateria load failed", { request_id: requestId, error: error.message });
+    } else if (data) {
+      conferirTeto("leitor_bateria_casos", data, 50);
+      casos_da_bateria_do_leitor = data as CasoDaBateriaRow[];
+    }
+  }
+
   // Empresas e pessoas (0448/0449) — ver o comentário do campo `b2b` no tipo.
   // A pessoa vem de `contacts.person_id`; as linhas de planilha casam pelo
   // contato OU pela pessoa, o MESMO escopo da redação da 0449. Erro lança:
@@ -2477,6 +2507,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     registro_da_conversa,
     ficha_do_lead,
     ficha_do_lead_historico,
+    casos_da_bateria_do_leitor,
     tasks,
     webhook_captures,
     audit_log_extract,
@@ -2676,6 +2707,7 @@ function emptyPayload(
     registro_da_conversa: [],
     ficha_do_lead: [],
     ficha_do_lead_historico: [],
+    casos_da_bateria_do_leitor: [],
     tasks: [],
     webhook_captures: [],
     audit_log_extract: [],
