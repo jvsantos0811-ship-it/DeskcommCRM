@@ -291,6 +291,23 @@ describe("uma passada do Leitor", () => {
     expect(t.agent_inbox_items).toHaveLength(0);
   });
 
+  it("LV1: o contato já tem outro card aberto (mais NOVO que o perdido) — a ficha é gravada, o aviso não abre", async () => {
+    const t = cenario();
+    t.crm_leads!.push({
+      id: "l-voltou-aberto",
+      organization_id: ORG,
+      contact_id: "c-voltou",
+      pipeline_id: FUNIL,
+      stage_id: ATIVA,
+      tags: [],
+      created_at: "2026-10-20T12:00:00.000Z",
+    });
+    const r = await passadaDoLeitor(bancoEmMemoria(t) as never, org(), deps(sempreLe()));
+    expect(t.crm_lead_ficha!.some((f) => f.lead_id === "l-voltou")).toBe(true);
+    expect(r.avisos).toBe(0);
+    expect(t.agent_inbox_items).toHaveLength(0);
+  });
+
   it("modelo diferente do aprovado para a passada inteira, sem gravar ficha", async () => {
     const t = cenario();
     const ler: Leitor = vi.fn(async () => ({ tipo: "modelo_diferente", usado: "anthropic/claude-haiku-4-5", aprovado: "anthropic/claude-haiku-5-5" }) as ResultadoDaLeitura);
