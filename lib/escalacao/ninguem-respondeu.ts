@@ -18,11 +18,12 @@
  * ─── O que conta como "respondeu" ───────────────────────────────────────────
  *
  * Qualquer mensagem nossa depois da do lead — da IA, de alguém pelo CRM ou do
- * celular do escritório — MENOS a resposta automática do WhatsApp Business
- * (saudação ou ausência), que sai do celular como se fosse uma pessoa. Ela é
- * reconhecida por três sinais juntos: saiu do celular segundos depois da
- * mensagem do lead, é texto de verdade (não "ok") e o MESMO texto aparece em
- * várias conversas (`pareceRespostaAutomatica` aqui; a contagem é do banco).
+ * celular do escritório — MENOS a mensagem automática do celular (saudação ou
+ * ausência do WhatsApp Business, robô do histórico importado), que sai como se
+ * fosse uma pessoa. A regra é a MESMA do painel "Esperando a equipe" e decide
+ * pelo TEXTO (`lib/messaging/textos-automaticos.ts`, PM-027 §6): igual em 3+
+ * conversas e 80% das vezes até 60 s depois do lead. A rodada marca
+ * `automatica` antes de chamar esta avaliação.
  *
  * ─── Conversa encerrada não avisa ──────────────────────────────────────────
  *
@@ -89,27 +90,8 @@ export interface MensagemDaConversa {
   /** Transcrição do áudio ou leitura da imagem, quando houver. */
   media_derived_text: string | null;
   created_at: string;
-  /** Preenchido pela rodada: resposta automática do WhatsApp Business. */
+  /** Preenchido pela rodada: mensagem automática do celular (`lib/messaging/textos-automaticos.ts`). */
   automatica?: boolean;
-}
-
-/** Saiu do celular até este tempo depois da mensagem do lead: candidata a automática. */
-export const JANELA_DA_AUTOMATICA_MS = 60_000;
-/** Texto curto ("ok", "bom dia") é gente, não automação. */
-export const TAMANHO_MINIMO_DA_AUTOMATICA = 20;
-/** O mesmo texto em pelo menos tantas conversas (30 dias) confirma a automação. */
-export const CONVERSAS_PARA_CONFIRMAR_AUTOMATICA = 3;
-
-/**
- * Esta mensagem nossa PODE ser a resposta automática do WhatsApp Business? A
- * confirmação (o mesmo texto em várias conversas) é da rodada, com o banco.
- */
-export function pareceRespostaAutomatica(m: MensagemDaConversa, anterior: MensagemDaConversa | null): boolean {
-  if (m.direction !== "outbound" || m.sent_via !== "external_device" || m.type !== "text") return false;
-  if ((m.body ?? "").trim().length < TAMANHO_MINIMO_DA_AUTOMATICA) return false;
-  if (!anterior || anterior.direction !== "inbound") return false;
-  const dt = Date.parse(m.created_at) - Date.parse(anterior.created_at);
-  return dt >= 0 && dt <= JANELA_DA_AUTOMATICA_MS;
 }
 
 // ─── a avaliação ────────────────────────────────────────────────────────────

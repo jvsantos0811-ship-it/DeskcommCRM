@@ -15,13 +15,15 @@
  *
  * Uma fonte FECHA só quando uma pessoa manda mensagem depois do "desde" dela —
  * pelo CRM ou pelo celular do escritório (que na Bórbora é quase tudo).
- * Resposta da IA não fecha (decisão do João). Resposta automática do WhatsApp
- * Business (marcada pela rodada) e envio que falhou não contam.
+ * Resposta da IA não fecha (decisão do João). Mensagem automática do celular
+ * (saudação do WhatsApp Business, robô do histórico importado — marcada por
+ * `marcarRespostasAutomaticas`) e envio que falhou não contam.
  *
  * Função pura: as fontes e as mensagens chegam prontas.
  */
 import { msDeExpedienteEntre, jornadaMaisLongaMs, passouDeDiasUteis, type Expediente } from "@/lib/dados/expediente";
 import type { MOTIVOS_DA_ESPERA } from "@/lib/dados/ficha";
+import { ehMensagemAutomatica } from "@/lib/messaging/textos-automaticos";
 
 export const DIAS_UTEIS_ATE_O_PAINEL = 2;
 
@@ -81,62 +83,22 @@ function quemFalou(m: FalaDaConversa | undefined): QuemFalouPorUltimo {
 }
 
 /* ------------------------------------------------------------------ */
-/* Resposta automática do WhatsApp Business                            */
+/* Mensagem automática do celular                                      */
 /* ------------------------------------------------------------------ */
 
 /**
- * A saudação e a mensagem de ausência do WhatsApp Business saem do CELULAR do
- * escritório e chegam como `external_device` — iguais às de pessoa. O Gestor
- * mandou reconhecer "pelo texto repetido igual em várias conversas". Sozinho,
- * isso também pegaria a resposta rápida que a pessoa manda à mão; então a
- * mensagem só conta como automática quando, além do texto repetido, saiu até
- * 60 s depois da mensagem do lead — o WhatsApp Business dispara na hora, a
- * pessoa não. Na dúvida a regra erra para o lado de MOSTRAR o lead no painel,
- * nunca para escondê-lo.
+ * Marca `automatica` nas saídas do celular cujo TEXTO a organização usa como
+ * automático (`lib/messaging/textos-automaticos.ts`: igual em 3+ conversas e
+ * 80% das vezes até 60 s depois do lead). Vale para TODA mensagem com esse
+ * texto, mesmo a que saiu atrasada; "[Unsupported message]" nunca é pessoa.
  */
-export const CONVERSAS_PARA_SER_AUTOMATICA = 3;
-export const SEGUNDOS_DA_RESPOSTA_AUTOMATICA = 60;
-export const TAMANHO_MINIMO_DA_AUTOMATICA = 20;
-
-export function normalizarTexto(s: string | null | undefined): string {
-  return (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** Os textos que o celular mandou IGUAIS em 3 ou mais conversas. */
-export function textosRepetidosDoCelular(
-  linhas: ReadonlyArray<{ conversation_id: string; body: string | null }>,
-): Set<string> {
-  const conversas = new Map<string, Set<string>>();
-  for (const l of linhas) {
-    const t = normalizarTexto(l.body);
-    if (t.length < TAMANHO_MINIMO_DA_AUTOMATICA) continue;
-    const c = conversas.get(t) ?? new Set<string>();
-    c.add(l.conversation_id);
-    conversas.set(t, c);
-  }
-  return new Set([...conversas].filter(([, c]) => c.size >= CONVERSAS_PARA_SER_AUTOMATICA).map(([t]) => t));
-}
-
-/** Marca `automatica` nas falas do celular com texto repetido que saíram logo depois do lead. */
 export function marcarRespostasAutomaticas<F extends FalaDaConversa & { body?: string | null }>(
   falas: F[],
-  repetidos: ReadonlySet<string>,
+  automaticos: ReadonlySet<string>,
 ): F[] {
-  const ordenadas = [...falas].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  let ultimaDoLead: number | null = null;
-  return ordenadas.map((m) => {
-    const em = Date.parse(m.created_at);
-    if (m.direction === "inbound") {
-      ultimaDoLead = em;
-      return m;
-    }
-    const automatica =
-      m.sent_via === "external_device" &&
-      ultimaDoLead !== null &&
-      em - ultimaDoLead <= SEGUNDOS_DA_RESPOSTA_AUTOMATICA * 1000 &&
-      repetidos.has(normalizarTexto(m.body));
-    return automatica ? { ...m, automatica: true } : m;
-  });
+  return [...falas]
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+    .map((m) => (ehMensagemAutomatica(m, automaticos) ? { ...m, automatica: true } : m));
 }
 
 export function avaliarEspera(

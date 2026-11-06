@@ -90,7 +90,15 @@ function bancoEmMemoria(t: Tabelas) {
     };
     return b;
   };
-  return { from };
+  // A contagem da migration 9024, por organização (o SQL é provado em
+  // tests/invariants/textos-automaticos-do-celular.test.ts).
+  const rpc = (nome: string, args: { p_org: string }) =>
+    Promise.resolve(
+      nome === "fn_textos_automaticos_do_celular"
+        ? { data: ((t.textos_automaticos ?? []) as Linha[]).filter((l) => l.org === args.p_org), error: null }
+        : { data: null, error: { message: `rpc desconhecida: ${nome}` } },
+    );
+  return { from, rpc };
 }
 
 const ORG = "org-a";
@@ -169,9 +177,6 @@ function cenario(): Tabelas {
       m("m3", ORG, "v-obg", "inbound", "2026-11-05T13:10:00.000Z", { body: "Obrigado!" }),
       m("m4", ORG, "v-auto", "inbound", "2026-11-05T13:00:00.000Z", { body: "Oi, quero saber do meu caso" }),
       m("m5", ORG, "v-auto", "outbound", "2026-11-05T13:00:05.000Z", { body: "Olá! Sou do escritório. Como posso te chamar?" }),
-      // A mesma saudação em outras conversas: é a automática do WhatsApp Business.
-      m("a1", ORG, "x1", "outbound", "2026-11-01T13:00:05.000Z", { body: "Olá! Sou do escritório. Como posso te chamar?" }),
-      m("a2", ORG, "x2", "outbound", "2026-11-02T13:00:05.000Z", { body: "Olá! Sou do escritório. Como posso te chamar?" }),
       m("m6", ORG, "v-ganho", "inbound", "2026-11-05T13:00:00.000Z", { body: "Oi" }),
       m("m7", ORG, "v-bloq", "inbound", "2026-11-05T13:00:00.000Z", { body: "Oi" }),
       m("m8", OUTRA, "v-outra", "inbound", "2026-11-05T13:00:00.000Z", { body: "Oi" }),
@@ -179,6 +184,8 @@ function cenario(): Tabelas {
     ],
     agent_inbox_items: [],
     conferencias_de_fim_da_conversa: [],
+    // A saudação é texto automático NESTA organização: igual em várias conversas, quase sempre na hora.
+    textos_automaticos: [{ org: ORG, texto: "olá! sou do escritório. como posso te chamar?", conversas: 40, vezes: 40, no_prazo: 38 }],
   };
 }
 

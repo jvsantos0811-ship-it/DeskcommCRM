@@ -26,7 +26,6 @@ import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg } from "@/l
 import {
   avaliarEspera,
   marcarRespostasAutomaticas,
-  textosRepetidosDoCelular,
   type FalaDaConversa,
   type FontesDaEspera,
   type MotivoDaEspera,
@@ -37,13 +36,9 @@ import { lerFicha } from "@/lib/dados/ficha";
 import { configDoLeitor } from "@/lib/dados/leitor/config";
 import { MOTIVO_ATENDIMENTO_MANUAL } from "@/lib/escalacao/atendimento-manual";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
+import { lerTextosAutomaticos } from "@/lib/messaging/textos-automaticos";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
 
-const DIA_MS = 24 * 60 * 60 * 1000;
-/** Janela dos textos do celular usada para achar a resposta automática. */
-export const DIAS_DOS_TEXTOS_DO_CELULAR = 30;
-/** Teto de textos do celular lidos para achar a resposta automática. */
-export const TEXTOS_DO_CELULAR_LIDOS = 10_000;
 /** Teto de mensagens de um contato lidas desde o começo da espera. */
 export const MENSAGENS_POR_CONTATO = 1_000;
 const PAGINA = 1_000;
@@ -279,25 +274,8 @@ export async function esperandoAEquipeDaOrg(
   }
   if (fontes.size === 0) return { ligado: true, leads: [], falhas: 0 };
 
-  // 4. Os textos que o celular repete em várias conversas (resposta automática).
-  const desdeOsTextos = new Date(agora.getTime() - DIAS_DOS_TEXTOS_DO_CELULAR * DIA_MS).toISOString();
-  const textos = await todasAsPaginas<{ conversation_id: string; body: string | null }>(
-    (de, ate) =>
-      admin
-        .from("messages")
-        .select("conversation_id, body")
-        .eq("organization_id", orgId)
-        .eq("direction", "outbound")
-        .eq("sent_via", "external_device")
-        .gte("created_at", desdeOsTextos)
-        .order("created_at", { ascending: false })
-        .range(de, ate) as unknown as PromiseLike<{
-        data: Array<{ conversation_id: string; body: string | null }> | null;
-        error: { message: string } | null;
-      }>,
-    TEXTOS_DO_CELULAR_LIDOS,
-  );
-  const repetidos = textosRepetidosDoCelular(textos);
+  // 4. Os textos que a organização usa como mensagem automática do celular.
+  const automaticos = await lerTextosAutomaticos(admin, orgId, agora);
 
   // 5. Cada lead com fonte: as mensagens do contato desde a fonte mais antiga.
   const comFonte = vivos.filter((l) => fontes.has(l.id));
@@ -342,7 +320,7 @@ export async function esperandoAEquipeDaOrg(
           mensagens = (ultima ?? []) as MensagemRow[];
         }
       }
-      const falas = marcarRespostasAutomaticas(mensagens, repetidos);
+      const falas = marcarRespostasAutomaticas(mensagens, automaticos);
       for (const l of doContato) {
         const r = avaliarEspera(fontes.get(l.id)!, falas, agora, expediente);
         if (!r.esperando || !r.noPainel) continue;

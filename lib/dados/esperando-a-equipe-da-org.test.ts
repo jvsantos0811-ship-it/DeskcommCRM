@@ -9,7 +9,7 @@
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * - Ler o caso com `awaiting_lead` também: o L3b (caso esperando o lead) entra e acusa.
  * - Esquecer o aviso `lead_voltou`: o L5 some e acusa.
- * - Não marcar a resposta automática: o L9 sai do painel e acusa.
+ * - Decidir a automática mensagem a mensagem (até 60 s): a saudação atrasada do L9 vira pessoa, ele sai do painel e acusa.
  * - Não filtrar o contato bloqueado: o L7 entra e acusa.
  */
 import { describe, expect, it, vi } from "vitest";
@@ -67,7 +67,14 @@ function bancoEmMemoria(t: Tabelas) {
     };
     return b;
   };
-  return { from };
+  // A contagem da migration 9024 (o SQL é provado em tests/invariants/textos-automaticos-do-celular.test.ts).
+  const rpc = (nome: string) =>
+    Promise.resolve(
+      nome === "fn_textos_automaticos_do_celular"
+        ? { data: t.textos_automaticos ?? [], error: null }
+        : { data: null, error: { message: `rpc desconhecida: ${nome}` } },
+    );
+  return { from, rpc };
 }
 
 const ORG = "org-a";
@@ -189,12 +196,11 @@ function cenario(leitorLigado = true): Tabelas {
       msg("c2", "inbound", "external_device", "2026-10-28T11:51-03:00", "[áudio]"),
       msg("c3", "outbound", "external_device", "2026-11-04T09:00-03:00", "Oi, aqui é a Dra."),
       msg("c9", "inbound", "external_device", "2026-11-02T20:00:00-03:00", "quero falar com alguém"),
-      msg("c9", "outbound", "external_device", "2026-11-02T20:00:04-03:00", SAUDACAO),
-      // A mesma saudação, na hora, em outras três conversas: é a automática.
-      msg("x1", "outbound", "external_device", "2026-11-01T21:00-03:00", SAUDACAO),
-      msg("x2", "outbound", "external_device", "2026-11-02T21:00-03:00", SAUDACAO),
-      msg("x3", "outbound", "external_device", "2026-11-03T21:00-03:00", SAUDACAO),
+      // A saudação saiu ATRASADA (8 min): o texto é automático na organização, então conta como automática.
+      msg("c9", "outbound", "external_device", "2026-11-02T20:08:22-03:00", SAUDACAO),
     ],
+    // A saudação em 40 conversas, 95% das vezes até 60 s depois do lead.
+    textos_automaticos: [{ texto: SAUDACAO.toLowerCase(), conversas: 40, vezes: 40, no_prazo: 38 }],
   };
 }
 

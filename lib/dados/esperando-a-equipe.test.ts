@@ -9,13 +9,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  avaliarEspera,
-  marcarRespostasAutomaticas,
-  textosRepetidosDoCelular,
-  type FalaDaConversa,
-  type FontesDaEspera,
-} from "./esperando-a-equipe";
+import { textosAutomaticos } from "@/lib/messaging/textos-automaticos";
+
+import { avaliarEspera, marcarRespostasAutomaticas, type FalaDaConversa, type FontesDaEspera } from "./esperando-a-equipe";
 
 const BORBORA = { timezone: "America/Sao_Paulo", windows: [1, 2, 3, 4, 5].map((dow) => ({ dow, start: "08:00", end: "17:00" })) };
 const CLINICA = {
@@ -132,32 +128,22 @@ describe("Esperando a equipe — bordas", () => {
   });
 });
 
-describe("Resposta automática do WhatsApp Business", () => {
-  const SAUDACAO = "Olá! Recebemos sua mensagem e logo retornaremos. Escritório X";
-  const linhas = [
-    { conversation_id: "c1", body: SAUDACAO },
-    { conversation_id: "c2", body: `  ${SAUDACAO} ` },
-    { conversation_id: "c3", body: SAUDACAO.toUpperCase() },
-    { conversation_id: "c1", body: "Bom dia, tudo bem?" }, // curta: nunca é automática
-    { conversation_id: "c2", body: "Bom dia, tudo bem?" },
-    { conversation_id: "c3", body: "Bom dia, tudo bem?" },
-    { conversation_id: "c1", body: "Segue o contrato para assinatura" }, // só em 2 conversas
-    { conversation_id: "c2", body: "Segue o contrato para assinatura" },
-  ];
+describe("Mensagem automática do celular: decide o TEXTO, não a mensagem (números da Bórbora)", () => {
+  const SAUDACAO = "Olá! Sou do escritório Bórbora Advogados Associados. Como posso te chamar?";
+  // A contagem que o banco devolve (fn_textos_automaticos_do_celular): 43 conversas,
+  // 95% no prazo; "Ok" em 30 conversas, 39% no prazo.
+  const automaticos = textosAutomaticos([
+    { texto: SAUDACAO.toLowerCase(), conversas: 43, vezes: 60, no_prazo: 57 },
+    { texto: "ok", conversas: 30, vezes: 41, no_prazo: 16 },
+  ]);
 
-  it("texto igual em 3 conversas é candidato; em 2, ou curto, não é", () => {
-    const r = textosRepetidosDoCelular(linhas);
-    expect([...r]).toEqual([SAUDACAO.toLowerCase()]);
-  });
-
-  it("só é automática quando sai logo depois do lead — e aí não fecha a espera", () => {
-    const repetidos = textosRepetidosDoCelular(linhas);
+  it("a saudação que saiu ATRASADA (502 s) continua automática — e o lead fica no painel", () => {
     const falas = marcarRespostasAutomaticas(
       [
-        { ...fala("inbound", "external_device", "2026-11-02T20:00:00-03:00"), body: "oi" },
-        { ...fala("outbound", "external_device", "2026-11-02T20:00:03-03:00"), body: SAUDACAO },
+        { ...fala("inbound", "external_device", "2026-11-02T20:00:00-03:00"), body: "quero falar com alguém" },
+        { ...fala("outbound", "external_device", "2026-11-02T20:08:22-03:00"), body: SAUDACAO },
       ],
-      repetidos,
+      automaticos,
     );
     expect(falas[1]!.automatica).toBe(true);
     const f = { ...nada, ficha: { motivo: "lead_pediu_pessoa" as const, desde: d("2026-11-02T20:00-03:00") } };
@@ -165,17 +151,25 @@ describe("Resposta automática do WhatsApp Business", () => {
     expect(r).toMatchObject({ esperando: true, noPainel: true, quemFalouPorUltimo: "automacao" });
   });
 
-  it("a mesma frase mandada à mão, minutos depois, é de pessoa e fecha a espera", () => {
-    const repetidos = textosRepetidosDoCelular(linhas);
+  it("\"Ok\" de pessoa, mesmo na hora, fecha a espera", () => {
     const falas = marcarRespostasAutomaticas(
       [
         { ...fala("inbound", "external_device", "2026-11-03T10:00:00-03:00"), body: "oi" },
-        { ...fala("outbound", "external_device", "2026-11-03T10:07:00-03:00"), body: SAUDACAO },
+        { ...fala("outbound", "external_device", "2026-11-03T10:00:20-03:00"), body: "Ok" },
       ],
-      repetidos,
+      automaticos,
     );
     expect(falas[1]!.automatica).toBeUndefined();
     const f = { ...nada, ficha: { motivo: "lead_pediu_pessoa" as const, desde: d("2026-11-03T10:00-03:00") } };
     expect(avaliarEspera(f, falas, d("2026-11-06T06:00-03:00"), BORBORA)).toEqual({ esperando: false });
+  });
+
+  it("\"[Unsupported message]\" nunca conta como pessoa", () => {
+    const falas = marcarRespostasAutomaticas(
+      [{ ...fala("outbound", "external_device", "2026-11-03T10:30:00-03:00"), body: "[Unsupported message]" }],
+      new Set(),
+    );
+    const f = { ...nada, ficha: { motivo: "lead_pediu_pessoa" as const, desde: d("2026-11-03T10:00-03:00") } };
+    expect(avaliarEspera(f, falas, d("2026-11-06T06:00-03:00"), BORBORA)).toMatchObject({ esperando: true, noPainel: true });
   });
 });
