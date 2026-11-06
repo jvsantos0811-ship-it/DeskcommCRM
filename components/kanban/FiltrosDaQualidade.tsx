@@ -140,7 +140,27 @@ export function FiltrosDaQualidade({ filters, onChange, leads, rotuloDoInteresse
           </button>
         </span>
       )}
-      {filters.recorte === "painel" && (
+      {filters.esperando === "equipe" && (
+        // PM-027 §6: o link do painel "Esperando a equipe" de Dados.
+        <span
+          data-testid="filtro-esperando-a-equipe"
+          data-ligado="sim"
+          title={t("Só os leads que esperam uma pessoa da equipe há mais de 2 dias úteis.")}
+          className="inline-flex h-8 items-center rounded-full border border-accent bg-accent/10 pl-3 text-xs font-semibold text-text"
+        >
+          {t("Esperando a equipe")}
+          <button
+            type="button"
+            data-testid="filtro-esperando-a-equipe-tirar"
+            aria-label={`${t("Tirar filtro")}: ${t("Esperando a equipe")}`}
+            onClick={() => onChange({ ...filters, esperando: undefined })}
+            className="ml-1 mr-1 flex h-6 w-6 items-center justify-center rounded-full text-base leading-none hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span aria-hidden>×</span>
+          </button>
+        </span>
+      )}
+      {(filters.recorte === "painel" || filters.esperando === "equipe") && (
         <Link
           href="/app/dados"
           data-testid="voltar-para-dados"

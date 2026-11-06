@@ -50,7 +50,7 @@ export interface FalaDaConversa {
   automatica?: boolean;
 }
 
-export type QuemFalouPorUltimo = "lead" | "ia" | "pessoa" | null;
+export type QuemFalouPorUltimo = "lead" | "ia" | "pessoa" | "automacao" | null;
 
 export type Espera =
   | { esperando: false }
@@ -75,7 +75,68 @@ function quemFalou(m: FalaDaConversa | undefined): QuemFalouPorUltimo {
   if (!m) return null;
   if (m.direction === "inbound") return "lead";
   if (m.sent_via === "ai") return "ia";
-  return ehFalaDePessoa(m) ? "pessoa" : null;
+  // Envio que falhou não chegou ao lead: não é "a pessoa respondeu".
+  if (m.status === "failed") return null;
+  return ehFalaDePessoa(m) ? "pessoa" : "automacao";
+}
+
+/* ------------------------------------------------------------------ */
+/* Resposta automática do WhatsApp Business                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A saudação e a mensagem de ausência do WhatsApp Business saem do CELULAR do
+ * escritório e chegam como `external_device` — iguais às de pessoa. O Gestor
+ * mandou reconhecer "pelo texto repetido igual em várias conversas". Sozinho,
+ * isso também pegaria a resposta rápida que a pessoa manda à mão; então a
+ * mensagem só conta como automática quando, além do texto repetido, saiu até
+ * 60 s depois da mensagem do lead — o WhatsApp Business dispara na hora, a
+ * pessoa não. Na dúvida a regra erra para o lado de MOSTRAR o lead no painel,
+ * nunca para escondê-lo.
+ */
+export const CONVERSAS_PARA_SER_AUTOMATICA = 3;
+export const SEGUNDOS_DA_RESPOSTA_AUTOMATICA = 60;
+export const TAMANHO_MINIMO_DA_AUTOMATICA = 20;
+
+export function normalizarTexto(s: string | null | undefined): string {
+  return (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Os textos que o celular mandou IGUAIS em 3 ou mais conversas. */
+export function textosRepetidosDoCelular(
+  linhas: ReadonlyArray<{ conversation_id: string; body: string | null }>,
+): Set<string> {
+  const conversas = new Map<string, Set<string>>();
+  for (const l of linhas) {
+    const t = normalizarTexto(l.body);
+    if (t.length < TAMANHO_MINIMO_DA_AUTOMATICA) continue;
+    const c = conversas.get(t) ?? new Set<string>();
+    c.add(l.conversation_id);
+    conversas.set(t, c);
+  }
+  return new Set([...conversas].filter(([, c]) => c.size >= CONVERSAS_PARA_SER_AUTOMATICA).map(([t]) => t));
+}
+
+/** Marca `automatica` nas falas do celular com texto repetido que saíram logo depois do lead. */
+export function marcarRespostasAutomaticas<F extends FalaDaConversa & { body?: string | null }>(
+  falas: F[],
+  repetidos: ReadonlySet<string>,
+): F[] {
+  const ordenadas = [...falas].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  let ultimaDoLead: number | null = null;
+  return ordenadas.map((m) => {
+    const em = Date.parse(m.created_at);
+    if (m.direction === "inbound") {
+      ultimaDoLead = em;
+      return m;
+    }
+    const automatica =
+      m.sent_via === "external_device" &&
+      ultimaDoLead !== null &&
+      em - ultimaDoLead <= SEGUNDOS_DA_RESPOSTA_AUTOMATICA * 1000 &&
+      repetidos.has(normalizarTexto(m.body));
+    return automatica ? { ...m, automatica: true } : m;
+  });
 }
 
 export function avaliarEspera(

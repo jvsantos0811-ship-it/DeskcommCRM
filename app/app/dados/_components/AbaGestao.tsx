@@ -7,6 +7,7 @@ import { linkDoFunil, variacao, type PassoDoFunil } from "@/lib/dados/retrato";
 import type { LeadNaTela, RespostaDaQualidade } from "@/lib/dados/resposta";
 import { cn } from "@/lib/utils";
 
+import { PainelEsperandoAEquipe } from "./PainelEsperandoAEquipe";
 import { CartaoDeNumero, haQuantoTempo, nomeDoLead, NumeroNoFunil, rotuloDaSituacao, Secao, TabelaDeLeads, Variacao, type T } from "./pecas";
 
 function duracao(seg: number | null, t: T): string {
@@ -60,6 +61,8 @@ export function AbaGestao({ dados }: { dados: RespostaDaQualidade }) {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* PM-027 §6: só aparece com o Leitor ligado e para quem vê a organização inteira. */}
+      <PainelEsperandoAEquipe fuso={dados.fuso} />
       <section aria-label={t("Números do dia")} className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4">
         <CartaoDeNumero
           testid="cartao-leads-hoje"
