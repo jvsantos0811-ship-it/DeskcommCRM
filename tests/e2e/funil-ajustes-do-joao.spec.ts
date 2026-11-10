@@ -155,7 +155,7 @@ test.describe("ajustes do funil pela tela (03/11/2026)", () => {
     // Mouse no topo: ela desce.
     await topo.hover();
     await expect.poll(() => alturaDosFiltros(page), { timeout: 10_000 }).toBeGreaterThan(30);
-    await expect(page.getByPlaceholder("Buscar por título…")).toBeVisible();
+    await expect(page.getByPlaceholder("Buscar por título ou telefone…")).toBeVisible();
     await captura(page, "2-filtros-com-o-mouse");
 
     // Com um filtro ligado, fica à vista mesmo sem o mouse. A busca pelo

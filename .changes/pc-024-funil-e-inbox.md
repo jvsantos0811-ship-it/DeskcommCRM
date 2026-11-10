@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Funil e Inbox — assumir pelo card, perdido pelo Inbox, busca por número e planilha do funil
+---
+Quatro atalhos para quem trabalha pelo funil. **Assumir pelo card do negócio:** o cabeçalho da conversa dentro do card ganhou "Assumir conversa" (o mesmo efeito do "Assumir" do Inbox: a conversa passa para quem clicou e o atendimento automático para) e, depois de assumir, "Com você" e "Devolver para a IA" (com roteador, escolhendo o agente, como no Inbox). Conversa que já está com outra pessoa mostra com quem está; só gerente a assume, com confirmação. **Marcar como perdido pelo Inbox:** no "⋯" do cabeçalho da conversa, com o mesmo diálogo do funil (motivo obrigatório da lista do funil do card); com mais de um negócio aberto, escolhe-se qual. **Busca pelo número:** a busca do quadro acha o card pelo telefone do contato, com ou sem +55, com ou sem o 9 e pelos últimos 4 dígitos. **Exportar:** gerentes e donos baixam os cards do quadro, com os filtros ligados, em .xlsx ou .csv (abre com acentos no Excel), escolhendo etapa, período de criação e campos personalizados; conversas, notas, anexos e a descrição do card nunca saem; campos de saúde, de documento ou marcados como "Dado sensível" em Configurações › Funis ficam fora, a não ser que sejam marcados de propósito; cada exportação fica na auditoria.

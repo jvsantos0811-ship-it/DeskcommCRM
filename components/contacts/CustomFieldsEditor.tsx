@@ -63,6 +63,8 @@ export interface CustomFieldDef {
   allow_new?: boolean;
   /** PC-003: campo de qualificação com status (o status é editado ao lado, no dossiê). */
   com_status?: boolean;
+  /** PC-024: fica fora da planilha exportada do funil por padrão. */
+  sensivel?: boolean;
 }
 
 interface Props {
