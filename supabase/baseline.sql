@@ -58399,6 +58399,55 @@ grant execute on function public.fn_textos_automaticos_do_celular(uuid, timestam
 comment on function public.fn_textos_automaticos_do_celular(uuid, timestamptz, integer, integer) is
   'PM-027 §6 (migration 9024): os textos que o celular do escritório mandou IGUAIS em 3+ conversas desde p_desde, com quantas vezes saíram até p_segundos depois da mensagem do lead. A decisão (80% no prazo = automático) mora em lib/messaging/textos-automaticos.ts. Só o service_role executa.';
 
+-- ---- a origem do título do negócio: o nome confirmado pela IA não apaga o que a equipe escreveu (migration 9026) ----
+alter table public.crm_leads
+  add column if not exists titulo_origem text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'crm_leads_titulo_origem_check'
+       and conrelid = 'public.crm_leads'::regclass
+  ) then
+    alter table public.crm_leads
+      add constraint crm_leads_titulo_origem_check
+      check (titulo_origem is null or titulo_origem in ('sistema', 'ia', 'pessoa'));
+  end if;
+end $$;
+
+comment on column public.crm_leads.titulo_origem is
+  'Quem deu o título atual: sistema | ia (nome confirmado pela IA) | pessoa (editado pela equipe). Nulo = desconhecida (card anterior à 9026). A IA só troca título de origem sistema, ia ou desconhecida com cara de telefone/nome do perfil.';
+
+create or replace function public.fn_crm_leads_titulo_origem()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_declarada text := nullif(current_setting('deskcomm.titulo_origem', true), '');
+begin
+  if new.title is not distinct from old.title then
+    return new;
+  end if;
+  -- Quem muda o título sem declarar a origem é uma pessoa (tela, API, MCP,
+  -- importação). O caminho da IA declara `ia` na transação.
+  if v_declarada in ('ia', 'sistema') then
+    new.titulo_origem := v_declarada;
+  elsif new.titulo_origem is not distinct from old.titulo_origem then
+    new.titulo_origem := 'pessoa';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_crm_leads_titulo_origem() from public, anon;
+
+drop trigger if exists trg_crm_leads_titulo_origem on public.crm_leads;
+create trigger trg_crm_leads_titulo_origem
+  before update of title on public.crm_leads
+  for each row execute function public.fn_crm_leads_titulo_origem();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
