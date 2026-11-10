@@ -17,7 +17,6 @@ import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api/client";
 import type { VisibilityMode } from "@/lib/auth/types";
 import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
-import { PRAZO_PADRAO_DO_SILENCIO_MINUTOS } from "@/lib/escalacao/atendimento-manual";
 import { ROUTING_MODES, VISIBILITY_MODES, type RoutingMode } from "@/lib/schemas/routing";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -310,48 +309,36 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
         ) : null}
       </Card>
 
-      <Card className="space-y-4 p-4" data-testid="silencio-apos-resposta-pelo-celular">
-        <div>
-          <h2 className="text-sm font-semibold">
-            {t("Quando alguém responde pelo celular, a IA espera quanto tempo?")}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Quando alguém da equipe responde o cliente direto pelo celular, fora do sistema, o agente de IA fica calado naquela conversa por este tempo. Cada nova resposta pelo celular recomeça a contagem.",
-            )}
-          </p>
-        </div>
-        <div className="max-w-xs space-y-1">
-          <Label htmlFor="manual_reply_silence_minutes">
-            {t("Minutos de silêncio da IA depois de uma resposta pelo celular")}
-          </Label>
-          <Input
-            id="manual_reply_silence_minutes"
-            type="number"
-            min={PRAZO_MIN_MINUTOS}
-            max={PRAZO_MAX_MINUTOS}
-            value={form.manual_reply_silence_minutes ?? PRAZO_PADRAO_DO_SILENCIO_MINUTOS}
-            disabled={isPending}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, manual_reply_silence_minutes: Number(e.target.value) }))
-            }
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Entre 5 minutos e 24 horas. O padrão é 60. Quem atende o dia inteiro pelo celular costuma preferir um prazo curto, como 15, para a IA voltar a responder entre um atendimento e outro.",
-            )}
-          </p>
-        </div>
+      {/* PC-029 (10/11/2026): a resposta da equipe — pela tela ou pelo celular —
+          passa a conversa para a equipe, e a IA só volta pelo botão "Devolver".
+          O prazo de silêncio que ficava aqui deixou de valer (regra do João de
+          03/11: lead que passou para a equipe fica com a equipe), então o campo
+          saiu: um campo que não muda nada é tela que mente. O valor gravado
+          continua no `settings`, sem uso. */}
+      <Card className="space-y-2 p-4" data-testid="silencio-apos-resposta-pelo-celular">
+        <h2 className="text-sm font-semibold">
+          {t("Quando alguém da equipe responde, a IA para")}
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quando uma pessoa da equipe responde o cliente — pela tela do sistema ou pelo celular do número —, a conversa passa para a equipe e o agente de IA fica calado até alguém clicar em \"Devolver para a IA\". A resposta pelo celular fica com o responsável escolhido em Conexões, ou sem dono.",
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A saudação e a mensagem de ausência automáticas do app WhatsApp Business são reconhecidas pelo texto depois de se repetirem em 3 conversas. Para não calar a IA por engano no começo, desligue essas respostas no app.",
+          )}
+        </p>
       </Card>
 
       <Card className="space-y-4 p-4" data-testid="conversa-fica-com-quem-atendeu">
         <div>
           <h2 className="text-sm font-semibold">
-            {t("Quando alguém responde, a conversa fica com essa pessoa?")}
+            {t("A conversa encerrada volta para quem atendeu?")}
           </h2>
           <p className="text-xs text-muted-foreground">
             {t(
-              "Desligado, vale a regra de sempre: responder pela tela cala a IA por alguns minutos, e a conversa encerrada que recebe mensagem nova volta para a fila.",
+              "Desligado, a conversa encerrada que recebe mensagem nova volta para a fila e para a distribuição.",
             )}
           </p>
         </div>
@@ -370,7 +357,7 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             <span className="block text-sm font-medium">{t("A conversa fica com quem atendeu")}</span>
             <span className="block text-xs text-muted-foreground">
               {t(
-                "Responder pelo Inbox numa conversa sem dono passa a assumi-la, e a IA fica calada até alguém devolver. Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.",
+                "Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe. (Responder já assume a conversa e cala a IA, com ou sem esta opção.)",
               )}
             </span>
           </span>

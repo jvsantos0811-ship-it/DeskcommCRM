@@ -10,19 +10,20 @@ import { parseSocialMessage } from "@/lib/channels/social/parser";
  *
  * ## O risco, e por que ele é silencioso
  *
- * `lib/channels/zernio/ingest.ts` pausa a IA por 60 minutos quando chega uma
- * mensagem `outbound` de canal social — a leitura é "um humano assumiu e
- * respondeu pelo aplicativo do celular".
+ * `lib/channels/zernio/ingest.ts` trata toda mensagem `outbound` que chega
+ * pelo webhook como "a equipe respondeu por fora do CRM" (celular, app da
+ * rede social) — e, desde o PC-029, isso é a equipe ASSUMINDO: a IA cala até
+ * alguém clicar em "Devolver para a IA" (`equipeAssumiuRespondendo`).
  *
  * Só que TODO envio nosso volta como `outbound` pelo webhook. A única coisa que
  * separa "humano assumiu" de "eco do que nós mesmos mandamos" é a mensagem casar
- * como **duplicada** pelo `unique (organization_id, external_id)` — e o ramo da
- * pausa está aninhado em `if (inseridaNaExistente !== "duplicate")`.
+ * como **duplicada** pelo `unique (organization_id, external_id)` — e o ramo
+ * que assume está aninhado em `if (inseridaNaExistente !== "duplicate")`.
  *
  * Se o casamento falhar, o desfecho é cruel de diagnosticar: a IA some daquela
- * conversa por uma hora, a tela diz "alguém assumiu a mão", e quem for
- * investigar procura um humano que não existe. Pior: cada resposta da IA
- * renova o silêncio — ela responde uma vez e morre ali.
+ * conversa DE VEZ (o silêncio não vence mais sozinho), a tela diz "Equipe
+ * (celular)", e quem for investigar procura um humano que não existe. A IA
+ * responde uma vez e morre ali.
  *
  * ## O que este arquivo mede, e o que ele NÃO pode medir
  *
@@ -118,27 +119,45 @@ describe("ida e volta: o que o envio grava é o que o eco procura", () => {
   });
 });
 
-describe("a pausa da IA é a consequência, e está aninhada na proteção", () => {
+describe("assumir é a consequência, e está aninhado na proteção", () => {
   const ingest = fs.readFileSync(path.join(RAIZ, "lib/channels/zernio/ingest.ts"), "utf8");
+  const CHAMADA = "await equipeAssumiuRespondendo(";
 
-  it("pausar só acontece DENTRO do ramo de não-duplicada", () => {
+  it("a pausa antiga, com prazo, não volta por este caminho", () => {
+    expect(ingest).not.toContain("pausarIaPorAtendimentoManual");
+  });
+
+  it("assumir só acontece DENTRO do ramo de não-duplicada", () => {
     // Esta é a asserção que guarda a regressão mais perigosa: soltar a chamada
-    // de pausa para fora do `if` faria TODO eco do nosso próprio envio calar a
-    // IA por 60 minutos.
-    const chamada = ingest.indexOf("await pausarIaPorAtendimentoManual(");
+    // para fora do `if` faria TODO eco do nosso próprio envio calar a IA — e
+    // agora para sempre, até alguém devolver.
+    const chamada = ingest.indexOf(CHAMADA);
     expect(chamada).toBeGreaterThan(-1);
     const guarda = ingest.lastIndexOf('if (inseridaNaExistente !== "duplicate") {', chamada);
     expect(
       guarda,
-      "a pausa da IA saiu de dentro do ramo que exclui mensagem duplicada",
+      "o assumir saiu de dentro do ramo que exclui mensagem duplicada",
     ).toBeGreaterThan(-1);
   });
 
-  it("e só para mensagem de SAÍDA de canal social", () => {
-    const trecho = ingest.slice(
-      ingest.lastIndexOf("if (input.socialMessage", ingest.indexOf("await pausarIaPorAtendimentoManual(")),
-      ingest.indexOf("await pausarIaPorAtendimentoManual("),
-    );
-    expect(trecho).toMatch(/msg\.direction === "outbound"/);
+  it("e só para mensagem de SAÍDA (de qualquer canal: WhatsApp em coexistência inclusive)", () => {
+    let desde = 0;
+    let chamadas = 0;
+    for (;;) {
+      const chamada = ingest.indexOf(CHAMADA, desde);
+      if (chamada < 0) break;
+      chamadas += 1;
+      const condicao = ingest.slice(ingest.lastIndexOf("if (", chamada), chamada);
+      expect(condicao).toMatch(/^if \(msg\.direction === "outbound"\) \{/);
+      desde = chamada + CHAMADA.length;
+    }
+    // Conversa que já existe (pela thread) e conversa nova: os dois caminhos.
+    expect(chamadas).toBe(2);
+  });
+
+  it("o caminho da conversa NOVA só chega ao assumir depois de sair a duplicada", () => {
+    const segunda = ingest.lastIndexOf(CHAMADA);
+    const saida = ingest.lastIndexOf('if (inserted === "duplicate") return', segunda);
+    expect(saida).toBeGreaterThan(-1);
   });
 });

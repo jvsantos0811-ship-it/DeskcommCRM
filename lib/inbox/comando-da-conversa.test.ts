@@ -106,6 +106,22 @@ describe("comandoDaConversa — o automático está ativo?", () => {
     expect(r.motivo).toBe("contato_travado");
   });
 
+  it("PC-029: quem assume também trava o contato — com dono, o rótulo continua 'alguém assumiu'", () => {
+    // O Assumir (botão ou resposta da equipe) deixa o contato "só humano" junto
+    // com o silêncio durável. Nomear a trava do contato aqui apagaria QUEM
+    // assumiu do selo; o Devolver desfaz as duas travas de uma vez.
+    const r = comandoDaConversa(
+      fatos({ force_human: true, bot_silenced_until: "infinity", assigned_to_user_id: ATENDENTE }),
+      AGORA,
+    );
+    expect(r.motivo).toBe("atendente_no_comando");
+    expect(r.travaVigente).toBe(true);
+    // Controle: sem dono, a trava do contato continua nomeando o motivo.
+    expect(
+      comandoDaConversa(fatos({ force_human: true, bot_silenced_until: "infinity" }), AGORA).motivo,
+    ).toBe("contato_travado");
+  });
+
   it("dono + silêncio durável: o motivo é que alguém assumiu", () => {
     const r = comandoDaConversa(
       fatos({ status: "claimed", assigned_to_user_id: ATENDENTE, bot_silenced_until: "infinity" }),
@@ -131,7 +147,37 @@ describe("comandoDaConversa — o automático está ativo?", () => {
     );
     expect(r.motivo).toBe("atendimento_pelo_celular");
     expect(r.travaVigente).toBe(true);
-    expect(ROTULO_DO_MOTIVO.atendimento_pelo_celular).toMatch(/#on/i);
+    expect(ROTULO_DO_MOTIVO.atendimento_pelo_celular).toMatch(/Equipe \(celular\)/);
+  });
+
+  it("PC-029: equipe pelo celular, SEM dono e com o contato \"só humano\" → marcada \"Equipe (celular)\"", () => {
+    const r = comandoDaConversa(
+      fatos({
+        status: "claimed",
+        bot_silenced_until: "infinity",
+        force_human: true,
+        last_handoff_reason: "Atendimento manual pelo canal (resposta fora do CRM)",
+      }),
+      AGORA,
+    );
+    expect(r.motivo).toBe("atendimento_pelo_celular");
+    expect(r.automaticoAtivo).toBe(false);
+    expect(r.travaVigente).toBe(true);
+  });
+
+  it("PC-029: COM dono, a mesma tomada pelo celular diz quem assumiu", () => {
+    const r = comandoDaConversa(
+      fatos({
+        status: "claimed",
+        assigned_to_user_id: "u-carla",
+        bot_silenced_until: "infinity",
+        force_human: true,
+        last_handoff_reason: "Atendimento manual pelo canal (resposta fora do CRM)",
+      }),
+      AGORA,
+    );
+    expect(r.comando).toMatchObject({ quem: "humano", userId: "u-carla" });
+    expect(r.automaticoAtivo).toBe(false);
   });
 
   it("valor ilegível falha FECHADA: trata como calado, nunca afirma que está ativo", () => {

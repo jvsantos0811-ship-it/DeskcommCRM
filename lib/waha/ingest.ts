@@ -24,10 +24,10 @@ import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 import {
   MOTIVO_COMANDO_OFF,
   pausarIaDuravelmente,
-  pausarIaPorAtendimentoManual,
 } from "@/lib/escalacao/atendimento-manual";
 import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
+import { equipeAssumiuRespondendo } from "@/lib/escalacao/equipe-assumiu";
 import { getWahaClient } from "@/lib/waha/client";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
@@ -55,14 +55,14 @@ import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-wh
 export type Admin = ReturnType<typeof createAdminClient>;
 
 /**
- * A pausa da IA quando uma pessoa responde pelo celular vive em
- * `lib/escalacao/atendimento-manual.ts` (`pausarIaPorAtendimentoManual`), e não
- * mais aqui. Era `silenciarBotPorRetomadaHumana`, exclusiva deste arquivo e do
- * WhatsApp; o gesto é o mesmo em qualquer canal (o Zernio tem o mesmo caminho de
- * saída-por-fora-do-CRM), e duas encarnações da mesma regra divergiriam na
- * primeira vez que alguém mexesse numa só. O helper unificado mantém o que esta
- * função garantia — prazo que expira sozinho, renovado a cada fala humana, e
- * silêncio maior NUNCA encurtado — e acrescenta o rastro de handoff.
+ * O que acontece quando uma pessoa responde pelo celular vive em
+ * `lib/escalacao/equipe-assumiu.ts` (`equipeAssumiuRespondendo`), e não aqui.
+ * Era `silenciarBotPorRetomadaHumana`, exclusiva deste arquivo e do WhatsApp;
+ * depois `pausarIaPorAtendimentoManual`, com prazo que expirava sozinho. Desde o
+ * PC-029 a resposta pelo celular é a equipe ASSUMINDO: a IA cala até alguém
+ * clicar em "Devolver para a IA", e o serviço é o mesmo da resposta pela tela
+ * do CRM e dos outros canais — duas encarnações da mesma regra divergiriam na
+ * primeira vez que alguém mexesse numa só.
  *
  * Os comandos `#on`/`#off` também entram por aqui, em
  * `handleOutboundFromUserPhone`, SÓ para o agente que ligou "Comandos pelo
@@ -608,7 +608,7 @@ function grupoDoEnvio(p: WahaPayload, chatId: string): string | null {
  * "grupos na inbox", tabela "Nunca dispara com grupo"): `upsertContact` (não há
  * contato por participante), a resolução de avatar/lid, a atribuição de anúncio,
  * `aplicarEfeitosPosEntrada` (opt-out, lead, agente), `acelerarPipelineDeEventos`,
- * os audits `message.received`/`message.sent` e `pausarIaPorAtendimentoManual`
+ * os audits `message.received`/`message.sent` e `equipeAssumiuRespondendo`
  * (a IA nunca responde em grupo — não há o que pausar).
  *
  * Falha de banco não sobe: a conversa individual também registra e segue quando
@@ -1356,7 +1356,7 @@ async function handleOutboundFromUserPhone(
   // TRANSPORTE DIRETO e não grava linha em `messages`, então o reconhecimento
   // de eco não o reconhece como nosso — sem este corte, o próprio aviso que
   // acabou de sair voltaria pelo webhook, viraria conversa com o número do
-  // plantão e ainda chamaria `pausarIaPorAtendimentoManual` no fim.
+  // plantão e ainda chamaria `equipeAssumiuRespondendo` no fim.
   if (!grupo && (await ehNumeroInternoDeAviso(admin, session.organization_id, parsed))) {
     await registrarMensagemIgnorada(admin, session.organization_id, {
       direction: "outbound",
@@ -1538,10 +1538,10 @@ async function handleOutboundFromUserPhone(
   // Três desfechos para uma mensagem `fromMe` que NÃO é eco:
   //   - `#off`         → pausa DURÁVEL (só `#on` ou a tela do CRM religam)
   //   - `#on`          → devolve o atendimento à IA (limpa as 3 travas)
-  //   - mensagem normal → pausa (uma pessoa assumiu pelo celular)
-  // Os dois comandos e a pausa DURÁVEL da mensagem normal só existem para o
-  // agente que ligou "Comandos pelo celular". Desligado (o padrão), nada muda:
-  // `#on`/`#off` são texto comum e a pausa tem prazo (`PRAZO_DO_SILENCIO_MS`).
+  //   - mensagem normal → a equipe assumiu (PC-029): a IA cala até o "Devolver"
+  // Os dois comandos só existem para o agente que ligou "Comandos pelo
+  // celular". Desligado (o padrão), `#on`/`#off` são texto comum — e contam
+  // como a equipe respondendo, como qualquer outra mensagem.
   //
   // ⚠️ A GUARDA DE ECO VEM PRIMEIRO, e a ordem importa. O eco de um envio nosso
   // (composer/IA) chega por este mesmo caminho com `fromMe`, e não pode ser lido
@@ -1596,11 +1596,15 @@ async function handleOutboundFromUserPhone(
         });
       }
     } else {
-      await pausarIaPorAtendimentoManual(admin, {
+      // PC-029: a resposta pelo celular = a equipe assumiu (a IA só volta pelo
+      // "Devolver"), e não mais uma pausa com prazo.
+      await equipeAssumiuRespondendo(admin, {
         organizationId: session.organization_id,
         conversationId,
-        canal: "waha",
-        duravel: aceita,
+        origem: "celular",
+        userId: null,
+        texto: bodyOf(p),
+        requestId,
       });
     }
     // O comando não é fala de atendimento: esconde do cliente depois de aplicar.

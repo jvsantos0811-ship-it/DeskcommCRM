@@ -23,6 +23,8 @@ import type { ChannelSession } from "@/hooks/channels/useChannelSessions";
 
 const getMock = vi.fn();
 const postMock = vi.fn();
+// PC-029: o responsável do número faz as próprias leituras; fora do escopo deste teste.
+vi.mock("@/components/connections/ResponsavelDoNumero", () => ({ ResponsavelDoNumero: () => null }));
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
     get: (...a: unknown[]) => getMock(...a),
