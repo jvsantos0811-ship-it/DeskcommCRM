@@ -17563,6 +17563,12 @@ export const DICIONARIO: Traducoes = {
   "Assinatura eletrônica": { es: "Firma electrónica" },
   "O serviço que colhe a assinatura do cliente e os modelos de contrato do escritório.": { es: "El servicio que recoge la firma del cliente y las plantillas de contrato del despacho." },
   "O serviço que colhe a assinatura do cliente e os modelos de contrato do escritório. O contrato sai pelo WhatsApp com o link de assinatura, e o negócio fecha sozinho quando o cliente assina.": { es: "El servicio que recoge la firma del cliente y las plantillas de contrato del despacho. El contrato sale por WhatsApp con el enlace de firma, y el negocio se cierra solo cuando el cliente firma." },
+  "Etapa em que a IA envia o contrato": { es: "Etapa en que la IA envía el contrato" },
+  "A IA não envia contrato": { es: "La IA no envía contrato" },
+  "Com o card nesta etapa (ex.: Aguardando assinatura), a IA gera o contrato pelo modelo aprovado e manda o link de assinatura. Precisa da assinatura eletrônica ligada em Configurações.": { es: "Con la tarjeta en esta etapa (ej.: Esperando firma), la IA genera el contrato con la plantilla aprobada y envía el enlace de firma. Requiere la firma electrónica activada en Configuración." },
+  "Gerado pela IA em": { es: "Generado por la IA el" },
+  "aguardando aprovação da equipe": { es: "esperando la aprobación del equipo" },
+  "Corrigir": { es: "Corregir" },
 };
 
 /**

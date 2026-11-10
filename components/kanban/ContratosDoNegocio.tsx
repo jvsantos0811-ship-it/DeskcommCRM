@@ -305,7 +305,10 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                       <span className="truncate">{c.titulo}</span>
                     </p>
                     <p className="mt-0.5 text-[11px] text-text-muted">
-                      {c.status === "rascunho" && `${t("Anexado em")} ${quando(c.created_at)}`}
+                      {c.status === "rascunho" && c.origem_envio !== "ia" && `${t("Anexado em")} ${quando(c.created_at)}`}
+                      {c.status === "rascunho" && c.origem_envio === "ia"
+                        ? `${t("Gerado pela IA em")} ${quando(c.created_at)} · ${t("aguardando aprovação da equipe")}`
+                        : null}
                       {c.status === "enviado" && `${t("Enviado em")} ${quando(c.enviado_em)}`}
                       {c.status === "enviado" && c.visualizado_em
                         ? ` · ${t("Aberto pelo cliente em")} ${quando(c.visualizado_em)}`
@@ -366,7 +369,11 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {c.tem_arquivo ? (
                       <Button type="button" size="sm" variant={c.status === "rascunho" ? "primary" : "outline"} onClick={() => abrirPainel(c.id, "enviar")}>
-                        {c.status === "rascunho" ? t("Enviar ao cliente") : t("Enviar de novo")}
+                        {c.status === "rascunho"
+                          ? c.origem_envio === "ia"
+                            ? t("Aprovar e enviar")
+                            : t("Enviar ao cliente")
+                          : t("Enviar de novo")}
                       </Button>
                     ) : null}
                     {c.status === "enviado" && c.desfecho_por_pessoa ? (
@@ -380,7 +387,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                       </>
                     ) : null}
                     <Button type="button" size="sm" variant="ghost" onClick={() => abrirPainel(c.id, "cancelar")}>
-                      {t("Cancelar contrato")}
+                      {c.status === "rascunho" && c.origem_envio === "ia" ? t("Corrigir") : t("Cancelar contrato")}
                     </Button>
                   </div>
                 ) : null}
