@@ -39,7 +39,7 @@ import {
   useMarkPersonalContact,
   useUnmarkPersonalContact,
 } from "@/hooks/contacts/usePersonalContact";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import {
   useArchiveConversation,
   useCloseConversation,
@@ -59,6 +59,11 @@ import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { BotaoModoFoco } from "@/components/inbox/BotaoModoFoco";
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
+import {
+  ItemMarcarPerdido,
+  MarcarPerdidoDialogo,
+  type NegocioAberto,
+} from "@/components/inbox/MarcarPerdidoNaConversa";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -134,6 +139,8 @@ export function ConversationHeader({
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
   // PC-014: num número com roteador, "Devolver" pede o agente e uma linha.
   const [devolverParaAgenteOpen, setDevolverParaAgenteOpen] = useState(false);
+  // PC-024: os negócios abertos escolhidos no "⋯" para marcar como perdido.
+  const [perdidoDe, setPerdidoDe] = useState<NegocioAberto[] | null>(null);
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloParaAEquipe(c, t);
@@ -161,6 +168,11 @@ export function ConversationHeader({
   const podeMarcarPessoal =
     (user.is_platform_admin && !user.support) ||
     (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
+  // PC-024: marcar perdido pelo Inbox tem a MESMA régua do funil —
+  // `pipeline.move_card` (agent+), escrita como `roleAtLeast` pelo mesmo motivo do
+  // painel do CRM: os dublês de `useAuth` dos testes não expõem `usePermission`.
+  const podeMarcarPerdido =
+    (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
   const desmarcarPessoal = useUnmarkPersonalContact(c?.id ?? "");
 
@@ -555,6 +567,11 @@ export function ConversationHeader({
                 {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
               </DropdownMenuItem>
             )}
+            {/* PC-024: "Marcar como perdido" sem sair do Inbox — o MESMO diálogo
+                e a MESMA rota do funil. */}
+            {podeMarcarPerdido && c?.id && (
+              <ItemMarcarPerdido contactId={c.id} onEscolher={setPerdidoDe} />
+            )}
             {c?.id && (
               <DropdownMenuItem asChild>
                 <Link
@@ -569,6 +586,9 @@ export function ConversationHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {perdidoDe && (
+        <MarcarPerdidoDialogo abertos={perdidoDe} onFechar={() => setPerdidoDe(null)} />
+      )}
       {agentesParaDevolver.data?.tem_roteador && (
         <DevolverParaAgenteDialog
           open={devolverParaAgenteOpen}

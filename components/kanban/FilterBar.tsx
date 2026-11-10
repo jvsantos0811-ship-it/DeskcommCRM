@@ -192,7 +192,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
       <Input
         type="search"
-        placeholder={t("Buscar por título…")}
+        placeholder={t("Buscar por título ou telefone…")}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         className="h-9 w-full sm:w-64"

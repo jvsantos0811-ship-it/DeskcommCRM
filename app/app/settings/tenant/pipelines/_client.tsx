@@ -709,6 +709,24 @@ function PipelineEditor({
                 "Campo de qualificação com status (confirmado, negado, não sabe…): a IA só avança a etapa que exige este campo com a resposta dada",
               )}
             </label>
+            {/* ── DADO SENSÍVEL (PC-024) ─────────────────────────────────────
+                Fica fora da planilha exportada do funil, a não ser que quem
+                exporta o marque de propósito. Desmarcado tira a chave. */}
+            <label className="flex items-center gap-1 text-xs md:col-span-4">
+              <input
+                type="checkbox"
+                aria-label={`${t("Dado sensível")} ${i + 1}`}
+                data-testid={`campo-sensivel-${i}`}
+                checked={f.sensivel === true}
+                onChange={(ev) => {
+                  const next = [...fields];
+                  const { sensivel: _semMarca, ...semChave } = f;
+                  next[i] = ev.target.checked ? { ...f, sensivel: true } : semChave;
+                  setFields(next);
+                }}
+              />
+              {t("Dado sensível (saúde, documento…): fica fora da planilha exportada, a não ser que seja marcado de propósito")}
+            </label>
             {/* ── LISTA PESQUISÁVEL (#2521) ────────────────────────────────
                 Duas coisas só deste tipo: a válvula "permitir valor novo" e a
                 importação de opções em lote. A importação usa o CSV que a

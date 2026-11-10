@@ -31,6 +31,7 @@ import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
+import { EVENTO_NEGOCIO_MUDOU } from "@/lib/inbox/evento-negocio-mudou";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
 import { MoveToOtherPipelineDialog } from "@/components/kanban/MoveToOtherPipelineDialog";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
@@ -863,6 +864,13 @@ export function CRMSidePanel({ conversation, recolhido = false, onAlternarRecolh
   // que falhou depois — e escrita que parece ter dado certo é o defeito que
   // esta tela inteira combate.
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
+
+  // PC-024: o "Marcar como perdido" do cabeçalho grava fora deste painel; o
+  // aviso faz o negócio aparecer como perdido aqui sem trocar de conversa.
+  useEffect(() => {
+    window.addEventListener(EVENTO_NEGOCIO_MUDOU, recarregar);
+    return () => window.removeEventListener(EVENTO_NEGOCIO_MUDOU, recarregar);
+  }, [recarregar]);
 
   /**
    * A troca de funil recarrega pelo MESMO caminho do "Tentar de novo" — este

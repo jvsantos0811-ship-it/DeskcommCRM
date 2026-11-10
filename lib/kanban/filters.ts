@@ -10,6 +10,7 @@ import {
 import { normalizarNomeDoTipo } from "@/lib/leads/tipo-de-lead";
 import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { cardTemMarcador, cardTemTodasNaMesmaCaixa } from "@/lib/kanban/marcadores-do-card";
+import { telefoneCasaComBusca } from "@/lib/kanban/busca-por-telefone";
 import {
   type ModoDeEtiqueta,
   marcadoresEscolhidos,
@@ -316,9 +317,12 @@ export function applyFilters(
     // no contato ou na conversa sem casar card nenhum. O E/OU mora em
     // `passaMarcador`, lá em cima.
     if (!passaMarcador(l)) return false;
+    // PC-024: o número também acha o card — "+55 (31) 99876-1234", sem o 9,
+    // sem o 55, ou só os últimos 4 dígitos (`lib/kanban/busca-por-telefone.ts`).
     if (
       search &&
-      !`${l.title} ${l.description ?? ""}`.toLowerCase().includes(search)
+      !`${l.title} ${l.description ?? ""}`.toLowerCase().includes(search) &&
+      !telefoneCasaComBusca(l.contact_phone, search)
     )
       return false;
     // O LIMITE DE VALOR SÓ SE COMPARA COM A MOEDA EM QUE FOI ESCRITO (#1531).
