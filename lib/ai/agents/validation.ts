@@ -188,6 +188,11 @@ const versionShapeSchema = z
     estado_do_funil_ligado: z.boolean().default(false),
     /** PC-003 (item 6): modo conservador — não move para etapas "só pessoa move". */
     modo_conservador: z.boolean().default(false),
+    /**
+     * PC-026: os rótulos das perguntas que o resumo do card responde (até 15,
+     * de até 80 caracteres). Vazia = sem resumo e sem chamada de IA.
+     */
+    perguntas_do_resumo: z.array(z.string().trim().min(1).max(80)).max(15).default([]),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
     // pelo pacing anti-ban. Defaults espelham a migration 0059.
     split_messages: z.boolean().default(false),
@@ -278,6 +283,7 @@ export const versionPatchSchema = versionShapeSchema
     cases_enabled: versionShapeSchema.shape.cases_enabled.removeDefault(),
     estado_do_funil_ligado: versionShapeSchema.shape.estado_do_funil_ligado.removeDefault(),
     modo_conservador: versionShapeSchema.shape.modo_conservador.removeDefault(),
+    perguntas_do_resumo: versionShapeSchema.shape.perguntas_do_resumo.removeDefault(),
     split_messages: versionShapeSchema.shape.split_messages.removeDefault(),
     split_max_chars: versionShapeSchema.shape.split_max_chars.removeDefault(),
     followup: followupPatchSchema,

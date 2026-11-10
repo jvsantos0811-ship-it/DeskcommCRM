@@ -17480,6 +17480,12 @@ export const DICIONARIO: Traducoes = {
   "Dado sensível": { es: "Dato sensible" },
   "Dado sensível (saúde, documento…): fica fora da planilha exportada, a não ser que seja marcado de propósito": { es: "Dato sensible (salud, documento…): queda fuera de la hoja exportada, a menos que se marque a propósito" },
   "Buscar por título ou telefone…": { es: "Buscar por título o teléfono…" },
+  "Perguntas do resumo": { es: "Preguntas del resumen" },
+  "Uma pergunta por linha. Ex.: Já teve o bebê": { es: "Una pregunta por línea. Ej.: Ya tuvo al bebé" },
+  "O card do negócio ganha um resumo só com as respostas do cliente a estas perguntas, atualizado quando o agente passa a conversa ou muda a etapa. Sem perguntas, nenhum resumo é feito. Dados de documento (CPF, RG, endereço) e de saúde nunca entram.": { es: "La tarjeta del negocio recibe un resumen solo con las respuestas del cliente a estas preguntas, actualizado cuando el agente pasa la conversación o cambia la etapa. Sin preguntas, no se hace ningún resumen. Los datos de documento (CPF, RG, dirección) y de salud nunca entran." },
+  "Resumir as respostas no card": { es: "Resumir las respuestas en la tarjeta" },
+  "Escreve no card do negócio só as respostas do cliente às perguntas que o agente pede, para a equipe que vai assumir não precisar ler a conversa inteira.": { es: "Escribe en la tarjeta del negocio solo las respuestas del cliente a las preguntas que el agente hace, para que el equipo que va a asumir no necesite leer toda la conversación." },
+  "O card mostra uma resposta que o cliente não deu, ou deixa de mostrar uma que ele deu, e a equipe age em cima do resumo errado.": { es: "La tarjeta muestra una respuesta que el cliente no dio, o deja de mostrar una que sí dio, y el equipo actúa sobre el resumen equivocado." },
 };
 
 /**

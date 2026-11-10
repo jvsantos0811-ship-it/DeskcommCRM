@@ -62,6 +62,11 @@ export interface PublishedAgentConfig {
   estadoDoFunilLigado?: boolean;
   /** PC-003: modo conservador — a IA não move para etapas "só pessoa move". */
   modoConservador?: boolean;
+  /**
+   * PC-026: os rótulos das perguntas que o resumo do card responde. Vazio (ou
+   * ausente, em fixture antiga) = nenhum resumo e nenhuma chamada de IA.
+   */
+  perguntasDoResumo?: string[];
   /** JSON versionado com `followup.callback_enabled` e os fluxos normais. */
   followup?: unknown;
   /** tool_ids do catálogo MCP habilitadas na tela (2B-tools). */
@@ -153,6 +158,7 @@ interface Row {
   cases_enabled: boolean;
   estado_do_funil_ligado: boolean | null;
   modo_conservador: boolean | null;
+  perguntas_do_resumo: string[] | null;
   followup: unknown;
   tool_ids: string[] | null;
   active_kb_version_id: string | null;
@@ -188,6 +194,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.cases_enabled,
             v.estado_do_funil_ligado,
             v.modo_conservador,
+            v.perguntas_do_resumo,
             v.followup,
             v.tool_ids,
             a.active_kb_version_id,
@@ -252,6 +259,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? true` cobre o clone sem a 9011: sem a coluna, vale o comportamento de antes.
     estadoDoFunilLigado: r.estado_do_funil_ligado ?? true,
     modoConservador: r.modo_conservador === true,
+    perguntasDoResumo: Array.isArray(r.perguntas_do_resumo) ? r.perguntas_do_resumo : [],
     followup: r.followup,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
