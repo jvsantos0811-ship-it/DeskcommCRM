@@ -91,9 +91,9 @@ async function criarFunil(nome: string, comMarco: boolean): Promise<{ id: string
   });
   if (e1) throw new Error(`funil: ${e1.message}`);
   const { error: e2 } = await admin.from("crm_stages").insert([
-    { id: etapas.triagem, organization_id: org, pipeline_id: id, name: "Triagem", slug: "triagem", position: 1000 },
-    { id: etapas.qualificado, organization_id: org, pipeline_id: id, name: "Qualificado", slug: "qualificado", position: 2000 },
-    { id: etapas.futura, organization_id: org, pipeline_id: id, name: "Demanda futura", slug: "futura", position: 3000 },
+    { id: etapas.triagem, organization_id: org, pipeline_id: id, name: "Triagem", slug: "triagem", position: 1000, is_lost: false },
+    { id: etapas.qualificado, organization_id: org, pipeline_id: id, name: "Qualificado", slug: "qualificado", position: 2000, is_lost: false },
+    { id: etapas.futura, organization_id: org, pipeline_id: id, name: "Demanda futura", slug: "futura", position: 3000, is_lost: false },
     { id: etapas.perdido, organization_id: org, pipeline_id: id, name: "Não fechou", slug: "nao-fechou", position: 9000, is_lost: true },
   ]);
   if (e2) throw new Error(`etapas: ${e2.message}`);
