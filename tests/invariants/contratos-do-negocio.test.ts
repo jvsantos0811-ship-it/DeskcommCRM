@@ -156,7 +156,7 @@ describe("contrato do negócio — o que o baseline instala", () => {
     ).toBe("23514");
     expect(
       await codigoDoErro(() =>
-        pool.query(`insert into crm_contracts (organization_id, titulo, provedor_assinatura) values ($1, 'x', 'zapsign')`, [ORG]),
+        pool.query(`insert into crm_contracts (organization_id, titulo, provedor_assinatura) values ($1, 'x', 'clicksign')`, [ORG]),
       ),
     ).toBe("23514");
     expect(

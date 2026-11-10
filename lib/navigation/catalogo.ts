@@ -1120,6 +1120,19 @@ export const NAV_CATALOG = [
     minRole: "admin",
   },
   {
+    // PC-030: o serviço de assinatura eletrônica da organização e os modelos de
+    // contrato. Gerente ou dono, como pede o pedido ("só dono ou gerente").
+    // Mora em "Sua empresa", junto de Conversões: é integração com um serviço
+    // de fora que o escritório contrata.
+    href: "/app/settings/assinatura-eletronica",
+    label: "Assinatura eletrônica",
+    description: "O serviço que colhe a assinatura do cliente e os modelos de contrato do escritório.",
+    icon: "FileText",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
     // A porta do cadastro do servidor MCP externo (#2948). Em "Dados e acesso"
     // pela MESMA razão de API Tokens e Dados externos: é o eixo "por onde dado
     // entra e sai do CRM" — o endereço e a chave são de um sistema de fora que

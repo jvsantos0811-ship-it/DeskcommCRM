@@ -1,7 +1,8 @@
 "use client";
 /**
- * Os contratos de um negócio e as três ações sobre eles (fork, migration 9008):
- * anexar o PDF, enviar ao cliente e marcar o desfecho.
+ * Os contratos de um negócio e as ações sobre eles (fork, migration 9008):
+ * anexar o PDF, gerar pelo modelo aprovado (PC-030), enviar ao cliente e
+ * marcar o desfecho.
  *
  * Anexar e decidir sobem arquivo, então vão por `fetch` com `FormData` (o
  * `apiClient` só fala JSON) — levando o mesmo cabeçalho da organização da aba
@@ -89,5 +90,14 @@ export function useContratosDoLead(leadId: string, enabled = true) {
     onError: (err) => showApiError(err),
   });
 
-  return { lista, anexar, enviar, decidir };
+  // PC-030: gera o contrato pelo modelo aprovado do escritório. Sem `onError`
+  // aqui: quando faltam dados, quem chamou mostra a lista do que perguntar ao
+  // cliente (o 422 `faltam_dados` traz `details.faltas`), e não um aviso solto.
+  const gerarPeloModelo = useMutation({
+    mutationFn: async () =>
+      (await apiClient.post<{ data: ContratoDoNegocio }>(`/api/v1/leads/${leadId}/contracts/do-modelo`, {})).data,
+    onSuccess: recarregar,
+  });
+
+  return { lista, anexar, enviar, decidir, gerarPeloModelo };
 }

@@ -14,7 +14,8 @@ import type { ProvedorDeAssinaturaId, StatusDoContrato } from "@/lib/contratos/v
 export const COLUNAS_DO_CONTRATO =
   "id, organization_id, lead_id, contact_id, conversation_id, titulo, arquivo_path, arquivo_nome, arquivo_bytes, " +
   "status, provedor_assinatura, provedor_documento_id, link_assinatura, assinado_path, message_id, " +
-  "ultima_falha_envio, motivo, enviado_em, enviado_por_user_id, decidido_em, decidido_por_user_id, created_at";
+  "ultima_falha_envio, motivo, enviado_em, enviado_por_user_id, decidido_em, decidido_por_user_id, created_at, " +
+  "visualizado_em, modelo_id, modelo_versao, origem_envio";
 
 export interface LinhaDoContrato {
   id: string;
@@ -39,6 +40,12 @@ export interface LinhaDoContrato {
   decidido_em: string | null;
   decidido_por_user_id: string | null;
   created_at: string;
+  /** PC-030: quando o cliente abriu o link no serviço de assinatura. */
+  visualizado_em: string | null;
+  /** PC-030: o modelo e a versão que geraram o arquivo (nulo no PDF anexado à mão). */
+  modelo_id: string | null;
+  modelo_versao: number | null;
+  origem_envio: "pessoa" | "ia";
 }
 
 export async function carregarContrato(
@@ -105,6 +112,9 @@ export async function paraATela(
     motivo: l.motivo,
     ultima_falha_envio: l.ultima_falha_envio,
     created_at: l.created_at,
+    visualizado_em: l.visualizado_em,
+    modelo_versao: l.modelo_versao,
+    origem_envio: l.origem_envio,
     entrega: l.message_id ? (entregas.get(l.message_id) ?? null) : null,
   }));
 }
