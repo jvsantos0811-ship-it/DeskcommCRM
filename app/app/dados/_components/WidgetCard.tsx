@@ -21,6 +21,7 @@ import { SOBRE_A_METRICA, type Resultado, type Widget } from "@/lib/dados/widget
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
+import { rotuloDoPeriodo, type PeriodoPedido } from "@/lib/dados/periodo";
 import { useResultado } from "./useDados";
 
 /** Paleta pelos tokens do tema: o gráfico acompanha claro, escuro e a cor da marca. */
@@ -53,13 +54,16 @@ function rotuloCurto(rotulo: string, tag: string): string {
 export function WidgetCard({
   widget,
   acoes,
+  periodo = null,
 }: {
   widget: Widget;
   acoes?: React.ReactNode;
+  /** PC-025: o período da página, por cima do período do gráfico. */
+  periodo?: PeriodoPedido | null;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
-  const r = useResultado(widget);
+  const r = useResultado(widget, periodo);
   const tipo = SOBRE_A_METRICA[widget.metrica].tipo;
   const meta = widget.meta ?? null;
   const fmt = (v: number) => formatar(v, tipo, tag);
@@ -84,7 +88,9 @@ export function WidgetCard({
         <div className="min-w-0">
           <h3 className="truncate text-sm font-medium text-text">{widget.titulo}</h3>
           <p className="text-xs text-text-muted">
-            {t("Últimos {n} dias").replace("{n}", String(widget.periodo_dias))}
+            {r.data?.periodo
+              ? rotuloDoPeriodo(r.data.periodo, t)
+              : t("Últimos {n} dias").replace("{n}", String(widget.periodo_dias))}
           </p>
         </div>
         {acoes}

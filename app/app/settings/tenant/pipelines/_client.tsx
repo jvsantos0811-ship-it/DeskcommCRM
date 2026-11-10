@@ -21,6 +21,7 @@ import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { etapaQuandoAEquipeAssume } from "@/lib/escalacao/equipe-assumiu-regra";
+import { etapasForaDaMedida, marcoDeQualificacao } from "@/lib/dados/parou-antes";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import {
@@ -344,6 +345,9 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  // PC-025: o marco de qualificação e as etapas fora da medida do painel de Dados.
+  const [marcoEscolhido, setMarcoEscolhido] = useState(marcoDeQualificacao(pipeline.settings) ?? "");
+  const [foraDaMedida, setForaDaMedida] = useState(etapasForaDaMedida(pipeline.settings));
   // PC-029: para onde o card vai quando a equipe assume respondendo. Vazio = não move.
   const [etapaDaEquipe, setEtapaDaEquipe] = useState(
     etapaQuandoAEquipeAssume(pipeline.settings) ?? "",
@@ -425,6 +429,8 @@ function PipelineEditor({
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
+      marco_de_qualificacao: marcoEscolhido || null,
+      etapas_fora_da_medida: foraDaMedida,
       etapa_quando_equipe_assume: etapaDaEquipe || null,
     };
     startTransition(async () => {
@@ -566,6 +572,61 @@ function PipelineEditor({
             "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.",
           )}
         </p>
+      </div>
+
+      {/* ─── PC-025: "PAROU ANTES DA QUALIFICAÇÃO" NO PAINEL DE DADOS ──
+          O marco (uma etapa) e as etapas que ficam fora da medida. Sem marco,
+          o painel pede para configurar em vez de adivinhar. */}
+      <div className="space-y-1" data-testid="config-parou-antes">
+        <Label htmlFor={`marco-${pipeline.id}`} className="text-xs">
+          {t("Etapa marco de qualificação")}
+        </Label>
+        <select
+          id={`marco-${pipeline.id}`}
+          data-testid="marco-de-qualificacao"
+          className="h-8 w-full max-w-xs rounded-md border border-input bg-background px-2 text-xs"
+          value={marcoEscolhido}
+          onChange={(e) => setMarcoEscolhido(e.target.value)}
+        >
+          <option value="">{t("Sem marco (a medida pede para configurar)")}</option>
+          {etapas
+            .filter((e) => !e.is_archived)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "No painel de Dados, \"parou antes da qualificação\" conta o card que conversou e nunca chegou a esta etapa (nem às depois dela).",
+          )}
+        </p>
+        <fieldset className="mt-2 space-y-1">
+          <legend className="text-xs font-medium">{t("Etapas fora desta medida")}</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {etapas
+              .filter((e) => !e.is_archived)
+              .map((e) => (
+                <label key={e.id} className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    data-testid={`fora-da-medida-${e.id}`}
+                    checked={foraDaMedida.includes(e.id)}
+                    onChange={(ev) =>
+                      setForaDaMedida((atual) =>
+                        ev.target.checked ? [...atual, e.id] : atual.filter((x) => x !== e.id),
+                      )
+                    }
+                  />
+                  {e.name}
+                </label>
+              ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t("Card numa destas etapas não entra na medida (ex.: Demanda futura, Análise humana, Lead antigo).")}
+          </p>
+        </fieldset>
       </div>
 
       {/* ─── PC-029: A ETAPA QUANDO A EQUIPE ASSUME ───────────────────

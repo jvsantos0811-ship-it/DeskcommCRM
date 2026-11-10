@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
+import { parametrosDoPeriodo, type PeriodoPedido, type PeriodoResolvido } from "@/lib/dados/periodo";
 import type { Painel, PainelInput, Resultado, Widget } from "@/lib/dados/widgets";
 
 const CHAVE = ["dados", "paineis"] as const;
@@ -35,11 +36,13 @@ export function usePaineis() {
   return { lista, criar, salvar, apagar };
 }
 
-export function useResultado(w: Widget) {
+export function useResultado(w: Widget, periodo: PeriodoPedido | null = null) {
   const params = new URLSearchParams({
     metrica: w.metrica,
     agrupar_por: w.agrupar_por,
     periodo_dias: String(w.periodo_dias),
+    // PC-025: o período da página vale por cima do período do gráfico.
+    ...parametrosDoPeriodo(periodo),
   });
   if (w.pipeline_id) params.set("pipeline_id", w.pipeline_id);
   if (w.owner_user_id) params.set("owner_user_id", w.owner_user_id);
@@ -47,7 +50,9 @@ export function useResultado(w: Widget) {
     queryKey: ["dados", "resultado", params.toString()],
     queryFn: () =>
       apiClient
-        .get<{ data: Resultado & { truncado: boolean } }>(`/api/v1/dados/consultar?${params.toString()}`)
+        .get<{ data: Resultado & { truncado: boolean; periodo: PeriodoResolvido | null } }>(
+          `/api/v1/dados/consultar?${params.toString()}`,
+        )
         .then((r) => r.data),
     staleTime: 60_000,
   });

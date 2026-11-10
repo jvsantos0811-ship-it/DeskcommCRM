@@ -58648,6 +58648,127 @@ create trigger trg_crm_contracts_modelo_da_org
   before insert or update of modelo_id, organization_id on public.crm_contracts
   for each row execute function public.fn_crm_contracts_modelo_da_org();
 
+-- ---- o ritmo da conversa por card, para "parou antes da qualificação" no painel de Dados (migration 9029) ----
+create or replace function public.fn_dados_ritmo_da_conversa(
+  p_org uuid,
+  p_pipeline_id uuid,
+  p_desde timestamptz,
+  p_ate timestamptz,
+  p_posicao_do_marco numeric default null
+) returns table (
+  lead_id uuid,
+  titulo text,
+  status text,
+  stage_id uuid,
+  etapa_posicao numeric,
+  criado_em timestamptz,
+  origem text,
+  anuncio_id text,
+  primeira_do_cliente_em timestamptz,
+  primeira_resposta_em timestamptz,
+  respostas_depois integer,
+  ultima_do_cliente_em timestamptz,
+  agente_id uuid,
+  chegou_ao_marco boolean
+)
+  language sql stable security invoker
+  set search_path = public, pg_temp
+as $fn$
+  with l as (
+    select l.id, l.title, l.status, l.stage_id, s.position, l.created_at, l.contact_id, l.source,
+           nullif(btrim(l.source_metadata->>'ad_id'), '') as ad_id
+      from public.crm_leads l
+      join public.crm_stages s on s.id = l.stage_id
+     where l.organization_id = p_org
+       and l.pipeline_id = p_pipeline_id
+       and l.created_at >= p_desde
+       and l.created_at < p_ate
+       and coalesce(l.source, '') not in ('importado_zernio', 'manual')
+       and l.title not ilike 'teste%'
+  ),
+  contatos as (
+    select distinct contact_id from l where contact_id is not null
+  ),
+  -- Só direção e horário: o texto da mensagem nunca é lido aqui.
+  m as (
+    select mm.contact_id,
+           min(mm.created_at) filter (where mm.direction = 'inbound') as primeira_in,
+           max(mm.created_at) filter (where mm.direction = 'inbound') as ultima_in
+      from public.messages mm
+     where mm.organization_id = p_org
+       and mm.contact_id in (select contact_id from contatos)
+     group by 1
+  ),
+  resp as (
+    select mm.contact_id, min(mm.created_at) as t
+      from public.messages mm
+      join m on m.contact_id = mm.contact_id
+     where mm.organization_id = p_org
+       and mm.direction = 'outbound'
+       and mm.created_at >= m.primeira_in
+     group by 1
+  ),
+  depois as (
+    select mm.contact_id, count(*)::int as n
+      from public.messages mm
+      join resp on resp.contact_id = mm.contact_id
+     where mm.organization_id = p_org
+       and mm.direction = 'inbound'
+       and mm.created_at > resp.t
+     group by 1
+  ),
+  ag as (
+    select distinct on (c.contact_id) c.contact_id, c.active_ai_agent_id
+      from public.conversations c
+     where c.organization_id = p_org
+       and c.contact_id in (select contact_id from contatos)
+       and coalesce(c.is_group, false) = false
+     order by c.contact_id, c.last_message_at desc nulls last, c.created_at desc
+  )
+  select l.id,
+         l.title,
+         l.status,
+         l.stage_id,
+         l.position,
+         l.created_at,
+         l.source,
+         l.ad_id,
+         m.primeira_in,
+         resp.t,
+         coalesce(depois.n, 0),
+         m.ultima_in,
+         ag.active_ai_agent_id,
+         case
+           when p_posicao_do_marco is null then false
+           else (
+             l.position >= p_posicao_do_marco
+             or exists (
+               select 1
+                 from public.crm_lead_activities a
+                 join public.crm_stages s2 on s2.id::text = a.payload->>'to_stage_id'
+                where a.organization_id = p_org
+                  and a.lead_id = l.id
+                  and a.type in ('stage_changed', 'demand_closed')
+                  and s2.pipeline_id = p_pipeline_id
+                  and not s2.is_lost
+                  and s2.position >= p_posicao_do_marco
+             )
+           )
+         end
+    from l
+    left join m on m.contact_id = l.contact_id
+    left join resp on resp.contact_id = l.contact_id
+    left join depois on depois.contact_id = l.contact_id
+    left join ag on ag.contact_id = l.contact_id
+   order by l.created_at, l.id
+$fn$;
+
+comment on function public.fn_dados_ritmo_da_conversa(uuid, uuid, timestamptz, timestamptz, numeric) is
+  'PC-025 (migration 9029): por card do funil que entrou no período, o ritmo da conversa (primeira mensagem do cliente, primeira resposta, respostas depois, última do cliente), o agente de IA da conversa mais recente e se chegou ao marco de qualificação. Lê das mensagens só direção e horário. SECURITY INVOKER: vale a RLS de quem pergunta.';
+
+revoke execute on function public.fn_dados_ritmo_da_conversa(uuid, uuid, timestamptz, timestamptz, numeric) from public, anon;
+grant execute on function public.fn_dados_ritmo_da_conversa(uuid, uuid, timestamptz, timestamptz, numeric) to authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
