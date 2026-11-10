@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Contratos do negócio",
-    "subtitle": "PDF do escritório enviado por uma pessoa pelo WhatsApp, desfecho marcado à mão (fork, migration 9008)",
+    "subtitle": "PDF do escritório (anexado ou gerado pelo modelo aprovado) enviado pelo WhatsApp; desfecho marcado à mão ou acompanhado pelo serviço de assinatura eletrônica (fork, migrations 9008 e 9027)",
     "output": "contratos-do-negocio.html",
     "quality_profile": "standard"
   },
@@ -20,14 +20,25 @@
     { "id": "rota_enviar", "lane": "api", "col": 2, "type": "service", "label": "POST /contracts/[id]/send" },
     { "id": "rota_decidir", "lane": "api", "col": 3, "type": "service", "label": "POST /contracts/[id]/decide" },
     { "id": "rota_arquivo", "lane": "api", "col": 4, "type": "service", "label": "GET /contracts/[id]/arquivo" },
-    { "id": "provedor", "lane": "api", "col": 5, "type": "service", "label": "provedorDeAssinatura (manual hoje)" },
+    { "id": "provedor", "lane": "api", "col": 5, "type": "service", "label": "provedorDeAssinatura (manual ou serviço eletrônico)" },
     { "id": "tabela", "lane": "data", "col": 1, "type": "database", "label": "crm_contracts" },
     { "id": "bucket", "lane": "data", "col": 2, "type": "storage", "label": "bucket contratos" },
     { "id": "copia", "lane": "data", "col": 3, "type": "storage", "label": "whatsapp-media/<org>/<conversa>/contrato-<id>" },
     { "id": "lgpd", "lane": "data", "col": 4, "type": "database", "label": "trg_redigir_contratos_ao_anonimizar → storage_redaction_queue" },
     { "id": "handler", "lane": "saida", "col": 1, "type": "service", "label": "sendMessageHandler (envio de pessoa)" },
     { "id": "mensagem", "lane": "saida", "col": 2, "type": "database", "label": "messages (status de entrega)" },
-    { "id": "timeline", "lane": "saida", "col": 3, "type": "database", "label": "crm_lead_activities + api_audit_log" }
+    { "id": "timeline", "lane": "saida", "col": 3, "type": "database", "label": "crm_lead_activities + api_audit_log" },
+    { "id": "tela_config", "lane": "ui", "col": 2, "type": "frontend", "label": "Configurações › Assinatura eletrônica (serviço + modelos)" },
+    { "id": "rota_conta", "lane": "api", "col": 6, "type": "service", "label": "PUT /settings/assinatura-eletronica (testa a chave, cadastra o aviso)" },
+    { "id": "rota_modelos", "lane": "api", "col": 7, "type": "service", "label": "/contratos/modelos (+ /[id], /[id]/aprovar)" },
+    { "id": "rota_do_modelo", "lane": "api", "col": 8, "type": "service", "label": "POST /leads/[id]/contracts/do-modelo" },
+    { "id": "rota_aviso", "lane": "api", "col": 9, "type": "service", "label": "POST /webhooks/assinatura/:token (caminho próprio do serviço)" },
+    { "id": "acompanhar", "lane": "api", "col": 10, "type": "service", "label": "aplicarAvisoDoServico → aplicarSituacao" },
+    { "id": "contas", "lane": "data", "col": 5, "type": "database", "label": "assinatura_eletronica_contas (chave cifrada, só servidor)" },
+    { "id": "modelos", "lane": "data", "col": 6, "type": "database", "label": "contrato_modelos (versão + aprovado pelo advogado)" },
+    { "id": "servico_externo", "lane": "saida", "col": 4, "type": "external", "label": "Serviço de assinatura (ZapSign)" },
+    { "id": "casos", "lane": "saida", "col": 5, "type": "database", "label": "agent_cases (tipo contrato)" },
+    { "id": "ganho", "lane": "saida", "col": 6, "type": "service", "label": "confirmarAssinatura (etapa de ganho + tag)" }
   ],
   "edges": [
     { "id": "e1", "from": "secao", "to": "rota_anexar", "label": "PDF + nome" },
@@ -49,6 +60,25 @@
     { "id": "e17", "from": "rota_arquivo", "to": "bucket", "label": "URL assinada curta" },
     { "id": "e18", "from": "tabela", "to": "lgpd", "label": "virada de is_anonymized" },
     { "id": "e19", "from": "lgpd", "to": "bucket", "label": "expurgo" },
-    { "id": "e20", "from": "rota_anexar", "to": "timeline", "label": "contract_uploaded" }
+    { "id": "e20", "from": "rota_anexar", "to": "timeline", "label": "contract_uploaded" },
+    { "id": "e21", "from": "tela_config", "to": "rota_conta", "label": "chave + ambiente + prazo" },
+    { "id": "e22", "from": "rota_conta", "to": "servico_externo", "label": "testa a chave e cadastra o aviso" },
+    { "id": "e23", "from": "rota_conta", "to": "contas", "label": "grava cifrada" },
+    { "id": "e24", "from": "tela_config", "to": "rota_modelos", "label": "criar, editar, aprovar" },
+    { "id": "e25", "from": "rota_modelos", "to": "modelos", "label": "texto muda → versão + 1, sem aprovação" },
+    { "id": "e26", "from": "secao", "to": "rota_do_modelo", "label": "Gerar pelo modelo" },
+    { "id": "e27", "from": "rota_do_modelo", "to": "modelos", "label": "só o aprovado" },
+    { "id": "e28", "from": "rota_do_modelo", "to": "bucket", "label": "PDF gerado" },
+    { "id": "e29", "from": "rota_do_modelo", "to": "tabela", "label": "rascunho com modelo e versão" },
+    { "id": "e30", "from": "provedor", "to": "servico_externo", "label": "cria o pedido de assinatura" },
+    { "id": "e31", "from": "servico_externo", "to": "rota_aviso", "label": "aviso (só o documento)" },
+    { "id": "e32", "from": "rota_aviso", "to": "contas", "label": "caminho + segredo próprios" },
+    { "id": "e33", "from": "rota_aviso", "to": "acompanhar", "label": "documento" },
+    { "id": "e34", "from": "acompanhar", "to": "servico_externo", "label": "relê a situação" },
+    { "id": "e35", "from": "acompanhar", "to": "tabela", "label": "visto / assinado / recusado / expirado / cancelado" },
+    { "id": "e36", "from": "acompanhar", "to": "bucket", "label": "via assinada" },
+    { "id": "e37", "from": "acompanhar", "to": "ganho", "label": "assinado" },
+    { "id": "e38", "from": "acompanhar", "to": "casos", "label": "conferir pelo CPF; recusa; prazo vencido" },
+    { "id": "e39", "from": "ganho", "to": "timeline", "label": "negócio ganho" }
   ]
 }

@@ -209,7 +209,13 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // ao cliente em `whatsapp-media/<org>/<conversa>/contrato-<id>/<Nome>.pdf`,
   // com o nome passado por `nomeDoArquivoParaOCliente` (medido acima).
   { arquivo: "app/api/v1/leads/[id]/contracts/route.ts", fronteira: "storage.chave-de-objeto" },
-  { arquivo: "app/api/v1/contracts/[id]/send/route.ts", fronteira: "storage.chave-de-objeto" },
+  // PC-030: o envio saiu da rota para `lib/contratos/enviar.ts` (a rota e a IA
+  // chamam o mesmo), o PDF gerado pelo modelo nasce em `gerar-do-modelo.ts`, e a
+  // via assinada que o serviço devolve é guardada em `acompanhar.ts` — as três
+  // com a mesma chave de dois uuids de sempre.
+  { arquivo: "lib/contratos/enviar.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "lib/contratos/gerar-do-modelo.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "lib/contratos/acompanhar.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/contracts/[id]/decide/route.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },

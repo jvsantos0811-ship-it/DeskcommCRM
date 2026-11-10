@@ -29,5 +29,11 @@ export interface ContratoDoNegocio {
   motivo: string | null;
   ultima_falha_envio: string | null;
   created_at: string;
+  /** PC-030: quando o cliente abriu o link no serviço de assinatura. */
+  visualizado_em: string | null;
+  /** PC-030: a versão do modelo que gerou o arquivo (nulo no PDF anexado à mão). */
+  modelo_versao: number | null;
+  /** PC-030: quem mandou — uma pessoa da equipe ou a IA. */
+  origem_envio: "pessoa" | "ia";
   entrega: { status: EntregaDoContrato; erro: string | null } | null;
 }

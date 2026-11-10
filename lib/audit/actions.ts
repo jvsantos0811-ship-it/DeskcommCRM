@@ -1285,6 +1285,14 @@ export const AUDIT_ACTIONS = [
   // que passou a ler por causa dele (metadata: ligado_em, modelo, reserva, quando).
   "leitor.padrao_definido",
   "leitor.ligado_pelo_padrao",
+  // PC-030: a conta do serviço de assinatura eletrônica (serviço, ambiente,
+  // se trocou a chave — nunca a chave), os modelos de contrato (criar, mudar o
+  // texto, aprovação do advogado) e o que o serviço avisou sobre um contrato.
+  "settings.assinatura_eletronica_atualizada",
+  "contrato_modelo.criado",
+  "contrato_modelo.atualizado",
+  "contrato_modelo.aprovado",
+  "contract.signature_status_changed",
   // PC-024: a planilha do funil (.xlsx/.csv) — quem, quando, quantas linhas,
   // formato, os filtros que valiam (nunca o TEXTO da busca), os campos e quais
   // campos sensíveis foram marcados de propósito.

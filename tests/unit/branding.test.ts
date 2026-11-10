@@ -986,6 +986,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint padrão do adapter do canal de mensagens, com override por ZERNIO_API_BASE_URL. Fixo de propósito: instalação que não configura nada tem de funcionar.",
   },
+  "api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de produção do serviço de assinatura eletrônica (`lib/contratos/assinatura/zapsign.ts`): é para onde o contrato vai quando o escritório liga a assinatura em Configurações › Assinatura eletrônica com a chave dele.",
+  },
+  "sandbox.api.zapsign.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de TESTE do mesmo serviço de assinatura (sem validade jurídica): o escritório escolhe \"Teste\" na tela e prova o fluxo inteiro antes de usar a chave de produção.",
+  },
   "cloud.datafyapi.com.br": {
     categoria: "FORNECEDOR",
     motivo:

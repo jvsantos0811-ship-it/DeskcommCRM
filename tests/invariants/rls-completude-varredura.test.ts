@@ -374,6 +374,22 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "guarda as leituras anteriores, com trecho de conversa. Migration 9022 (fork).",
   },
   {
+    tabela: "assinatura_eletronica_contas",
+    razao:
+      "tests/invariants/assinatura-eletronica.test.ts — só do servidor (guarda a chave cifrada " +
+      "da API do serviço de assinatura): RLS ligada, ZERO policies, nenhum grant a anon/" +
+      "authenticated/PUBLIC, e a leitura como authenticated e como anon dá `permission denied` " +
+      "(42501) com a linha existindo (controle positivo). Migration 9027 (fork, PC-030).",
+  },
+  {
+    tabela: "contrato_modelos",
+    razao:
+      "tests/invariants/assinatura-eletronica.test.ts — `countAs` real nos dois sentidos: o " +
+      "membro de A lê o modelo de A e zero do de B, e o de B o contrário; authenticated só tem " +
+      "SELECT (INSERT e UPDATE pela sessão dão `permission denied`, e a aprovação não muda); " +
+      "anon recusado. Migration 9027 (fork, PC-030).",
+  },
+  {
     tabela: "crm_dados_retrato",
     razao:
       "tests/invariants/retrato-de-dados.test.ts (\"quem lê o retrato\") e o bloco " +

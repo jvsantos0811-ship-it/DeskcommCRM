@@ -30,23 +30,13 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { chaveDaRequisicao, comIdempotencia } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/wrappers";
-import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import {
-  BUCKET_DOS_CONTRATOS,
-  caminhoDaCopiaNaConversa,
-  nomeDoArquivoParaOCliente,
-} from "@/lib/contratos/arquivo";
-import { provedorDeAssinatura } from "@/lib/contratos/provedores";
-import { COLUNAS_DO_CONTRATO, carregarContrato, paraATela, type LinhaDoContrato } from "@/lib/contratos/servidor";
+import { enviarContrato } from "@/lib/contratos/enviar";
 import type { ContratoDoNegocio } from "@/lib/contratos/tipos";
-import { podeEnviar } from "@/lib/contratos/vocabulario";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -104,169 +94,20 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // O miolo mora em `lib/contratos/enviar.ts` — o mesmo que a IA usa (PC-030).
   async function enviar(): Promise<ContratoDoNegocio> {
-    const contrato = await carregarContrato(admin, orgId, id);
-    if (!contrato) throw new Recusa(fail("not_found", t("Contrato não encontrado."), 404, { requestId }));
-    if (!podeEnviar(contrato.status)) {
-      throw new Recusa(
-        fail("invalid_state_transition", t("Este contrato já foi encerrado e não pode ser enviado."), 409, {
-          requestId,
-        }),
-      );
-    }
-    if (!contrato.arquivo_path) {
-      throw new Recusa(fail("validation_failed", t("O arquivo deste contrato não existe mais."), 422, { requestId }));
-    }
-
-    // O contato é o do NEGÓCIO de agora: se o card mudou de contato (cadastro
-    // duplicado juntado), o contrato vai para quem o negócio é hoje.
-    const { data: lead } = contrato.lead_id
-      ? await admin
-          .from("crm_leads")
-          .select("id, contact_id")
-          .eq("organization_id", orgId)
-          .eq("id", contrato.lead_id)
-          .maybeSingle()
-      : { data: null };
-    const contatoId = (lead as { contact_id: string | null } | null)?.contact_id ?? contrato.contact_id;
-    if (!contatoId) {
-      throw new Recusa(fail("validation_failed", t("Este negócio não tem contato para receber o contrato."), 422, { requestId }));
-    }
-
-    const { data: conversa } = await admin
-      .from("conversations")
-      .select("id, channel_session_id")
-      .eq("organization_id", orgId)
-      .eq("contact_id", contatoId)
-      .eq("is_group", false)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!conversa) {
-      throw new Recusa(
-        fail("validation_failed", t("Este contato ainda não tem conversa no WhatsApp para receber o contrato."), 422, {
-          requestId,
-        }),
-      );
-    }
-    const conversaId = (conversa as { id: string }).id;
-
-    const provedor = provedorDeAssinatura(contrato.provedor_assinatura);
-    const nomeDoArquivo = nomeDoArquivoParaOCliente(contrato.titulo);
-
-    let mensagem: Awaited<ReturnType<typeof sendMessageHandler>>;
-    let preparo: Awaited<ReturnType<typeof provedor.preparar>>;
-    try {
-      const { data: original, error: dlErr } = await admin.storage
-        .from(BUCKET_DOS_CONTRATOS)
-        .download(contrato.arquivo_path);
-      if (dlErr || !original) throw new Error(t("Não foi possível ler o arquivo do contrato."));
-      const pdf = Buffer.from(await original.arrayBuffer());
-
-      preparo = await provedor.preparar({ organizationId: orgId, contratoId: contrato.id, pdf, nomeDoArquivo });
-
-      const copia = caminhoDaCopiaNaConversa(orgId, conversaId, contrato.id, nomeDoArquivo);
-      const { error: upErr } = await admin.storage
-        .from("whatsapp-media")
-        .upload(copia, pdf, { contentType: "application/pdf", upsert: true });
-      if (upErr) throw new Error(t("Não foi possível preparar o arquivo para o WhatsApp."));
-
-      const legenda = [textoDoEnvio, preparo.linkAssinatura ?? ""].filter((p) => p.trim()).join("\n\n");
-      mensagem = await sendMessageHandler(
-        admin,
-        { organization_id: orgId, actor: { type: "user", id: userId }, requestId, idioma },
-        {
-          conversation_id: conversaId,
-          type: "document",
-          media_storage_path: copia,
-          media_mime: "application/pdf",
-          media_size_bytes: pdf.length,
-          ...(legenda ? { body: legenda } : {}),
-        },
-      );
-    } catch (erro) {
-      const motivo = erro instanceof Error && erro.message ? erro.message : t("Falha desconhecida ao enviar.");
-      logger.warn("contracts.send_failed", { organizationId: orgId, contratoId: contrato.id, erro: motivo });
-      const { data: falhou } = await admin
-        .from("crm_contracts")
-        .update({ ultima_falha_envio: motivo })
-        .eq("organization_id", orgId)
-        .eq("id", contrato.id)
-        .select(COLUNAS_DO_CONTRATO)
-        .single();
-      const [tela] = await paraATela(admin, orgId, [(falhou ?? contrato) as unknown as LinhaDoContrato]);
-      return tela!;
-    }
-
-    if (mensagem.status === "failed") {
-      const { data: falhou } = await admin
-        .from("crm_contracts")
-        .update({
-          ultima_falha_envio: mensagem.error_message ?? t("O WhatsApp não aceitou o envio."),
-          message_id: mensagem.id,
-          conversation_id: conversaId,
-          contact_id: contatoId,
-        })
-        .eq("organization_id", orgId)
-        .eq("id", contrato.id)
-        .select(COLUNAS_DO_CONTRATO)
-        .single();
-      const [tela] = await paraATela(admin, orgId, [(falhou ?? contrato) as unknown as LinhaDoContrato]);
-      return tela!;
-    }
-
-    const reenvio = contrato.status === "enviado";
-    const { data: enviado } = await admin
-      .from("crm_contracts")
-      .update({
-        status: "enviado",
-        enviado_em: new Date().toISOString(),
-        enviado_por_user_id: userId,
-        message_id: mensagem.id,
-        conversation_id: conversaId,
-        contact_id: contatoId,
-        ultima_falha_envio: null,
-        provedor_documento_id: preparo.documentoId,
-        link_assinatura: preparo.linkAssinatura,
-      })
-      .eq("organization_id", orgId)
-      .eq("id", contrato.id)
-      .select(COLUNAS_DO_CONTRATO)
-      .single();
-
-    if (contrato.lead_id) {
-      await emitLeadActivity(admin, {
-        organizationId: orgId,
-        leadId: contrato.lead_id,
-        contactId: contatoId,
-        type: "contract_sent",
-        sourceModule: "contracts",
-        sourceId: contrato.id,
-        actor: { type: "user", id: userId },
-        reason: reenvio
-          ? "Contrato enviado de novo ao cliente pelo WhatsApp"
-          : "Contrato enviado ao cliente pelo WhatsApp, aguardando assinatura",
-      });
-    }
-    void audit({
-      action: "contract.sent",
-      actorUserId: userId,
-      organizationId: orgId,
-      resourceType: "crm_contracts",
-      resourceId: contrato.id,
+    const r = await enviarContrato(admin, {
+      orgId,
+      contratoId: id,
+      actor: { type: "user", id: userId },
+      userId,
+      mensagem: textoDoEnvio,
+      idioma,
       requestId,
-      metadata: {
-        lead_id: contrato.lead_id,
-        message_id: mensagem.id,
-        entrega: mensagem.status,
-        reenvio,
-        provedor: provedor.id,
-      },
+      t,
     });
-
-    const [tela] = await paraATela(admin, orgId, [(enviado ?? contrato) as unknown as LinhaDoContrato]);
-    return tela!;
+    if (!r.ok) throw new Recusa(fail(r.codigo, r.mensagem, r.status, { requestId }));
+    return r.contrato;
   }
 
   try {
