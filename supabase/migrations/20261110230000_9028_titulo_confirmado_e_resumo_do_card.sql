@@ -1,4 +1,4 @@
--- manifest: **O card com o nome certo (PC-026).** `crm_leads.titulo_origem` (`sistema` | `ia` | `pessoa`, nulo = desconhecida): quem deu o título atual do negócio. Gatilho `trg_crm_leads_titulo_origem` (BEFORE UPDATE OF title): mudar o título sem dizer a origem marca `pessoa` — a não ser que a transação declare `deskcomm.titulo_origem` (`ia` ou `sistema`). É o que impede a IA de sobrescrever um título que a equipe editou à mão (o nome confirmado pela IA só troca título de origem sistema, IA ou desconhecida com cara de telefone/nome do perfil). `ai_agent_versions.perguntas_do_resumo` (até 15 rótulos; vazia = sem resumo nem chamada de IA) para o bloco "Resumo da IA" na descrição do card. Sem dado migrado: os cards existentes ficam com origem nula até a próxima atualização de cada um. Número 9028, faixa do fork. Idempotente; apêndice igual no `baseline.sql`, antes da VARREDURA anon.
+-- manifest: **O card com o nome certo (PC-026).** `crm_leads.titulo_origem` (`sistema` | `ia` | `pessoa`, nulo = desconhecida): quem deu o título atual do negócio. Gatilho `trg_crm_leads_titulo_origem` (BEFORE UPDATE OF title): mudar o título sem dizer a origem marca `pessoa` — a não ser que a transação declare `crm.titulo_origem` (`ia` ou `sistema`). É o que impede a IA de sobrescrever um título que a equipe editou à mão (o nome confirmado pela IA só troca título de origem sistema, IA ou desconhecida com cara de telefone/nome do perfil). `ai_agent_versions.perguntas_do_resumo` (até 15 rótulos; vazia = sem resumo nem chamada de IA) para o bloco "Resumo da IA" na descrição do card. Sem dado migrado: os cards existentes ficam com origem nula até a próxima atualização de cada um. Número 9028, faixa do fork. Idempotente; apêndice igual no `baseline.sql`, antes da VARREDURA anon.
 -- 9028: a origem do título do negócio (PC-026, item 1).
 --
 -- ─── O que acontecia ────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@
 -- O título muda pela tela (vários componentes), pela API, pelo MCP, pela
 -- importação e pela anonimização. Um caminho novo de edição já nasce marcando
 -- `pessoa` sem ninguém lembrar. O único caminho que NÃO é pessoa declara a
--- origem na própria transação (`set_config('deskcomm.titulo_origem', 'ia', true)`).
+-- origem na própria transação (`set_config('crm.titulo_origem', 'ia', true)`).
 -- Escrita local, na mesma linha — nenhum HTTP (anti-pattern 9).
 --
 -- ─── O que não muda ─────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_declarada text := nullif(current_setting('deskcomm.titulo_origem', true), '');
+  v_declarada text := nullif(current_setting('crm.titulo_origem', true), '');
 begin
   if new.title is not distinct from old.title then
     return new;

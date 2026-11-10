@@ -31,6 +31,8 @@ import { ehDeSaude, lerRegistro, sanearTexto, simOuNao } from './registro-da-con
 import { extrairJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
 import { camposDoFunil, escopoDoCampo } from '@/lib/leads/campos-do-funil';
 import { statusDosCampos } from '@/lib/leads/status-dos-campos';
+import { tagDeIdioma } from '@/lib/i18n/datas';
+import { IDIOMA_PADRAO } from '@/lib/i18n/idiomas';
 
 import type { Queryable } from '../queue/queue';
 
@@ -142,9 +144,12 @@ export function lerLinhasDoModelo(texto: string, perguntas: readonly string[]): 
   return saida;
 }
 
-/** "10/11 14:32" no fuso da organização. Puro. */
+/**
+ * "10/11 14:32" no fuso da organização. Puro. Só as partes numéricas: o bloco é
+ * texto GRAVADO no card, com os marcadores em português, e não interface.
+ */
 export function quandoDoResumo(agora: Date, fuso: string): string {
-  const partes = new Intl.DateTimeFormat('pt-BR', {
+  const partes = new Intl.DateTimeFormat(tagDeIdioma(IDIOMA_PADRAO), {
     timeZone: fuso,
     day: '2-digit',
     month: '2-digit',

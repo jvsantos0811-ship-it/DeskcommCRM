@@ -58511,7 +58511,7 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_declarada text := nullif(current_setting('deskcomm.titulo_origem', true), '');
+  v_declarada text := nullif(current_setting('crm.titulo_origem', true), '');
 begin
   if new.title is not distinct from old.title then
     return new;

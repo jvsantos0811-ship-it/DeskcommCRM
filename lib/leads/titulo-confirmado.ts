@@ -163,7 +163,7 @@ export async function aplicarNomeConfirmado(
     const client = await pool.connect();
     try {
       await client.query("begin");
-      await client.query(`select set_config('deskcomm.titulo_origem', 'ia', true)`);
+      await client.query(`select set_config('crm.titulo_origem', 'ia', true)`);
       const upd = await client.query<{ id: string }>(
         `update crm_leads set title = $3, titulo_origem = 'ia'
           where organization_id = $1 and id = $2
