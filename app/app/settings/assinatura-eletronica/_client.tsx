@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import type { ContaNaTela } from "@/lib/contratos/assinatura/conta";
@@ -215,14 +216,15 @@ function FormularioDoServico({
 
 // ─── Os modelos ─────────────────────────────────────────────────────────────
 
-function dataCurta(iso: string | null): string {
+function dataCurta(iso: string | null, tagDoIdioma: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("pt-BR");
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(tagDoIdioma);
 }
 
 function ModelosDeContrato() {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const qc = useQueryClient();
   const lista = useQuery({
     queryKey: CHAVE_DOS_MODELOS,
@@ -270,7 +272,7 @@ function ModelosDeContrato() {
                 </p>
                 {m.aprovado_em ? (
                   <Badge variant="success">
-                    {t("Aprovado por")} {m.aprovado_por_nome} {t("em")} {dataCurta(m.aprovado_em)}
+                    {t("Aprovado por")} {m.aprovado_por_nome} {t("em")} {dataCurta(m.aprovado_em, tagDoIdioma)}
                   </Badge>
                 ) : (
                   <Badge variant="warning">{t("Aguardando aprovação do advogado")}</Badge>
