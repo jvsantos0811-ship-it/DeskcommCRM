@@ -23,7 +23,9 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { claimConversationSchema, validateRequest } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { contatoSoHumanoEAgendadasCanceladas } from "@/lib/escalacao/equipe-assumiu";
 import type { Conversation } from "@/lib/types/messaging";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -102,6 +104,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .then(({ error: emitErr }) => {
       if (emitErr) console.error("[conversation.claim] emit_event failed", emitErr.message);
     });
+
+  // PC-024/PC-029: assumir faz o mesmo que a equipe respondendo — o contato
+  // fica "só humano" e as mensagens agendadas da conversa são canceladas, com a
+  // nota do Sistema. Um serviço só (`lib/escalacao/equipe-assumiu.ts`); nunca
+  // derruba o assumir, que já aconteceu.
+  let admin: ReturnType<typeof createAdminClient> | null = null;
+  try {
+    admin = createAdminClient();
+  } catch {
+    admin = null;
+  }
+  if (admin) {
+    await contatoSoHumanoEAgendadasCanceladas(admin, {
+      organizationId: conv.organization_id,
+      conversationId: conv.id,
+      contactId: conv.contact_id,
+    });
+  }
 
   // A linha na TELA. O `emit_event` acima e o audit não são lidos por atendente
   // nenhum; sem esta chamada, assumir uma conversa era invisível na timeline —

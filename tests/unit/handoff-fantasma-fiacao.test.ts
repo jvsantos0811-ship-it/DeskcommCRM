@@ -66,20 +66,24 @@ describe("fiação — lead urgente represado pelo cap de warm-up gera alerta cr
   });
 });
 
-describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariamente", () => {
-  // O helper mudou de casa e de nome (era `silenciarBotPorRetomadaHumana`, local
-  // deste arquivo; virou `pausarIaPorAtendimentoManual`, compartilhado com os
-  // outros canais). O que esta guarda protege é o mesmo de sempre: o caminho da
-  // mensagem vinda do celular do operador CALA o bot, e não só grava histórico.
-  it("handleOutboundFromUserPhone chama pausarIaPorAtendimentoManual depois de registrar a mensagem", () => {
+describe("fiação — resposta manual pelo WhatsApp: a equipe assume", () => {
+  // O helper mudou de casa e de nome mais de uma vez (era
+  // `silenciarBotPorRetomadaHumana`, local deste arquivo; virou
+  // `pausarIaPorAtendimentoManual`, com prazo; desde o PC-029 é
+  // `equipeAssumiuRespondendo`, sem prazo: a IA só volta pelo "Devolver"). O que
+  // esta guarda protege é o mesmo de sempre: o caminho da mensagem vinda do
+  // celular do operador CALA o bot, e não só grava histórico.
+  it("handleOutboundFromUserPhone chama equipeAssumiuRespondendo depois de registrar a mensagem", () => {
     const i = FONTE_INGEST.indexOf("async function handleOutboundFromUserPhone(");
     expect(i).toBeGreaterThan(-1);
     const j = FONTE_INGEST.indexOf("async function handleAck(", i);
     expect(j).toBeGreaterThan(i);
     const corpo = FONTE_INGEST.slice(i, j);
     expect(corpo).toContain('sent_via: "external_device"');
-    expect(corpo).toContain("pausarIaPorAtendimentoManual(admin, {");
-    expect(corpo).toMatch(/pausarIaPorAtendimentoManual\(admin, \{[\s\S]{0,200}organizationId: session\.organization_id/);
+    expect(corpo).not.toContain("pausarIaPorAtendimentoManual");
+    expect(corpo).toContain("equipeAssumiuRespondendo(admin, {");
+    expect(corpo).toMatch(/equipeAssumiuRespondendo\(admin, \{[\s\S]{0,200}organizationId: session\.organization_id/);
+    expect(corpo).toMatch(/equipeAssumiuRespondendo\(admin, \{[\s\S]{0,200}origem: "celular"/);
   });
 
   /**
@@ -107,9 +111,9 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
     );
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?pausarIaDuravelmente\(/);
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?devolverAtendimentoAoAgente\(/);
-    // A pausa da mensagem comum também, e o interruptor do agente (que decide
-    // se a pausa é durável) é lido DENTRO da guarda — nunca para o eco.
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2000}?pausarIaPorAtendimentoManual\(/);
+    // O assumir da mensagem comum também, e o interruptor do agente (que decide
+    // se `#on`/`#off` são comandos) é lido DENTRO da guarda — nunca para o eco.
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2000}?equipeAssumiuRespondendo\(/);
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,400}?agenteAceitaComandoDeCelular\(/);
   });
 });

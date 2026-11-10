@@ -189,7 +189,9 @@ export function MessageBubble({
     // dono lê a conversa como se tudo tivesse saído do CRM — que é o defeito do
     // #866 visto de dentro da tela.
     if (message.sent_via === "system") return "Sistema";
-    if (message.sent_via === "external_device") return "Celular";
+    // PC-029: "Equipe (celular)" — quem respondeu pelo app do celular é a
+    // EQUIPE, e essa resposta assume a conversa (a IA cala até o "Devolver").
+    if (message.sent_via === "external_device") return "Equipe (celular)";
     if (message.sent_via === "user" || message.sent_via === "crm") {
       // "Você" exige as DUAS pontas: saber quem lê e saber quem enviou. Falta
       // qualquer uma, o rótulo cai para "Atendente" — que continua dizendo o

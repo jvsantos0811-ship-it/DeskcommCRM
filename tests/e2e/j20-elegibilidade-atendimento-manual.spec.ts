@@ -4,19 +4,21 @@
  * Numa conversa que o gate autorizou (o lead veio de uma origem elegível), o
  * dono pega o celular e responde o cliente direto no WhatsApp. Essa mensagem
  * entra pelo webhook do provider (`fromMe=true`, sem passar pelo composer do
- * CRM). A IA tem de PARAR nessa conversa — silêncio COM PRAZO
- * (`bot_silenced_until = agora + PRAZO_DO_SILENCIO_MS` + rastro de handoff) —
- * SEM apagar `contacts.ai_authorized_at`: a origem do lead é estado separado da
- * pausa. O prazo vence sozinho, e a volta antecipada é pela tela ("devolver ao
- * automático").
+ * CRM). A EQUIPE ASSUMIU (PC-029, regra do João de 10/11/2026): a IA para
+ * nessa conversa de forma DURÁVEL (`bot_silenced_until = 'infinity'` + rastro
+ * de handoff) e o contato fica "só humano" — SEM apagar
+ * `contacts.ai_authorized_at`: a origem do lead é estado separado da pausa. A IA
+ * só volta pela tela ("devolver ao automático"). Até o PC-029 o silêncio tinha
+ * prazo e era renovado a cada fala; o prazo saiu de propósito.
  *
  * O que este spec prova, e por qual observável:
- *   - o webhook `fromMe=true` genuíno pausa a IA        → `conversations.bot_silenced_until`
- *   - o silêncio tem PRAZO, não é 'infinity'            → o instante gravado é finito e futuro
- *   - cada nova fala humana RENOVA o prazo              → `bot_silenced_until` e `last_handoff_at` avançam
+ *   - o webhook `fromMe=true` genuíno cala a IA         → `conversations.bot_silenced_until`
+ *   - o silêncio é DURÁVEL ('infinity'), sem prazo      → o valor cru gravado
+ *   - o contato fica "só humano"                         → `contacts.force_human`
+ *   - a 2ª fala do mesmo atendimento não refaz nada      → `last_handoff_at` não muda
  *   - a tela DIZ que uma pessoa assumiu                  → badge de atendimento humano
  *   - a autorização do lead SOBREVIVE à pausa            → `contacts.ai_authorized_at`
- *   - "devolver ao automático" solta a trava            → `bot_silenced_until` volta a null
+ *   - "devolver ao automático" solta as travas          → `bot_silenced_until` null, `force_human` false
  *     …e a autorização CONTINUA lá                        → `contacts.ai_authorized_at`
  *
  * Pré-requisitos (banco local estilo VPS, app buildada):
@@ -30,8 +32,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { expect, test, type Page } from "./helpers/test";
-
-import { PRAZO_DO_SILENCIO_MS } from "@/lib/escalacao/atendimento-manual";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -104,7 +104,7 @@ async function esperarContatoPorTelefone(digits: string): Promise<string> {
   throw new Error(`contato do telefone ${digits} não apareceu em 10s`);
 }
 
-test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a autorização)", () => {
+test.describe("J20.18 — resposta manual pelo celular: a equipe assume (sem apagar a autorização)", () => {
   test.describe.configure({ timeout: 180_000 });
   test.use({ actionTimeout: 15_000 });
 
@@ -192,36 +192,33 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
       expect(String(depoisDaPausa.last_handoff_reason)).toMatch(/manual/i);
       expect(depoisDaPausa.last_handoff_at).not.toBeNull();
 
-      // O SILÊNCIO TEM PRAZO — não é 'infinity'. Decisão do dono do produto:
-      // ninguém clicou em "assumir", então nada aqui pode calar a IA para
-      // sempre. O instante gravado é finito, está no futuro, e não passa do
-      // prazo (com folga para o tempo de trânsito do webhook).
-      expect(String(depoisDaPausa.bot_silenced_until)).not.toMatch(/infinity/i);
-      const venceEm = new Date(String(depoisDaPausa.bot_silenced_until)).getTime();
-      expect(Number.isFinite(venceEm), "bot_silenced_until tem de ser um instante real").toBe(true);
-      expect(venceEm).toBeGreaterThan(Date.now());
-      expect(venceEm).toBeLessThanOrEqual(Date.now() + PRAZO_DO_SILENCIO_MS + 60_000);
+      // O SILÊNCIO É DURÁVEL (PC-029): a equipe que responde pelo celular
+      // assume, e a IA só volta pelo "devolver". Até o PC-029 era um prazo que
+      // vencia sozinho — e a IA voltava a falar no meio do atendimento humano.
+      expect(
+        String(depoisDaPausa.bot_silenced_until),
+        "a resposta pelo celular tem de calar a IA até alguém devolver",
+      ).toMatch(/infinity/i);
 
       // A AUTORIZAÇÃO DO LEAD SOBREVIVE — pausar a conversa ≠ apagar a origem.
-      const autorizacao = helper<{ ai_authorized_at: string | null; ai_authorized_reason: string | null }>(
-        "contact-authorization",
-        contactId,
-      );
+      const autorizacao = helper<{
+        ai_authorized_at: string | null;
+        ai_authorized_reason: string | null;
+        force_human: boolean | null;
+      }>("contact-authorization", contactId);
       expect(
         autorizacao.ai_authorized_at,
         "a resposta manual NÃO pode apagar ai_authorized_at — é estado separado",
       ).not.toBeNull();
+      // …e o contato fica "só humano", o mesmo estado da passagem para humano.
+      expect(autorizacao.force_human, "a equipe assumiu: o contato fica só humano").toBe(true);
 
       // ---------------------------------------------------------------------
-      // (4) RENOVAÇÃO: a 2ª mensagem do celular empurra o prazo para frente.
-      //
-      // É o que "com prazo" significa na prática. Sem renovar, o relógio
-      // contaria da PRIMEIRA fala e a IA voltaria a falar no meio de um
-      // atendimento humano em curso — exatamente quando há uma pessoa na
-      // conversa, que é o pior instante possível.
+      // (4) A 2ª mensagem do celular, no MESMO atendimento, não refaz nada:
+      //     nem rastro novo, nem nota, nem movimento do card. O silêncio segue
+      //     durável — não há prazo a renovar.
       // ---------------------------------------------------------------------
       const handoffAntes = depoisDaPausa.last_handoff_at;
-      const venciaAntes = venceEm;
       expect(
         await postWaha({
           event: "message.any",
@@ -236,26 +233,15 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
           },
         }),
       ).toBe(200);
-      await expect
-        .poll(
-          () =>
-            helper<{ last_handoff_at: string | null }>("conversation-silence", conversationId)
-              .last_handoff_at,
-          {
-            timeout: 20_000,
-            message: "cada fala humana renova o prazo — o rastro tem de avançar",
-          },
-        )
-        .not.toBe(handoffAntes);
-
-      const depoisDaRenovacao = helper<{
+      const depoisDaSegunda = helper<{
         bot_silenced_until: string | null;
         last_handoff_at: string | null;
       }>("conversation-silence", conversationId);
+      expect(String(depoisDaSegunda.bot_silenced_until)).toMatch(/infinity/i);
       expect(
-        new Date(String(depoisDaRenovacao.bot_silenced_until)).getTime(),
-        "o vencimento conta a partir da ÚLTIMA fala humana, não da primeira",
-      ).toBeGreaterThan(venciaAntes);
+        depoisDaSegunda.last_handoff_at,
+        "a segunda fala do mesmo atendimento não abre um episódio novo",
+      ).toBe(handoffAntes);
 
       // ---------------------------------------------------------------------
       // (5) A tela DIZ que uma pessoa assumiu, e oferece a volta.
@@ -285,10 +271,15 @@ test.describe("J20.18 — resposta manual pelo celular pausa a IA (sem apagar a 
       await expect(page.getByTestId("badge-atendimento-humano")).toHaveCount(0, { timeout: 20_000 });
       await captura(page, "18-devolvido-ao-automatico");
 
+      const depoisDaVolta = helper<{ ai_authorized_at: string | null; force_human: boolean | null }>(
+        "contact-authorization",
+        contactId,
+      );
       expect(
-        helper<{ ai_authorized_at: string | null }>("contact-authorization", contactId).ai_authorized_at,
+        depoisDaVolta.ai_authorized_at,
         "devolver ao automático não pode apagar a origem do lead",
       ).not.toBeNull();
+      expect(depoisDaVolta.force_human, "devolver solta também o \"só humano\" do contato").toBe(false);
     } finally {
       if (contactId) {
         try {

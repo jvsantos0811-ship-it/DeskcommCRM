@@ -76,6 +76,22 @@ export async function updatePipelineConfig(
   if (parsed.data.reabertura_campos !== undefined) {
     nextSettings.reabertura_campos = parsed.data.reabertura_campos;
   }
+  // PC-029: a etapa quando a equipe assume — tem de ser uma etapa DESTE funil.
+  if (parsed.data.etapa_quando_equipe_assume !== undefined) {
+    const etapa = parsed.data.etapa_quando_equipe_assume;
+    if (etapa === null) {
+      delete nextSettings.etapa_quando_equipe_assume;
+    } else {
+      const { data: daqui } = await supabase
+        .from("crm_stages")
+        .select("id")
+        .eq("id", etapa)
+        .eq("pipeline_id", pipelineId)
+        .maybeSingle();
+      if (!daqui) return { ok: false, error: "etapa_de_outro_funil" };
+      nextSettings.etapa_quando_equipe_assume = etapa;
+    }
+  }
 
   // Campo que passa a ser do Contato e que uma regra ativa do gatilho por data
   // lê (#2791): a regra seguiria ligada e pararia de disparar em silêncio.
