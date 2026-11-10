@@ -27,9 +27,10 @@ vi.mock("@/lib/audit", () => ({
     auditorias.push(e);
   }),
 }));
-vi.mock("@/lib/inbox/atividade-de-comando", () => ({
-  registrarTrocaDeComando: vi.fn(async (e: Record<string, unknown>) => {
+vi.mock("@/lib/leads/activity-emitter", () => ({
+  emitLeadActivity: vi.fn(async (_s: unknown, e: Record<string, unknown>) => {
     linhasDoTempo.push(e);
+    return { ok: true };
   }),
 }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({
@@ -241,8 +242,9 @@ describe("resposta pela TELA do CRM", () => {
     expect(b.rpcs.map((x) => x.fn)).toContain("fn_cancelar_agendadas_da_conversa");
     expect(linhasDoTempo).toEqual([
       expect.objectContaining({
-        tipo: "conversation_claimed",
-        motivo: "Equipe assumiu respondendo pelo CRM (Ana)",
+        type: "conversation_claimed",
+        leadId: "lead-1",
+        reason: "Equipe assumiu respondendo pelo CRM (Ana)",
       }),
     ]);
     expect(movimentos).toEqual([
@@ -328,7 +330,7 @@ describe("eco de mensagem do app do celular (coexistência)", () => {
     expect(b.contato.force_human).toBe(true);
     expect(linhasDoTempo).toEqual([
       expect.objectContaining({
-        motivo: "Equipe assumiu respondendo pelo celular",
+        reason: "Equipe assumiu respondendo pelo celular",
         actor: { type: "user", id: "u-carla" },
       }),
     ]);
@@ -351,7 +353,7 @@ describe("eco de mensagem do app do celular (coexistência)", () => {
     expect(b.rpcs.map((x) => x.fn)).toContain("fn_cancelar_agendadas_da_conversa");
     expect(linhasDoTempo).toEqual([
       expect.objectContaining({
-        motivo: "Equipe assumiu respondendo pelo celular",
+        reason: "Equipe assumiu respondendo pelo celular",
         actor: { type: "webhook_source", id: "sessao-1" },
       }),
     ]);

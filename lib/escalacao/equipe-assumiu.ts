@@ -14,7 +14,7 @@
  *    `sendMessageHandler`); só assumia a conversa com "A conversa fica com quem
  *    atendeu" ligado.
  *  - Resposta pelo CELULAR calava por 60 minutos (ajustável) e a IA voltava
- *    sozinha (`pausarIaPorAtendimentoManual`). No canal intermediado (Zernio),
+ *    sozinha (`pausarIaPorAtendimentoManual`). No canal intermediado,
  *    a resposta pelo celular numa conversa que JÁ existia nem calava a IA: só
  *    as redes sociais chamavam a pausa.
  *
@@ -61,7 +61,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import type { ActivityType } from "@/lib/leads/activity-vocabulary";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import {
   MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR,
@@ -367,20 +368,34 @@ export async function equipeAssumiuRespondendo(
       e.nomeDaPessoa ??
       (e.userId ? ((await nomesDosAtendentes([e.userId])).get(e.userId) ?? null) : null);
     const frase = fraseDaLinhaDoTempo(e.origem, nome);
-    await registrarTrocaDeComando({
-      supabase: admin,
-      organizationId: e.organizationId,
-      conversationId: e.conversationId,
-      contactId: c.contact_id,
-      tipo: "conversation_claimed",
-      actor: ator,
-      motivo: frase,
-      payload: { origem: e.origem, assumiu },
-    });
 
+    // O negócio do contato, lido UMA vez e pelo MESMO cliente de serviço: ele
+    // recebe a linha do tempo e, se for o caso, anda no funil. (Não passa por
+    // `registrarTrocaDeComando`, que abre um segundo cliente de serviço para
+    // furar a visibilidade de quem clicou — aqui o cliente já é o de serviço.)
     let cardMovidoPara: string | null = null;
     if (c.contact_id) {
-      cardMovidoPara = await moverParaAEtapaDaEquipe(admin, e, c.contact_id, ator, frase);
+      const lead = await negocioDoContato(admin, e.organizationId, c.contact_id);
+      if (lead) {
+        const linha = await emitLeadActivity(admin, {
+          organizationId: e.organizationId,
+          leadId: lead.id,
+          contactId: c.contact_id,
+          type: "conversation_claimed" satisfies ActivityType,
+          sourceModule: "inbox.comando",
+          sourceId: e.conversationId,
+          actor: ator,
+          reason: frase,
+          payload: { conversation_id: e.conversationId, origem: e.origem, assumiu },
+        });
+        if (!linha.ok) {
+          logger.warn("[equipe-assumiu] linha do tempo não gravada", {
+            organization_id: e.organizationId,
+            conversation_id: e.conversationId,
+          });
+        }
+        cardMovidoPara = await moverParaAEtapaDaEquipe(admin, e, lead, ator, frase);
+      }
     }
 
     return {
@@ -400,36 +415,44 @@ export async function equipeAssumiuRespondendo(
   }
 }
 
-async function moverParaAEtapaDaEquipe(
+type NegocioDoContato = LeadCandidate & { stage_id: string | null };
+
+/** O negócio ativo do contato, pela mesma régua da Inbox (`resolveActiveLeadForContact`). */
+async function negocioDoContato(
   admin: SupabaseClient,
-  e: EntradaDaEquipeAssumiu,
+  orgId: string,
   contactId: string,
-  ator: Actor,
-  frase: string,
-): Promise<string | null> {
+): Promise<NegocioDoContato | null> {
   const [{ data: leads }, { data: padrao }] = await Promise.all([
     admin
       .from("crm_leads")
       .select("id, organization_id, pipeline_id, stage_id, status, last_activity_at, created_at")
-      .eq("organization_id", e.organizationId)
+      .eq("organization_id", orgId)
       .eq("contact_id", contactId),
     admin
       .from("crm_pipelines")
       .select("id")
-      .eq("organization_id", e.organizationId)
+      .eq("organization_id", orgId)
       .eq("is_default", true)
       .eq("is_archived", false)
       .limit(1)
       .maybeSingle(),
   ]);
-  const candidatos = (leads ?? []) as Array<LeadCandidate & { stage_id: string | null }>;
+  const candidatos = (leads ?? []) as NegocioDoContato[];
   const alvo = resolveActiveLeadForContact(candidatos, {
     defaultPipelineId: (padrao as { id: string } | null)?.id ?? null,
   });
   if (!alvo.routed) return null;
-  const lead = candidatos.find((l) => l.id === alvo.leadId);
-  if (!lead) return null;
+  return candidatos.find((l) => l.id === alvo.leadId) ?? null;
+}
 
+async function moverParaAEtapaDaEquipe(
+  admin: SupabaseClient,
+  e: EntradaDaEquipeAssumiu,
+  lead: NegocioDoContato,
+  ator: Actor,
+  frase: string,
+): Promise<string | null> {
   const [{ data: funil }, { data: etapas }] = await Promise.all([
     admin
       .from("crm_pipelines")

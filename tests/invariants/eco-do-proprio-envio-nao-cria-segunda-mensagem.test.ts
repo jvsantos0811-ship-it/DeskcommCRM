@@ -414,16 +414,18 @@ describe("eco do próprio envio social (Zernio) — #1323 parte 2", () => {
     const pausadasDepois = await pausadas();
     expect(novas(pausadasAntes, pausadasDepois)).toContain(destino);
 
-    // Prova direta no banco: a conversa ficou com a IA pausada até um instante
-    // no futuro, com motivo registrado.
+    // Prova direta no banco: a conversa ficou com a IA calada, com motivo
+    // registrado. Desde o PC-029 (decisão do dono, 10/11/2026) a resposta pelo
+    // celular é a EQUIPE ASSUMINDO: o silêncio é durável ('infinity') e só o
+    // "Devolver" solta — antes era um instante no futuro que vencia sozinho.
+    // Lido como texto: o driver devolve 'infinity' como número, não como data.
     const { rows: pausa } = await pool.query<{
       bot_silenced_until: string | null;
       last_handoff_reason: string | null;
-    }>("select bot_silenced_until, last_handoff_reason from conversations where id = $1", [
+    }>("select bot_silenced_until::text as bot_silenced_until, last_handoff_reason from conversations where id = $1", [
       destino,
     ]);
-    expect(pausa[0]!.bot_silenced_until).not.toBeNull();
-    expect(new Date(pausa[0]!.bot_silenced_until as string).getTime()).toBeGreaterThan(Date.now());
+    expect(pausa[0]!.bot_silenced_until).toBe("infinity");
     expect(pausa[0]!.last_handoff_reason).not.toBeNull();
 
     const comMotivo = await pausadasDeFuturo();
