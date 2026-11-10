@@ -98,9 +98,13 @@ async function cenario(): Promise<Cenario> {
   });
   if (e1) throw new Error(`funil: ${e1.message}`);
   const { error: e2 } = await admin.from("crm_stages").insert([
-    { id: triagem, organization_id: org, pipeline_id: pipeline, name: "Triagem", slug: "triagem", position: 1000 },
-    { id: qualificado, organization_id: org, pipeline_id: pipeline, name: "Qualificação", slug: "qualificacao", position: 2000 },
-    { id: perdido, organization_id: org, pipeline_id: pipeline, name: "Não fechou", slug: "nao-fechou", position: 3000, is_lost: true },
+    // As MESMAS chaves nas três linhas: num insert em lote o PostgREST manda a
+    // união das colunas, e a chave que falta numa linha vira NULL explícito —
+    // `is_lost` NULL fura o NOT NULL (o default da coluna só vale quando ela
+    // não é enviada).
+    { id: triagem, organization_id: org, pipeline_id: pipeline, name: "Triagem", slug: "triagem", position: 1000, is_won: false, is_lost: false },
+    { id: qualificado, organization_id: org, pipeline_id: pipeline, name: "Qualificação", slug: "qualificacao", position: 2000, is_won: false, is_lost: false },
+    { id: perdido, organization_id: org, pipeline_id: pipeline, name: "Não fechou", slug: "nao-fechou", position: 3000, is_won: false, is_lost: true },
   ]);
   if (e2) throw new Error(`etapas: ${e2.message}`);
 
