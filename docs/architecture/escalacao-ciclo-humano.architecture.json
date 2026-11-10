@@ -383,8 +383,8 @@
       "lane": "regra",
       "col": 4,
       "type": "service",
-      "label": "lib/escalacao/atendimento-manual.ts",
-      "sublabel": "pausarIaPorAtendimentoManual — pessoa respondeu por fora do CRM (pausa COM PRAZO)"
+      "label": "lib/escalacao/equipe-assumiu.ts",
+      "sublabel": "equipeAssumiuRespondendo — a equipe respondeu (tela do CRM ou celular): assume a conversa, IA calada até o Devolver (PC-029)"
     },
     {
       "id": "avisoSuporteMotor",

@@ -33,10 +33,11 @@ vi.mock("@/lib/channels/marcar-conversa", () => ({
     estado.marcacoes.push(args);
   },
 }));
-vi.mock("@/lib/escalacao/atendimento-manual", () => ({
-  pausarIaPorAtendimentoManual: async (_a: unknown, input: Record<string, unknown>) => {
+// PC-029: a resposta pelo app do celular é a equipe ASSUMINDO (sem prazo).
+vi.mock("@/lib/escalacao/equipe-assumiu", () => ({
+  equipeAssumiuRespondendo: async (_a: unknown, input: Record<string, unknown>) => {
     estado.pausas.push(input);
-    return true;
+    return { aplicado: true };
   },
 }));
 vi.mock("@/lib/audit", () => ({
@@ -212,7 +213,7 @@ describe("parser: smb_message_echoes vira evento de saída", () => {
 });
 
 describe("ingestão do eco", () => {
-  it("grava como saída de humano fora do CRM, na conversa do cliente, e pausa a IA", async () => {
+  it("grava como saída de humano fora do CRM, na conversa do cliente, e a equipe assume", async () => {
     const r = await ingestMetaEcho(adminFalso(), ECO_TEXTO, { organizationId: "org-1" });
 
     expect(r).toEqual({ status: "ingested", messageId: "message-1", conversationId: "conversation-1" });
@@ -236,7 +237,13 @@ describe("ingestão do eco", () => {
       expect.objectContaining({ conversationId: "conversation-1", direction: "outbound" }),
     ]);
     expect(estado.pausas).toEqual([
-      { organizationId: "org-1", conversationId: "conversation-1", canal: "meta" },
+      {
+        organizationId: "org-1",
+        conversationId: "conversation-1",
+        origem: "celular",
+        userId: null,
+        texto: "Já te respondo pelo celular",
+      },
     ]);
     expect(estado.auditorias).toEqual([
       expect.objectContaining({ action: "message.sent", organizationId: "org-1" }),

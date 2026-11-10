@@ -12,6 +12,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { FunilDoNumero } from "./FunilDoNumero";
+import { ResponsavelDoNumero } from "./ResponsavelDoNumero";
 import { ImportarHistorico } from "./ImportarHistorico";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { RenomearConexao } from "./RenomearConexao";
@@ -162,6 +163,7 @@ export function CanalParceiroClient() {
 
         {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
         {estado?.channel_session_id && <FunilDoNumero channelId={estado.channel_session_id} />}
+        {estado?.channel_session_id && <ResponsavelDoNumero channelId={estado.channel_session_id} />}
         {estado?.channel_session_id && (
           <div>
             <RenomearConexao

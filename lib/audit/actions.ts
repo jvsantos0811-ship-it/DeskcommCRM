@@ -1285,6 +1285,9 @@ export const AUDIT_ACTIONS = [
   // que passou a ler por causa dele (metadata: ligado_em, modelo, reserva, quando).
   "leitor.padrao_definido",
   "leitor.ligado_pelo_padrao",
+  // PC-029: o responsável do número — quem fica com a conversa quando a equipe
+  // responde pelo celular (antes e depois).
+  "channel.responsavel_atualizado",
   // PC-024: a planilha do funil (.xlsx/.csv) — quem, quando, quantas linhas,
   // formato, os filtros que valiam (nunca o TEXTO da busca), os campos e quais
   // campos sensíveis foram marcados de propósito.

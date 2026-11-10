@@ -24,7 +24,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import { equipeAssumiuRespondendo } from "@/lib/escalacao/equipe-assumiu";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import {
   ehNumeroInternoDeAviso,
@@ -379,8 +379,9 @@ function previewOfEcho(e: OutboundEchoEvent): string {
  *   qualquer nome errado.
  * - **Gravada como saída `external_device`**, para a conversa ficar inteira na
  *   tela e nos relatórios que já separam "respondido por humano fora do CRM".
- * - **A IA para nesta conversa** (`pausarIaPorAtendimentoManual`): uma pessoa
- *   respondeu pelo celular, e o agente não pode responder por cima.
+ * - **A equipe assume a conversa** (`equipeAssumiuRespondendo`, PC-029): uma
+ *   pessoa respondeu pelo celular, e o agente não pode responder por cima — ele
+ *   fica calado até alguém clicar em "Devolver para a IA".
  *
  * Diferente do QR, aqui NÃO existe o eco do nosso próprio envio: a Meta só
  * entrega em `smb_message_echoes` o que saiu PELO APP. Mesmo assim, se o
@@ -504,10 +505,14 @@ export async function ingestMetaEcho(
     }
   }
 
-  await pausarIaPorAtendimentoManual(admin, {
+  // PC-029: a resposta pelo app do celular (coexistência) = a equipe assumiu;
+  // a IA só volta pelo "Devolver".
+  await equipeAssumiuRespondendo(admin, {
     organizationId: orgId,
     conversationId: conversationId as string,
-    canal: "meta",
+    origem: "celular",
+    userId: null,
+    texto: e.text ?? null,
   });
 
   await audit({

@@ -126,9 +126,12 @@ export type MotivoDoSilencio =
   /** Alguém pausou de propósito, ou o automático passou o caso para uma pessoa. */
   | "pausado"
   /**
-   * Uma pessoa respondeu o cliente pelo CELULAR (fora do CRM). A pausa é
-   * durável: só o comando `#on` pelo celular ou "devolver ao automático" na tela
-   * religam a IA. Ação: devolver quando o atendimento humano terminar.
+   * Uma pessoa respondeu o cliente pelo CELULAR (fora do CRM) e a equipe assumiu
+   * (PC-029). A pausa é durável: só "devolver ao automático" na tela (ou o
+   * comando `#on` pelo celular, quando o agente aceita comandos) religa a IA.
+   * Sem responsável do número, a conversa fica sem dono e é ESTE o rótulo que a
+   * marca como "Equipe (celular)". Ação: devolver quando o atendimento humano
+   * terminar.
    */
   | "atendimento_pelo_celular"
   /** Janela deslizante do envio manual. Ação: NENHUMA — volta sozinho. */
@@ -262,6 +265,17 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
   const comandoFinal: Comando = comando;
 
   const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente;
+  // PC-029: a equipe respondeu pelo celular e ninguém ficou com a conversa. O
+  // contato fica "só humano" (`force_human`) nessa tomada, mas o rótulo que
+  // diz QUEM respondeu é o do celular ("Equipe (celular)"), e não o genérico
+  // "pausado para este cliente": o "Devolver" desfaz os dois de uma vez.
+  const equipePeloCelular = silencio.duravel && fatos.last_handoff_reason === MOTIVO_ATENDIMENTO_MANUAL;
+  // PC-029: quem ASSUME (pelo botão ou respondendo) também deixa o contato "só
+  // humano" — então, com uma pessoa no comando e o silêncio durável, o rótulo
+  // é "alguém assumiu", e não o genérico da trava do contato. O "Devolver"
+  // desfaz as duas travas (`devolverAtendimentoAoAgente`), então a ação que a
+  // tela sugere continua sendo a certa.
+  const pessoaAssumiu = silencio.duravel && Boolean(fatos.assigned_to_user_id);
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
@@ -274,7 +288,7 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
           // decide a AÇÃO — não há nenhuma. Nomear a trava menor faria a tela
           // sugerir um "devolver" que o `stopGate` recusaria na sequência.
           "contato_descadastrado"
-        : travado
+        : travado && !(equipePeloCelular && !fatos.assigned_to_user_id) && !pessoaAssumiu
           ? "contato_travado"
           : // Ordem importa: a trava do CONTATO é mais forte e mais ampla que a da
             // conversa, então ela nomeia o motivo mesmo havendo silêncio local —
@@ -319,7 +333,7 @@ export const ROTULO_DO_COMANDO: Record<Comando["quem"], string> = {
 };
 
 export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
-  atendimento_pelo_celular: "Automático pausado — atendimento pelo celular (#on religa)",
+  atendimento_pelo_celular: "Automático pausado — Equipe (celular) respondeu",
   atendente_no_comando: "Automático pausado — alguém assumiu",
   contato_travado: "Automático pausado para este cliente",
   pausado: "Automático pausado",
