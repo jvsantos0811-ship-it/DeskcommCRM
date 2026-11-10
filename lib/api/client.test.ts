@@ -443,3 +443,103 @@ describe("apiClient — quando a empresa é suspensa com a tela aberta", () => {
     expect(assign).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A SESSÃO MORREU COM A TELA ABERTA (incidente de 10/11/2026): a pessoa saiu
+ * da conta e a aba seguiu aberta. O `proxy.ts` responde 401 `unauthenticated`
+ * a toda chamada, e antes a tela caía em "Algo deu errado" em vez de voltar
+ * ao login.
+ */
+describe("apiClient — quando a sessão morre com a tela aberta", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let assign: ReturnType<typeof vi.fn>;
+  let pathname: string;
+  let search: string;
+
+  const semSessao = () =>
+    jsonResponse(401, {
+      error: { code: "unauthenticated", message: "Authentication required" },
+    });
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    assign = vi.fn();
+    pathname = "/app/kanban";
+    search = "?pipeline=abc";
+    vi.stubGlobal("window", {
+      location: {
+        assign,
+        reload: vi.fn(),
+        get pathname() { return pathname; },
+        get search() { return search; },
+      },
+      sessionStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("leva a janela ao login com volta para a página aberta, e quem chamou termina com o erro", async () => {
+    fetchMock.mockResolvedValue(semSessao());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow("Authentication required");
+    expect(assign).toHaveBeenCalledWith("/login?next=%2Fapp%2Fkanban%3Fpipeline%3Dabc");
+  });
+
+  it("vale também para a leitura ambiente — sem sessão não há tela a preservar", async () => {
+    fetchMock.mockResolvedValue(semSessao());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(
+      cliente.get("/api/v1/team-chat/rooms", { semDesvioDeSuspensao: true }),
+    ).rejects.toThrow();
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("várias sondagens recusadas pedem a navegação UMA vez só", async () => {
+    fetchMock.mockImplementation(async () => semSessao());
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await Promise.allSettled([
+      cliente.get("/api/v1/a"),
+      cliente.get("/api/v1/b"),
+      cliente.get("/api/v1/c"),
+    ]);
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("401 sem envelope JSON também leva ao login", async () => {
+    fetchMock.mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow();
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("fora da área logada (tela pública ou o próprio login) não navega — sem laço", async () => {
+    for (const p of ["/login", "/", "/team/accept-invite/x", "/application"]) {
+      vi.resetModules();
+      assign.mockClear();
+      pathname = p;
+      fetchMock.mockResolvedValue(semSessao());
+      const { apiClient: cliente } = await import("@/lib/api/client");
+      await expect(cliente.get("/api/v1/conversations")).rejects.toThrow();
+      expect(assign, p).not.toHaveBeenCalled();
+    }
+  });
+
+  it("CONTROLE — 403 comum não leva ao login", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(403, { error: { code: "forbidden", message: "sem permissão" } }),
+    );
+    const { apiClient: cliente } = await import("@/lib/api/client");
+
+    await expect(cliente.get("/api/v1/conversations")).rejects.toThrow();
+    expect(assign).not.toHaveBeenCalled();
+  });
+});

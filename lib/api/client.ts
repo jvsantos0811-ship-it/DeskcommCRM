@@ -175,6 +175,38 @@ function irParaOHubDaSuspensao(): void {
   window.location.assign(HUB_DA_SUSPENSAO);
 }
 
+/**
+ * A SESSÃO MORREU COM A TELA ABERTA (incidente de 10/11/2026, escritório
+ * cliente): a pessoa saiu da conta — ou a sessão foi encerrada no servidor — e
+ * a aba seguiu aberta. Toda chamada seguinte recebia 401 do `proxy.ts`, o
+ * cliente só lançava, e a pessoa via "Algo deu errado" com um ID, sem pista de
+ * que bastava entrar de novo. Medido nos logs do Auth: ~30 respostas
+ * `session_not_found` em 3 minutos, todas da mesma aba.
+ *
+ * O destino é um só e não depende de banco: o login, com `next` apontando para
+ * a página onde a pessoa estava (o login passa `next` por `safeNext`). Só
+ * acontece dentro das áreas logadas (`/app`, `/admin`): em tela pública um 401
+ * é resposta esperada, e no próprio login seria laço. Uma vez por
+ * carregamento: o navegador já está indo embora, e várias sondagens recusadas
+ * ao mesmo tempo não precisam pedir a mesma navegação.
+ */
+const CAMINHO_DO_LOGIN = "/login";
+let jaFoiParaOLogin = false;
+
+function irParaOLogin(): void {
+  if (typeof window === "undefined" || jaFoiParaOLogin) return;
+  const { pathname, search } = window.location;
+  const areaLogada =
+    pathname === "/app" ||
+    pathname.startsWith("/app/") ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/");
+  if (!areaLogada) return;
+  jaFoiParaOLogin = true;
+  const volta = encodeURIComponent(`${pathname}${search ?? ""}`);
+  window.location.assign(`${CAMINHO_DO_LOGIN}?next=${volta}`);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -335,6 +367,12 @@ async function request<T>(
 
       // Non-retry error: parse and throw
       const errBody = await readBodySafe(res);
+      // Ver o bloco `CAMINHO_DO_LOGIN` acima. Vale venha o 401 com envelope
+      // (o do `proxy.ts`) ou sem: o `throw` de baixo continua acontecendo,
+      // porque a navegação não é instantânea.
+      if (res.status === 401) {
+        irParaOLogin();
+      }
       if (isApiErrorBody(errBody)) {
         const e = errBody.error;
         // Ver o bloco `MARCA_DE_RECARGA` acima. O `throw` continua acontecendo:
