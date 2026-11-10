@@ -2,8 +2,7 @@
  * POST /api/v1/webhooks/assinatura/:token — o aviso `contrato.assinado` de um
  * provedor de assinatura eletrônica (PC-003, item 3 (a)).
  *
- * NENHUM provedor está ligado ainda: esta é a porta e a validação, prontas para
- * o dia em que o escritório escolher um (ZapSign, Clicksign…). O provedor manda:
+ * Duas formas de aviso entram aqui. A genérica (integração própria) manda:
  *
  *   POST /api/v1/webhooks/assinatura/<token-da-organização>
  *   x-assinatura-segredo: <segredo da organização>
@@ -17,6 +16,15 @@
  * (`recusas_da_ia`, tipo `assinatura_recusada`) quando a organização é
  * conhecida. Válido: o MESMO efeito do botão "Assinatura confirmada" da equipe,
  * com origem "provedor".
+ *
+ * A outra (PC-030) é a do serviço de assinatura eletrônica ligado em
+ * Configurações › Assinatura eletrônica: o serviço manda o aviso no formato
+ * DELE, num caminho e com um segredo PRÓPRIOS (`assinatura_eletronica_contas.
+ * aviso_*`, cadastrados ao salvar a conta) — a porta genérica e a do serviço
+ * não dividem segredo, então trocar uma não corta a outra. O corpo só diz QUAL
+ * documento mudou; a situação é relida no serviço com a credencial da
+ * organização e aplicada por `lib/contratos/acompanhar.ts` (assinado,
+ * recusado, expirado, visto). O mesmo aviso repetido não muda nada.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -30,6 +38,11 @@ import { confirmarAssinatura, dataDeAssinaturaValida } from "@/lib/leads/assinat
 import { registrarRecusaPeloSupabase } from "@/lib/leads/trava-da-ia";
 import { HEADER_SEGREDO_DA_ASSINATURA, segredoConfere } from "@/lib/leads/assinatura-webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { aplicarAvisoDoServico } from "@/lib/contratos/acompanhar";
+import { contaDoCaminhoDoAviso, type LinhaDaConta } from "@/lib/contratos/assinatura/conta";
+import { lerAvisoDoServico } from "@/lib/contratos/assinatura/registro";
+import { ErroDoServico } from "@/lib/contratos/assinatura/servico";
+import { ehProvedorEletronico } from "@/lib/contratos/vocabulario";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +76,13 @@ export async function POST(
     .eq("path_token", token)
     .maybeSingle();
   const c = chave as { organization_id: string; segredo_sha256: string; ativo: boolean } | null;
-  if (!c || !c.ativo) return fail("not_found", "Not found.", 404, { requestId });
+  if (!c) {
+    // PC-030: não é a porta genérica — pode ser a do serviço de assinatura.
+    const conta = await contaDoCaminhoDoAviso(admin, token).catch(() => null);
+    if (!conta || !conta.ativo || !conta.aviso_segredo_sha256) return fail("not_found", "Not found.", 404, { requestId });
+    return avisoDoServico(req, admin, conta, requestId);
+  }
+  if (!c.ativo) return fail("not_found", "Not found.", 404, { requestId });
 
   const recusar = async (codigo: string, motivo: string, status: number, leadId?: string | null) => {
     await registrarRecusaPeloSupabase(admin, {
@@ -135,6 +154,52 @@ export async function POST(
     if (err instanceof ApiError) {
       // Ex.: o funil exige campo no ganho. Nada mudou; a equipe vê na aba.
       return recusar(err.code, `Assinatura recebida, mas o negócio não fechou: ${err.message}`, err.status, corpo.lead_id);
+    }
+    throw err;
+  }
+}
+
+/**
+ * O aviso do SERVIÇO de assinatura ligado na organização (ZapSign…), no
+ * caminho próprio dele. Segredo conferido contra o hash da conta, em tempo
+ * constante; o corpo só diz QUAL documento mudou, e a situação é relida no
+ * serviço com a credencial da organização.
+ */
+async function avisoDoServico(
+  req: NextRequest,
+  admin: ReturnType<typeof createAdminClient>,
+  conta: LinhaDaConta,
+  requestId: string,
+): Promise<Response> {
+  const recusar = async (codigo: string, motivo: string, status: number) => {
+    await registrarRecusaPeloSupabase(admin, {
+      organizationId: conta.organization_id,
+      tipo: "assinatura_recusada",
+      ferramenta: "webhook_assinatura",
+      codigo,
+      motivo,
+    });
+    return fail(codigo, motivo, status, { requestId });
+  };
+  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "")) {
+    return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
+  }
+  const bruto: unknown = await req.json().catch(() => null);
+  const aviso = ehProvedorEletronico(conta.provedor) ? lerAvisoDoServico(conta.provedor, bruto) : null;
+  if (!aviso) {
+    return recusar("payload_invalido", "Aviso do serviço de assinatura com formato inválido: ignorado.", 422);
+  }
+  try {
+    const desfecho = await aplicarAvisoDoServico(admin, {
+      orgId: conta.organization_id,
+      documentoId: aviso.documentoId,
+      requestId,
+    });
+    return ok({ evento: aviso.evento, ...desfecho }, { requestId });
+  } catch (err) {
+    if (err instanceof ErroDoServico) {
+      // O serviço fora (ou a chave trocada): 503 faz o serviço tentar de novo.
+      return fail("servico_indisponivel", "Serviço de assinatura indisponível agora.", 503, { requestId });
     }
     throw err;
   }

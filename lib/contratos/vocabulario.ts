@@ -10,24 +10,46 @@
  *
  *   rascunho  → o PDF do escritório foi anexado ao negócio, ainda não saiu;
  *   enviado   → saiu pelo WhatsApp e espera a assinatura do cliente;
- *   assinado  → alguém da equipe marcou que o cliente assinou;
- *   recusado  → alguém marcou que o cliente não vai assinar;
+ *   assinado  → alguém da equipe marcou que o cliente assinou (ou o serviço
+ *               de assinatura avisou);
+ *   recusado  → o cliente não vai assinar (marcado ou recusado no serviço);
+ *   expirado  → o prazo do pedido no serviço de assinatura venceu (PC-030);
  *   cancelado → a equipe desistiu deste documento (fica no histórico).
  *
- * `assinado`, `recusado` e `cancelado` são FINAIS: um contrato novo é outro
- * arquivo, e reabrir apagaria a história do que o cliente recebeu.
+ * `assinado`, `recusado`, `expirado` e `cancelado` são FINAIS: um contrato
+ * novo é outro arquivo, e reabrir apagaria a história do que o cliente
+ * recebeu. "Visualizado" não é status: é a data em que o cliente abriu o link
+ * (`crm_contracts.visualizado_em`), e o contrato segue `enviado`.
  */
-export const STATUS_DO_CONTRATO = ["rascunho", "enviado", "assinado", "recusado", "cancelado"] as const;
+export const STATUS_DO_CONTRATO = ["rascunho", "enviado", "assinado", "recusado", "expirado", "cancelado"] as const;
 export type StatusDoContrato = (typeof STATUS_DO_CONTRATO)[number];
 
 /**
- * Quem colhe a assinatura. Hoje só `manual`: o PDF vai pelo WhatsApp como está
- * e uma pessoa marca o desfecho. Um provedor de assinatura eletrônica entra
- * aqui, no CHECK da coluna (migration nova) e no registro de
- * `lib/contratos/provedores.ts` — nos três, ou o par acima reprova.
+ * Quem colhe a assinatura. `manual`: o PDF vai pelo WhatsApp como está e uma
+ * pessoa marca o desfecho. Os serviços de assinatura eletrônica (PC-030)
+ * entram UM POR VEZ, cada um só depois de passar nos critérios com a conta de
+ * teste dele: aqui, no CHECK da coluna (migration nova) e no registro de
+ * `lib/contratos/assinatura/registro.ts` — nos três, ou o par acima reprova.
+ * Ordem combinada: ZapSign → Clicksign → D4Sign → Autentique.
  */
-export const PROVEDORES_DE_ASSINATURA = ["manual"] as const;
+export const PROVEDORES_DE_ASSINATURA = ["manual", "zapsign"] as const;
 export type ProvedorDeAssinaturaId = (typeof PROVEDORES_DE_ASSINATURA)[number];
+
+/** Os serviços de assinatura eletrônica (todo provedor menos o `manual`). */
+export const PROVEDORES_ELETRONICOS = PROVEDORES_DE_ASSINATURA.filter(
+  (p): p is Exclude<ProvedorDeAssinaturaId, "manual"> => p !== "manual",
+);
+export type ProvedorEletronicoId = Exclude<ProvedorDeAssinaturaId, "manual">;
+
+/** O nome do serviço como a tela e a linha do tempo mostram. */
+export const NOME_DO_PROVEDOR: Record<ProvedorDeAssinaturaId, string> = {
+  manual: "Envio manual",
+  zapsign: "ZapSign",
+};
+
+export function ehProvedorEletronico(id: string): id is ProvedorEletronicoId {
+  return (PROVEDORES_ELETRONICOS as readonly string[]).includes(id);
+}
 
 /** O desfecho que uma pessoa marca. */
 export const DESFECHOS_DO_CONTRATO = ["assinado", "recusado", "cancelado"] as const;
@@ -49,7 +71,7 @@ export function podeDecidir(status: StatusDoContrato, desfecho: DesfechoDoContra
 }
 
 export function ehFinal(status: StatusDoContrato): boolean {
-  return status === "assinado" || status === "recusado" || status === "cancelado";
+  return status === "assinado" || status === "recusado" || status === "expirado" || status === "cancelado";
 }
 
 /** Limite do arquivo: o mesmo do bucket `contratos` (20 MB). */

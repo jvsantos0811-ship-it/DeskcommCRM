@@ -26,6 +26,7 @@ import { provedorDeAssinatura } from "@/lib/contratos/provedores";
 import { COLUNAS_DO_CONTRATO, carregarContrato, paraATela, type LinhaDoContrato } from "@/lib/contratos/servidor";
 import {
   DESFECHOS_DO_CONTRATO,
+  ehProvedorEletronico,
   podeDecidir,
   TAMANHO_MAXIMO_DO_CONTRATO,
   type DesfechoDoContrato,
@@ -36,6 +37,7 @@ import type { ActivityType } from "@/lib/leads/activity-vocabulary";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { servicoDaOrganizacao } from "@/lib/contratos/assinatura/conta";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +152,22 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_state_transition", t("Alguém já mudou este contrato. Recarregue para ver como ele está."), 409, {
       requestId,
     });
+  }
+
+  // PC-030: cancelar um contrato com pedido vivo no serviço de assinatura tira
+  // o pedido de lá também — senão o cliente ainda conseguiria assinar o que a
+  // equipe desistiu. Melhor esforço: o cancelamento no CRM já valeu.
+  if (desfecho === "cancelado" && ehProvedorEletronico(contrato.provedor_assinatura) && contrato.provedor_documento_id) {
+    const s = await servicoDaOrganizacao(admin, orgId).catch(() => null);
+    if (s?.ok) {
+      await s.valor.servico.cancelar(contrato.provedor_documento_id).catch((err: unknown) =>
+        logger.warn("contracts.cancel_no_servico_falhou", {
+          organizationId: orgId,
+          contratoId: contrato.id,
+          erro: err instanceof Error ? err.message.slice(0, 120) : "erro",
+        }),
+      );
+    }
   }
 
   if (contrato.lead_id) {

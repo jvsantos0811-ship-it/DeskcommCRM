@@ -23,6 +23,7 @@ import type { ContratoDoNegocio } from "@/lib/contratos/tipos";
 const enviar = vi.fn(async () => ({}));
 const decidir = vi.fn(async () => ({}));
 const anexar = vi.fn(async () => ({}));
+const gerarPeloModelo = vi.fn(async (): Promise<unknown> => ({}));
 let contratos: ContratoDoNegocio[] = [];
 
 vi.mock("@/hooks/kanban/useContratosDoLead", () => ({
@@ -31,10 +32,12 @@ vi.mock("@/hooks/kanban/useContratosDoLead", () => ({
     anexar: { mutateAsync: anexar, isPending: false },
     enviar: { mutateAsync: enviar, isPending: false },
     decidir: { mutateAsync: decidir, isPending: false },
+    gerarPeloModelo: { mutateAsync: gerarPeloModelo, isPending: false },
   }),
 }));
 
 import { ContratosDoNegocio } from "@/components/kanban/ContratosDoNegocio";
+import { ApiError } from "@/lib/api/types";
 
 function contrato(campos: Partial<ContratoDoNegocio>): ContratoDoNegocio {
   return {
@@ -54,6 +57,9 @@ function contrato(campos: Partial<ContratoDoNegocio>): ContratoDoNegocio {
     motivo: null,
     ultima_falha_envio: null,
     created_at: "2026-10-27T12:00:00Z",
+    visualizado_em: null,
+    modelo_versao: null,
+    origem_envio: "pessoa",
     entrega: null,
     ...campos,
   };
@@ -68,6 +74,8 @@ beforeEach(() => {
   enviar.mockClear();
   decidir.mockClear();
   anexar.mockClear();
+  gerarPeloModelo.mockReset();
+  gerarPeloModelo.mockImplementation(async () => ({}));
   contratos = [];
 });
 
@@ -76,6 +84,46 @@ describe("Contratos no card do negócio", () => {
     const secao = montar();
     expect(secao).toHaveTextContent("Nenhum contrato neste negócio.");
     expect(within(secao).getByRole("button", { name: "Anexar contrato" })).toBeInTheDocument();
+  });
+
+  it("⭐ gerar pelo modelo com dado faltando: a tela lista o que perguntar ao cliente", async () => {
+    gerarPeloModelo.mockRejectedValueOnce(
+      new ApiError(422, "faltam_dados", {
+        faltas: [
+          { campo: "cpf", motivo: "cpf_invalido", rotulo: "CPF", frase: "CPF: o CPF não é válido (confira os 11 números com o cliente)." },
+          { campo: "cep", motivo: "vazio", rotulo: "CEP", frase: "CEP: falta perguntar ao cliente." },
+        ],
+      }, "req", "Faltam dados para gerar o contrato."),
+    );
+    const secao = montar();
+    fireEvent.click(within(secao).getByRole("button", { name: "Gerar pelo modelo" }));
+    const faltas = await screen.findByTestId("contrato-faltas");
+    expect(gerarPeloModelo).toHaveBeenCalledTimes(1);
+    expect(faltas).toHaveTextContent("CPF: o CPF não é válido (confira os 11 números com o cliente).");
+    expect(faltas).toHaveTextContent("CEP: falta perguntar ao cliente.");
+  });
+
+  it("⭐ quem só lê não vê o botão de gerar pelo modelo", () => {
+    const secao = montar(false);
+    expect(within(secao).queryByRole("button", { name: "Gerar pelo modelo" })).toBeNull();
+  });
+
+  it("contrato pela assinatura eletrônica mostra quando o cliente abriu, e o prazo vencido", () => {
+    contratos = [
+      contrato({
+        id: "c2",
+        status: "enviado",
+        provedor_assinatura: "zapsign",
+        desfecho_por_pessoa: false,
+        enviado_em: "2026-10-27T12:05:00Z",
+        visualizado_em: "2026-10-27T14:00:00Z",
+        link_assinatura: "https://exemplo.invalid/assinar",
+      }),
+      contrato({ id: "c3", status: "expirado", provedor_assinatura: "zapsign", decidido_em: "2026-11-03T12:00:00Z" }),
+    ];
+    const secao = montar();
+    expect(secao).toHaveTextContent("Aberto pelo cliente em");
+    expect(secao).toHaveTextContent("Prazo vencido");
   });
 
   it("⭐ enviado com o WhatsApp fora do ar: a tela diz que está na fila", () => {

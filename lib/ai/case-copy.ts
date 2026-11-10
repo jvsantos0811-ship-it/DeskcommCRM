@@ -34,6 +34,9 @@ export const TIPOS_DE_CASO = {
   problema: "Algo deu errado",
   financeiro: "Pagamento",
   acesso: "Acesso ou cadastro",
+  // PC-030: o contrato de assinatura eletrônica — conferir pelo CPF depois de
+  // assinado, recusa, prazo vencido, reclamação, contrato que não foi gerado.
+  contrato: "Contrato",
   outro: "Outro",
 } as const;
 
@@ -46,6 +49,7 @@ export const TIPOS_DE_CASO_PARA_A_IA: Record<TipoDeCaso, string> = {
   problema: "algo deu errado, uma reclamação, um atendimento insatisfatório",
   financeiro: "pagamento, cobrança, valor, reembolso",
   acesso: "liberar acesso, corrigir cadastro, senha",
+  contrato: "o contrato do cliente: reclamação, pedido de mudança, recusa ou contrato que não saiu",
   outro: "não se encaixa em nenhum dos acima",
 };
 

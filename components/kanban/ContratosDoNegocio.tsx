@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useContratosDoLead } from "@/hooks/kanban/useContratosDoLead";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { ApiError } from "@/lib/api/types";
 import type { ContratoDoNegocio } from "@/lib/contratos/tipos";
 import { TAMANHO_MAXIMO_DO_CONTRATO, type StatusDoContrato } from "@/lib/contratos/vocabulario";
 import { FileText, Plus } from "@/lib/ui/icons";
@@ -35,6 +37,8 @@ function rotuloDoStatus(status: StatusDoContrato, t: T): string {
       return t("Assinado");
     case "recusado":
       return t("Recusado");
+    case "expirado":
+      return t("Prazo vencido");
     case "cancelado":
       return t("Cancelado");
   }
@@ -43,7 +47,7 @@ function rotuloDoStatus(status: StatusDoContrato, t: T): string {
 function varianteDoStatus(status: StatusDoContrato): "neutral" | "warning" | "success" | "error" | "secondary" {
   if (status === "enviado") return "warning";
   if (status === "assinado") return "success";
-  if (status === "recusado") return "error";
+  if (status === "recusado" || status === "expirado") return "error";
   if (status === "cancelado") return "secondary";
   return "neutral";
 }
@@ -87,9 +91,27 @@ function frasesDaEntrega(contrato: ContratoDoNegocio, t: T): { texto: string; er
 export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
   const t = useT();
   const tagDoIdioma = useTagDeIdioma();
-  const { lista, anexar, enviar, decidir } = useContratosDoLead(leadId, aberto);
+  const { lista, anexar, enviar, decidir, gerarPeloModelo: gerar } = useContratosDoLead(leadId, aberto);
   const contratos = lista.data ?? [];
   const aguardando = contratos.filter((c) => c.status === "enviado").length;
+
+  // PC-030: gerar pelo modelo de contrato aprovado do escritório. Faltando
+  // dado, a lista do que perguntar ao cliente aparece aqui mesmo.
+  const [faltasDoModelo, setFaltasDoModelo] = useState<string[] | null>(null);
+  const gerarPeloModelo = async () => {
+    try {
+      await gerar.mutateAsync();
+      setFaltasDoModelo(null);
+    } catch (err) {
+      const faltas = (err instanceof ApiError ? (err.details as { faltas?: Array<{ frase?: string }> } | undefined) : undefined)
+        ?.faltas;
+      if (Array.isArray(faltas) && faltas.length > 0) {
+        setFaltasDoModelo(faltas.map((f) => f.frase ?? "").filter(Boolean));
+        return;
+      }
+      showApiError(err);
+    }
+  };
 
   const [anexando, setAnexando] = useState(false);
   const [arquivo, setArquivo] = useState<File | null>(null);
@@ -172,16 +194,39 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
           ) : null}
         </h3>
         {podeEditar && !anexando ? (
-          <button
-            type="button"
-            onClick={() => setAnexando(true)}
-            className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-          >
-            <Plus size={12} aria-hidden />
-            {t("Anexar contrato")}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void gerarPeloModelo()}
+              disabled={gerar.isPending}
+              className="flex items-center gap-1 text-xs font-medium text-accent hover:underline disabled:opacity-60"
+              data-testid="contrato-gerar-pelo-modelo"
+            >
+              <FileText size={12} aria-hidden />
+              {gerar.isPending ? t("Gerando…") : t("Gerar pelo modelo")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAnexando(true)}
+              className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+            >
+              <Plus size={12} aria-hidden />
+              {t("Anexar contrato")}
+            </button>
+          </div>
         ) : null}
       </div>
+
+      {faltasDoModelo ? (
+        <div className="mb-3 rounded-md border border-warning-fg/40 bg-warning-bg p-3 text-xs text-warning-fg" data-testid="contrato-faltas">
+          <p className="font-medium">{t("Faltam dados para gerar o contrato:")}</p>
+          <ul className="mt-1 list-disc pl-4">
+            {faltasDoModelo.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {anexando ? (
         <div className="mb-3 space-y-2 rounded-md border border-border bg-surface-elevated p-3">
@@ -262,8 +307,12 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                     <p className="mt-0.5 text-[11px] text-text-muted">
                       {c.status === "rascunho" && `${t("Anexado em")} ${quando(c.created_at)}`}
                       {c.status === "enviado" && `${t("Enviado em")} ${quando(c.enviado_em)}`}
+                      {c.status === "enviado" && c.visualizado_em
+                        ? ` · ${t("Aberto pelo cliente em")} ${quando(c.visualizado_em)}`
+                        : null}
                       {c.status === "assinado" && `${t("Assinado em")} ${quando(c.decidido_em)}`}
                       {c.status === "recusado" && `${t("Recusado em")} ${quando(c.decidido_em)}`}
+                      {c.status === "expirado" && `${t("Prazo vencido em")} ${quando(c.decidido_em)}`}
                       {c.status === "cancelado" && `${t("Cancelado em")} ${quando(c.decidido_em)}`}
                     </p>
                   </div>

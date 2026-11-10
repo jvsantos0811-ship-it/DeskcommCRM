@@ -18,6 +18,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { BUCKET_DOS_CONTRATOS, caminhoDoOriginal, pareceUmPdf } from "@/lib/contratos/arquivo";
+import { provedorDaOrganizacao } from "@/lib/contratos/gerar-do-modelo";
 import { COLUNAS_DO_CONTRATO, paraATela, type LinhaDoContrato } from "@/lib/contratos/servidor";
 import { TAMANHO_MAXIMO_DO_CONTRATO } from "@/lib/contratos/vocabulario";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -135,6 +136,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       arquivo_path: caminho,
       arquivo_nome: nomeOriginal,
       arquivo_bytes: file.size,
+      // PC-030: com o serviço de assinatura ligado, o PDF anexado também sai
+      // por ele (link no WhatsApp, desfecho pelo aviso do serviço).
+      provedor_assinatura: await provedorDaOrganizacao(admin, authz.org.orgId),
       criado_por_user_id: authz.user.id,
     })
     .select(COLUNAS_DO_CONTRATO)

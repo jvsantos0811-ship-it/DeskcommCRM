@@ -3570,6 +3570,31 @@ partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
 
+## J48 — O escritório liga a assinatura eletrônica e o contrato fecha o negócio sozinho `[P1]` (2026-11-10, PC-030 parte 1)
+
+Configurações › Assinatura eletrônica (gerente ou dono): o serviço (ZapSign nesta
+entrega), o ambiente, a chave da API, o prazo e os modelos de contrato aprovados pelo
+advogado. No card, "Gerar pelo modelo" e "Enviar ao cliente"; o serviço avisa o CRM
+pelo caminho próprio dele, e o contrato acompanha sozinho.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J48.1 | Salvar a conta com chave errada | nada gravado; a frase diz para conferir se a chave é do ambiente escolhido | a medir (tela, com conta de teste da ZapSign) |
+| J48.2 | Salvar a conta com chave certa | chave testada, aviso cadastrado no serviço com caminho e segredo próprios, chave guardada cifrada (só os 4 últimos na tela) | a medir (tela, com conta de teste da ZapSign) |
+| J48.3 | Modelo sem aprovação | "Gerar pelo modelo" recusa: o modelo ainda não foi aprovado pelo advogado | **UNIT** (`lib/contratos/modelo-do-contrato.test.ts`, rota `do-modelo`) |
+| J48.4 | Dado faltando ou não confirmado (CPF inválido, CEP incompleto) | o card lista o que perguntar ao cliente, campo por campo | **UNIT** — `tests/unit/contratos-do-negocio-na-tela.test.tsx` ("gerar pelo modelo com dado faltando") + `modelo-do-contrato.test.ts` |
+| J48.5 | Mudar o texto do modelo aprovado | versão sobe, aprovação some | **UNIT** (`patchDoModelo`) + **DB** (a aprovação é inteira: data e nome juntos) |
+| J48.6 | O cliente assina no serviço | contrato assinado, negócio na etapa de ganho com a tag `contrato-assinado`, caso "Conferir processo e advogado pelo CPF antes de dar entrada" | **DB** — `tests/invariants/assinatura-eletronica-aviso.test.ts` (rota real, situação lida do JSON do serviço, `confirmarAssinatura` real) |
+| J48.7 | O mesmo aviso chega de novo | nada muda; um caso só | **DB** (mesmo arquivo) + **UNIT** (`lib/contratos/acompanhar.test.ts`) |
+| J48.8 | Recusa ou prazo vencido | contrato recusado (com o motivo do cliente) ou expirado, caso para a equipe, nada reenviado | **UNIT** (`acompanhar.test.ts`) |
+| J48.9 | Segredo da porta genérica na porta do serviço (e o contrário) | 401, nada muda, recusa registrada | **DB** (`assinatura-eletronica-aviso.test.ts`) |
+| J48.10 | A chave da conta e os modelos pelo PostgREST | conta: `permission denied` para anon e authenticated; modelos: cada organização lê só os seus, a sessão não escreve | **DB** (`tests/invariants/assinatura-eletronica.test.ts`) |
+
+Não provado pela tela nesta entrega: o fluxo inteiro contra a ZapSign de verdade (pede a
+conta de teste do escritório, que o João está criando; a chave entra pela tela, nunca pelo
+chat). O envio pela IA (`enviar_contrato`), a aprovação da equipe antes do envio e a
+reclamação que passa para humano são da parte 2.
+
 ## J49 — O card mostra o nome de quem conversa e o resumo das respostas `[P1]` (2026-11-10, PC-026)
 
 | # | Caso | Expectativa | Resultado |
