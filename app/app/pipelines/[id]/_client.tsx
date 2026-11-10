@@ -29,6 +29,9 @@ import { FiltrosDaQualidade } from "@/components/kanban/FiltrosDaQualidade";
 import { rotuloDoInteresse } from "@/lib/kanban/vocabulary";
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
+import { ExportarFunil } from "@/components/kanban/ExportarFunil";
+import { useUser } from "@/hooks/auth/AuthProvider";
+import type { CampoDoFunil } from "@/lib/funil/exportar";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -62,6 +65,7 @@ export function PipelinePageClient({
   funis: Array<{ id: string; name: string }>;
 }) {
   const t = useT();
+  const user = useUser();
   const { data, isLoading, error, pulses, realtimeStatus, seguranca } = useBoard(pipelineId);
   const router = useRouter();
   const pathname = usePathname();
@@ -263,6 +267,18 @@ export function PipelinePageClient({
               {t("Calendário")}
             </button>
           </div>
+          {/* PC-024: a planilha do funil — só gerente ou dono (a rota cobra o
+              mesmo), com os cards que o quadro mostra agora. */}
+          {data && ROLE_RANK[role] >= ROLE_RANK.manager && user.support?.access_mode !== "support_readonly" && (
+            <ExportarFunil
+              key={data.pipeline.id}
+              pipelineId={pipelineId}
+              etapas={data.stages.map((s) => ({ id: s.id, name: s.name }))}
+              campos={((data.pipeline.settings as { fields?: unknown } | null)?.fields ?? []) as CampoDoFunil[]}
+              idsVisiveis={filteredLeads.map((l) => l.id)}
+              filtros={filters}
+            />
+          )}
           <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
             <Plus size={16} className="mr-2" /> {t("Novo Lead")}
           </Button>

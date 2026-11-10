@@ -16,6 +16,7 @@ import { ChatThread } from "@/components/inbox/ChatThread";
 import { Composer } from "@/components/inbox/Composer";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { MensagensAgendadas } from "@/components/inbox/MensagensAgendadas";
+import { ComandoNoNegocio } from "./ComandoNoNegocio";
 import type { Message } from "@/lib/types/messaging";
 
 /**
@@ -101,11 +102,15 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-chat-do-negocio>
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1">
-        <span className="truncate text-sm font-medium text-text">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-border px-3 py-1">
+        <span className="min-w-0 truncate text-sm font-medium text-text">
           {rotuloParaAEquipe(c.contacts, t)}
         </span>
-        {linkDoInbox}
+        {/* PC-024: assumir e devolver sem sair do funil — o mesmo serviço do Inbox. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <ComandoNoNegocio conversa={c} />
+          {linkDoInbox}
+        </span>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden" data-testid="area-de-mensagens">
         <ChatThread

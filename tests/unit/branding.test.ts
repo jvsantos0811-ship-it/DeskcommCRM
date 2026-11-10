@@ -841,6 +841,12 @@ type CategoriaDeHost =
 type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
+  // ── planilha do funil (PC-024): o vocabulário do formato .xlsx ──
+  "schemas.openxmlformats.org": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "namespace XML do Office Open XML que `lib/planilha/xlsx.ts` grava dentro do .xlsx exportado do funil. Não é chamado: é o identificador que o Excel, o LibreOffice e o Google Planilhas exigem para reconhecer o arquivo como planilha. Trocar pelo domínio do revendedor corromperia o arquivo.",
+  },
   "chatgpt.com": {
     categoria: "CONSOLE",
     motivo:
@@ -1257,6 +1263,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // protocolo manda. Entrou aqui porque a régua nova do #914 passou a
       // enxergá-lo, e não porque o produto ganhou host novo.
       "s.whatsapp.net",
+      // Decisão escrita (PC-024): namespace do formato .xlsx gravado na planilha
+      // exportada do funil — identificador de formato, nunca destino de chamada.
+      "schemas.openxmlformats.org",
       "tusitio.com",
       // Exemplo de link do WhatsApp gerado pela tela de Conversões (#924). Está
       // aqui, e não em FORNECEDOR, porque o produto NÃO fala com esse host: quem

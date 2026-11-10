@@ -264,6 +264,14 @@ export const customFieldSchema = z.object({
    * comum, o caminho de todo funil instalado hoje.
    */
   com_status: z.boolean().optional(),
+  /**
+   * DADO SENSÍVEL (PC-024, item 4). Ligado, o campo fica FORA da planilha
+   * exportada do funil por padrão — só entra quando quem exporta o marca de
+   * propósito. Campos de saúde e de documento já são tratados assim pelo nome
+   * (`lib/funil/exportar.ts`, `campoSensivel`); a marca cobre o resto. Ausente =
+   * campo comum.
+   */
+  sensivel: z.boolean().optional(),
 });
 export type CustomFieldDef = z.infer<typeof customFieldSchema>;
 
