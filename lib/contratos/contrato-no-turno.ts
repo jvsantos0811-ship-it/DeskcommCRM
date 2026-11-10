@@ -20,6 +20,8 @@ import { lerLinhaDaConta } from "@/lib/contratos/assinatura/conta";
 import { negocioAtivoDoContato } from "@/lib/contratos/enviar-pela-ia";
 import { etapaDoContrato } from "@/lib/contratos/regra-da-ia";
 import { ehProvedorEletronico, type StatusDoContrato } from "@/lib/contratos/vocabulario";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export interface ContratoParaOTurno {
   id: string;
@@ -40,11 +42,12 @@ export interface ContratoNoTurno {
   leadId: string | null;
 }
 
+/** "10/11 às 14:00" no fuso da organização: texto do prompt do agente, não interface. */
 function quando(iso: string | null, fuso: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const p = new Intl.DateTimeFormat("pt-BR", {
+  const p = new Intl.DateTimeFormat(tagDeIdioma(IDIOMA_PADRAO), {
     timeZone: fuso,
     day: "2-digit",
     month: "2-digit",

@@ -3570,7 +3570,7 @@ partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
 
-## J48 — O escritório liga a assinatura eletrônica e o contrato fecha o negócio sozinho `[P1]` (2026-11-10, PC-030 parte 1)
+## J48 — O escritório liga a assinatura eletrônica e o contrato fecha o negócio sozinho `[P1]` (2026-11-10, PC-030 partes 1 e 2)
 
 Configurações › Assinatura eletrônica (gerente ou dono): o serviço (ZapSign nesta
 entrega), o ambiente, a chave da API, o prazo e os modelos de contrato aprovados pelo
@@ -3590,7 +3590,17 @@ pelo caminho próprio dele, e o contrato acompanha sozinho.
 | J48.9 | Segredo da porta genérica na porta do serviço (e o contrário) | 401, nada muda, recusa registrada | **DB** (`assinatura-eletronica-aviso.test.ts`) |
 | J48.10 | A chave da conta e os modelos pelo PostgREST | conta: `permission denied` para anon e authenticated; modelos: cada organização lê só os seus, a sessão não escreve | **DB** (`tests/invariants/assinatura-eletronica.test.ts`) |
 
+| J48.11 | A IA pede o contrato com "já tem advogado ou processo?" = SIM confirmado | nada é gerado; a conversa passa para a equipe e o card vai para "Análise humana" | **DB** — `tests/invariants/contrato-pela-ia.test.ts` + **UNIT** (`lib/contratos/regra-da-ia.test.ts`) |
+| J48.12 | A IA pede o contrato sem o NÃO confirmado, ou fora da "Etapa em que a IA envia o contrato" | nada é gerado; a ferramenta diz o que perguntar ou que a etapa é outra | **DB** + **UNIT** (mesmos arquivos) |
+| J48.13 | Aprovação da equipe ligada | rascunho "Gerado pela IA", caso "Contrato pronto para aprovar"; nada sai; pedir de novo não duplica | **DB** (`contrato-pela-ia.test.ts`) |
+| J48.14 | A equipe clica "Aprovar e enviar" ou "Corrigir" no card | o contrato sai (ou o rascunho é descartado) e o caso de aprovação sai da fila, só o deste contrato | **DB** (`fecharCasoDeAprovacao`) |
+| J48.15 | Aprovação desligada (o padrão) | o link sai pelo WhatsApp e o negócio ganha a tag `contrato-enviado`; contrato já enviado não gera outro | **DB** (`contrato-pela-ia.test.ts`) |
+| J48.16 | O cliente reclama do contrato enviado | caso com as palavras dele, card de "Aguardando assinatura" para "Análise humana" (para trás), a assinatura continua aberta; nunca sai de ganho | **DB** (`levarParaAnaliseHumana`) + **UNIT** (`destinoDaAnaliseHumana`) |
+| J48.17 | A IA no turno seguinte | sabe a situação do contrato (enviado, aberto, assinado, recusado, vencido) com data e hora, e que dúvida de COMO assinar não é reclamação | **UNIT** (`blocoDoContrato`) |
+| J48.18 | Falha ao gerar ou enviar | nunca silêncio: caso "Contrato não gerado" e a IA diz que a equipe vai mandar | **UNIT** (`resultadoDoEnvioParaOModelo`) |
+
 Não provado pela tela nesta entrega: o fluxo inteiro contra a ZapSign de verdade (pede a
 conta de teste do escritório, que o João está criando; a chave entra pela tela, nunca pelo
-chat). O envio pela IA (`enviar_contrato`), a aprovação da equipe antes do envio e a
-reclamação que passa para humano são da parte 2.
+chat), nem a conversa real com o modelo chamando `enviar_contrato` (a ferramenta é provada
+direto, contra o banco; a prova em par pela tela pede a conta de teste). Fora da janela de
+24 h a IA não manda o link: abre um caso para a equipe mandar com um modelo aprovado da Meta.

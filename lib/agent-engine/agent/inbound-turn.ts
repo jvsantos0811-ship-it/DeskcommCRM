@@ -3349,10 +3349,10 @@ async function executarTurnoDoAgente(
   // — medido num tenant de produção: caso aberto, funil parado em "Novo contato".
   // Nunca bloqueia nem derruba o turno — mesma disciplina de `triggerHandoff` (G1-G4),
   // que já chama o mesmo helper para o handoff por palavra-chave do cliente.
+  // `leadId` aqui é o CONTATO (o harness chama o contato de lead); a etapa é
+  // do NEGÓCIO. Sem resolver o negócio ativo, a consulta por id não achava
+  // nada e o card nunca se movia (achado no PC-030).
   const moverParaHandoffBestEffort = (reason: string): void => {
-    // `leadId` aqui é o CONTATO (o harness chama o contato de lead); a etapa é
-    // do NEGÓCIO. Sem resolver o negócio ativo, a consulta por id não achava
-    // nada e o card nunca se movia (achado no PC-030).
     void (async () => {
       const negocio = leadId ? await negocioDoContato(pool, tenantId, leadId) : null;
       if (!negocio) return;

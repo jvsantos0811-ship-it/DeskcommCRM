@@ -464,6 +464,16 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
     return this;
   }
 
+  /**
+   * `.in()` na ESCRITA — nasceu pelo caso de aprovação do contrato (PC-030),
+   * que só fecha o caso se ele AINDA está aberto: `.in("status", abertos)` é a
+   * trava contra fechar duas vezes.
+   */
+  in(coluna: string, valores: readonly unknown[]): this {
+    this.filtros.push(["= any", coluna, [...valores]]);
+    return this;
+  }
+
   /** `.not(coluna, operador, valor)` — a negação textual do PostgREST. */
   not(coluna: string, operador: string, valor: unknown): this {
     if (operador === "in") {
@@ -502,6 +512,7 @@ class AtualizacaoPg<T> implements PromiseLike<RespostaFalsa<unknown>> {
       if (op === "is not") return `"${c}" is not ${literalDeIs(v)}`;
       valores.push(v);
       if (op === "not = any") return `not ("${c}" = any($${valores.length}))`;
+      if (op === "= any") return `"${c}" = any($${valores.length})`;
       return `"${c}" ${op} $${valores.length}`;
     });
     let texto = `update public."${this.tabela}" set ${sets.join(", ")}`;

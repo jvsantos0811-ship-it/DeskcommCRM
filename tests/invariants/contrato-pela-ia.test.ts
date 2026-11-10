@@ -15,6 +15,7 @@ import { pgComoSupabase } from "../pg-como-supabase";
  *  - ⭐ "já tem advogado ou processo?" = SIM → não gera, devolve para a equipe;
  *  - sem NÃO confirmado, ou fora da etapa → não gera, e diz o que fazer;
  *  - ⭐ aprovação da equipe LIGADA → caso "Contrato pronto para aprovar", nada sai;
+ *  - ⭐ a equipe aprova ou descarta pelo card → esse caso sai da fila;
  *  - ⭐ desligada → envia, o negócio ganha a tag `contrato-enviado`;
  *  - contrato já enviado → não manda outro;
  *  - ⭐ "Análise humana" tira o card de "Aguardando assinatura" (para trás).
@@ -203,6 +204,32 @@ describe("PC-030 — a IA envia o contrato", () => {
     expect(de_novo.status).toBe("aguardando_aprovacao");
     const { rows: n } = await pool.query(`select count(*)::int as n from crm_contracts where organization_id = $1`, [ORG]);
     expect(n[0].n).toBe(1);
+  });
+
+  it("⭐ a equipe decide pelo card → o caso 'Contrato pronto para aprovar' sai da fila (só o deste contrato)", async () => {
+    // continua do caso anterior: um rascunho da IA e o caso de aprovação aberto.
+    const { fecharCasoDeAprovacao } = await import("@/lib/contratos/caso-do-contrato");
+    const { rows: k } = await pool.query<{ id: string }>(`select id from crm_contracts where organization_id = $1`, [ORG]);
+    const contratoId = k[0]!.id;
+
+    const outro = await fecharCasoDeAprovacao(db as never, {
+      orgId: ORG,
+      contratoId: "00000000-0000-4000-8000-000000000000",
+      userId: null,
+      nota: "x",
+    });
+    expect(outro).toBe(0);
+
+    const n = await fecharCasoDeAprovacao(db as never, { orgId: ORG, contratoId, userId: null, nota: "Contrato aprovado e enviado ao cliente pelo card." });
+    expect(n).toBe(1);
+    const { rows: casos } = await pool.query(
+      `select c.status, (select count(*)::int from agent_case_events e where e.case_id = c.id and e.kind = 'resolved') as fechamentos
+         from agent_cases c where c.organization_id = $1`,
+      [ORG],
+    );
+    expect(casos).toEqual([{ status: "resolved", fechamentos: 1 }]);
+    // Fechar de novo não duplica nada.
+    expect(await fecharCasoDeAprovacao(db as never, { orgId: ORG, contratoId, userId: null, nota: "y" })).toBe(0);
   });
 
   it("⭐ aprovação desligada (o padrão) → envia e o negócio ganha a tag contrato-enviado", async () => {

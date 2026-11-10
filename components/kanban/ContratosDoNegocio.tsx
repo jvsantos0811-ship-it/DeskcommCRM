@@ -291,6 +291,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
           {contratos.map((c) => {
             const entrega = frasesDaEntrega(c, t);
             const aberta = painel?.contratoId === c.id ? painel.acao : null;
+            const rascunhoDaIa = c.status === "rascunho" && c.origem_envio === "ia";
             return (
               <li
                 key={c.id}
@@ -305,8 +306,8 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                       <span className="truncate">{c.titulo}</span>
                     </p>
                     <p className="mt-0.5 text-[11px] text-text-muted">
-                      {c.status === "rascunho" && c.origem_envio !== "ia" && `${t("Anexado em")} ${quando(c.created_at)}`}
-                      {c.status === "rascunho" && c.origem_envio === "ia"
+                      {c.status === "rascunho" && !rascunhoDaIa && `${t("Anexado em")} ${quando(c.created_at)}`}
+                      {rascunhoDaIa
                         ? `${t("Gerado pela IA em")} ${quando(c.created_at)} · ${t("aguardando aprovação da equipe")}`
                         : null}
                       {c.status === "enviado" && `${t("Enviado em")} ${quando(c.enviado_em)}`}
@@ -370,7 +371,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                     {c.tem_arquivo ? (
                       <Button type="button" size="sm" variant={c.status === "rascunho" ? "primary" : "outline"} onClick={() => abrirPainel(c.id, "enviar")}>
                         {c.status === "rascunho"
-                          ? c.origem_envio === "ia"
+                          ? rascunhoDaIa
                             ? t("Aprovar e enviar")
                             : t("Enviar ao cliente")
                           : t("Enviar de novo")}
@@ -387,7 +388,7 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                       </>
                     ) : null}
                     <Button type="button" size="sm" variant="ghost" onClick={() => abrirPainel(c.id, "cancelar")}>
-                      {c.status === "rascunho" && c.origem_envio === "ia" ? t("Corrigir") : t("Cancelar contrato")}
+                      {rascunhoDaIa ? t("Corrigir") : t("Cancelar contrato")}
                     </Button>
                   </div>
                 ) : null}
@@ -429,7 +430,11 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                     {aberta === "recusar" || aberta === "cancelar" ? (
                       <>
                         <label htmlFor={`${idBase}-${c.id}-motivo`} className="block text-xs font-medium text-text">
-                          {aberta === "recusar" ? t("Por que o cliente recusou? (opcional)") : t("Por que cancelar? (opcional)")}
+                          {aberta === "recusar"
+                            ? t("Por que o cliente recusou? (opcional)")
+                            : rascunhoDaIa
+                              ? t("O que precisa corrigir? (opcional)")
+                              : t("Por que cancelar? (opcional)")}
                         </label>
                         <Textarea
                           id={`${idBase}-${c.id}-motivo`}
@@ -439,6 +444,13 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                           onChange={(e) => setMotivo(e.target.value)}
                           className="text-xs"
                         />
+                        {aberta === "cancelar" && rascunhoDaIa ? (
+                          <p className="text-[11px] text-text-muted">
+                            {t(
+                              "O rascunho da IA é descartado e nada vai ao cliente. Corrija os dados no card e gere de novo pelo modelo — ou a IA gera outro quando o cliente confirmar.",
+                            )}
+                          </p>
+                        ) : null}
                       </>
                     ) : null}
                     <div className="flex justify-end gap-2">
@@ -460,7 +472,9 @@ export function ContratosDoNegocio({ leadId, podeEditar, aberto }: Props) {
                             ? t("Confirmar assinatura")
                             : aberta === "recusar"
                               ? t("Confirmar recusa")
-                              : t("Confirmar cancelamento")}
+                              : rascunhoDaIa
+                                ? t("Descartar rascunho")
+                                : t("Confirmar cancelamento")}
                       </Button>
                     </div>
                   </div>

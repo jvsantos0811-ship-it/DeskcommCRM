@@ -17569,6 +17569,8 @@ export const DICIONARIO: Traducoes = {
   "Gerado pela IA em": { es: "Generado por la IA el" },
   "aguardando aprovação da equipe": { es: "esperando la aprobación del equipo" },
   "Corrigir": { es: "Corregir" },
+  "O que precisa corrigir? (opcional)": { es: "¿Qué hay que corregir? (opcional)" },
+  "O rascunho da IA é descartado e nada vai ao cliente. Corrija os dados no card e gere de novo pelo modelo — ou a IA gera outro quando o cliente confirmar.": { es: "El borrador de la IA se descarta y no se envía nada al cliente. Corrija los datos en la tarjeta y genérelo de nuevo con la plantilla — o la IA genera otro cuando el cliente confirme." },
 };
 
 /**
