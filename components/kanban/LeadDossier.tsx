@@ -25,6 +25,8 @@ import { SeloDaNota } from "./SeloDaNota";
 import { BotaoDaLinhaDoTempo, PainelDaLinhaDoTempo } from "./LinhaDoTempoDoNegocio";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
+import { BotaoAgendar, CompromissosDoNegocio, DialogoDeHorario } from "./CompromissosDoNegocio";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { OwnerBadge, ownerInitials } from "./OwnerBadge";
 import { estiloDasIniciais } from "@/components/ui/cor-do-contato";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
@@ -116,6 +118,10 @@ export function LeadDossier({
   const [abaNoCelular, setAbaNoCelular] = useState<AbaDoDossie>("conversa");
   // PC-013: a linha do tempo abre num painel que ocupa a coluna da direita.
   const [linhaDoTempoAberta, setLinhaDoTempoAberta] = useState(false);
+  // PC-027: "Agendar" à vista no cabeçalho — o mesmo diálogo da seção Compromissos.
+  const [agendando, setAgendando] = useState(false);
+  // Marcar compromisso é `agent`+ na rota da Agenda — a mesma régua das tarefas.
+  const podeAgendar = podeEditarTarefas && !user.support;
   const aba: AbaDoDossie = modoFoco ? "conversa" : abaNoCelular;
   const dadosRecolhidos = modoFoco || laterais.dadosRecolhidos;
   const detalhesRecolhidos = modoFoco || laterais.detalhesRecolhidos;
@@ -204,6 +210,9 @@ export function LeadDossier({
             </div>
           )}
           <span className="flex-1" />
+          {podeAgendar && lead.contact_id && (
+            <BotaoAgendar onClick={() => setAgendando(true)} className="shrink-0" />
+          )}
           {lead.conversa && (
             <BotaoModoFoco ligado={modoFoco} onAlternar={alternarFoco} className="shrink-0" />
           )}
@@ -341,6 +350,14 @@ export function LeadDossier({
                 podeEditar={podeEditarTarefas}
                 aberto={open}
               />
+              {/* PC-027: os compromissos do contato (próximos e o último), com as
+                  ações da Agenda — também é próximo passo, logo depois das tarefas. */}
+              <CompromissosDoNegocio
+                contactId={lead.contact_id}
+                conversationId={lead.conversa?.id ?? null}
+                podeAgendar={podeAgendar}
+                aberto={open}
+              />
               {/* Contrato esperando assinatura também é próximo passo: logo depois
                   das tarefas, e não debaixo da linha do tempo inteira. Mesma régua
                   de quem pode agir (`agent`+, "qualquer atendente"). */}
@@ -377,6 +394,15 @@ export function LeadDossier({
             )}
           </ColunaLateral>
         </div>
+        {agendando && lead.contact_id && (
+          <DialogoDeHorario
+            modo="marcar"
+            contactId={lead.contact_id}
+            conversationId={lead.conversa?.id ?? null}
+            fuso={fusoUtilizavel(activeOrg?.timezone)}
+            onFechar={() => setAgendando(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
