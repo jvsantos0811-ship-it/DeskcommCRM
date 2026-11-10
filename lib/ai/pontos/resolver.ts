@@ -233,6 +233,8 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
   "promise_semantic",
   // PC-020 (fork): a conferência de fonte também passa por `argsAux`.
   "conferencia_de_fonte",
+  // PC-026 (fork): o resumo das respostas no card também passa por `argsAux`.
+  "resumo_do_card",
   "compaction",
   "flush",
   "checkpoint",
@@ -282,6 +284,9 @@ export const PONTOS_DE_TIER_ECONOMICO: ReadonlySet<string> = new Set([
   // curta (um veredito por frase, em JSON) e roda em toda mensagem que afirma
   // regra — o pedido é "modelo barato".
   "conferencia_de_fonte",
+  // PC-026 (fork): o resumo das respostas no card — linhas curtas, uma chamada
+  // por momento; o pedido é "o modelo mais barato".
+  "resumo_do_card",
 ]);
 
 /**

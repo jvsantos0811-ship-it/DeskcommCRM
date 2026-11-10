@@ -296,6 +296,8 @@ import { blocoDosCamposDoNegocio } from './campos-do-negocio-no-turno';
 import { levarParaAnaliseHumana } from '@/lib/contratos/analise-humana';
 import { blocoDoContrato, contratoNoTurno, type ContratoNoTurno } from '@/lib/contratos/contrato-no-turno';
 import { enviarContratoPelaIa, resultadoDoEnvioParaOModelo } from '@/lib/contratos/enviar-pela-ia';
+import { aplicarNomeConfirmado } from '@/lib/leads/titulo-confirmado';
+import { atualizarResumoDoCard, etapaDoNegocioAtivo, houveCasoOuEtapaNova } from './resumo-do-card';
 import {
   CODIGO_ETAPA_SO_PESSOA_MOVE,
   CODIGO_GANHO_SO_POR_ASSINATURA,
@@ -513,6 +515,20 @@ export const AGENT_TOOL_DEFS = {
     inputSchema: z
       .object({
         palavras_do_cliente: z.string().describe('o que o cliente disse sobre o contrato, nas palavras dele (até 300 caracteres)'),
+      })
+      .passthrough(),
+  },
+  // PC-026: o título do card vira o nome de quem conversa. Sempre disponível
+  // para agente que conversa; a recepção chama assim que a pessoa diz o nome.
+  confirmar_nome: {
+    description:
+      'Registra o nome de QUEM ESTÁ CONVERSANDO, assim que a pessoa disser como se chama (ou corrigir: ' +
+      '"na verdade é Mariana"). Se quem conversa é um familiar falando pelo cliente, use o nome do familiar. ' +
+      'O título do card do negócio passa a ser esse nome (um título que a equipe editou à mão não muda). ' +
+      'Não muda o nome do contato e não é uma mensagem: depois de chamar, siga a conversa normalmente.',
+    inputSchema: z
+      .object({
+        nome: z.string().describe('o nome como a pessoa disse (ex.: "maria de souza"); até 200 caracteres'),
       })
       .passthrough(),
   },
@@ -3557,6 +3573,16 @@ async function executarTurnoDoAgente(
     leadId && agentConfig !== null && preview?.kind !== 'sandbox'
       ? await contratoNoTurno(createAdminClient(), tenantId, leadId)
       : { enviarDisponivel: false, contrato: null, leadId: null };
+  // PC-026: o resumo do card atualiza nos MOMENTOS do turno (passagem, caso
+  // aberto, etapa mudada pela IA). O começo do turno e a etapa de agora são a
+  // régua do fim. Só quando o agente tem "Perguntas do resumo" — sem lista,
+  // nenhuma consulta a mais.
+  const perguntasDoResumo = agentConfig?.perguntasDoResumo ?? [];
+  const resumoLigado = !preview && perguntasDoResumo.length > 0 && Boolean(leadId);
+  const inicioDoTurnoParaResumo = new Date();
+  const etapaNoInicioDoTurno = resumoLigado
+    ? await etapaDoNegocioAtivo(pool, tenantId, leadId).catch(() => null)
+    : null;
   const rawTools: ToolSet = {
     get_lead_context: tool({
       ...AGENT_TOOL_DEFS.get_lead_context,
@@ -4844,6 +4870,37 @@ async function executarTurnoDoAgente(
         }
       },
     }),
+    // PC-026: o nome de quem conversa vira o título do card. tenant/contato vêm
+    // do job (closure), nunca do payload. Nunca derruba o turno.
+    confirmar_nome: tool({
+      ...AGENT_TOOL_DEFS.confirmar_nome,
+      execute: async (raw) => {
+        const parsed = z.object({ nome: z.string().max(400) }).safeParse(raw);
+        if (!parsed.success) {
+          return { ok: false, error: { code: 'invalid_input', message: 'mande só o campo "nome", com o nome como a pessoa disse.' } };
+        }
+        if (!leadId) return { ok: true, status: 'sem_negocio' };
+        try {
+          const r = await aplicarNomeConfirmado(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            nome: parsed.data.nome,
+            agentId: agentConfig?.agentId ?? null,
+            fonte: 'confirmar_nome',
+          });
+          if (r.status === 'nome_invalido') {
+            return { ok: false, error: { code: 'nome_invalido', message: 'isso não parece um nome de pessoa — siga a conversa sem registrar.' } };
+          }
+          // O que o modelo precisa saber é curto: registrado (ou já estava), e nada a dizer ao cliente.
+          return { ok: true, status: r.status };
+        } catch (err) {
+          runLog.warn('confirmar_nome falhou — o turno segue', {
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+          });
+          return { ok: true, status: 'nao_registrado' };
+        }
+      },
+    }),
     // F4-06: handoff humano acionado pelo PRÓPRIO modelo (cidadão de 1ª classe). MUTANTE
     // (seta force_human no CRM + cancela crons + inbox), fora de READ_ONLY_TOOLS. tenant/
     // lead/conversation vêm da ROW do job (closure), nunca do payload do modelo.
@@ -5078,6 +5135,18 @@ async function executarTurnoDoAgente(
               );
               if (res.ok && res.status === 'passou') {
                 passouParaOutroAgente = true;
+                // PC-026 (item 1a): a linha "Nome confirmado" do cartão vira o
+                // título do card. Melhor esforço — a passagem já aconteceu.
+                const nomeDoCartao = (raw as { cartao?: { nome_confirmado?: unknown } } | null)?.cartao?.nome_confirmado;
+                if (typeof nomeDoCartao === 'string' && nomeDoCartao.trim() !== '') {
+                  await aplicarNomeConfirmado(pool, {
+                    organizationId: tenantId,
+                    contactId: leadId,
+                    nome: nomeDoCartao,
+                    agentId: agentConfig.agentId,
+                    fonte: 'cartao_de_passagem',
+                  }).catch(() => undefined);
+                }
               }
               return res;
             } catch (err) {
@@ -6589,6 +6658,58 @@ async function executarTurnoDoAgente(
         },
         runLog,
       );
+    }
+
+    // PC-026 (item 2): o resumo das respostas no card, nos MOMENTOS do turno —
+    // passagem para outro agente, passagem para pessoa ou caso aberto, etapa
+    // mudada pela IA. UMA chamada barata no máximo; nunca derruba o turno.
+    if (resumoLigado) {
+      try {
+        const momento =
+          passouParaAEquipe ||
+          passouParaOutroAgente ||
+          (await houveCasoOuEtapaNova(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            conversationId: input.conversationId,
+            desde: inicioDoTurnoParaResumo,
+            etapaNoInicio: etapaNoInicioDoTurno,
+          }));
+        if (momento) {
+          const r = await atualizarResumoDoCard(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            perguntas: perguntasDoResumo,
+            fuso: fusoDaOrg,
+            chamarModelo: async (sistema, mensagem) => {
+              const aux = argsAux(undefined);
+              const chamada = await runModelCall(
+                pool,
+                deps.llmCfg,
+                {
+                  tenantId,
+                  leadId: leadId || null,
+                  jobId: job?.id,
+                  purpose: 'resumo_do_card',
+                  system: sistema,
+                  messages: [{ role: 'user', content: mensagem }],
+                  maxOutputTokens: 600,
+                  reasoning: 'none',
+                  ...(aux.model !== undefined ? { model: aux.model } : {}),
+                  ...(aux.llmOverride !== undefined ? { llmOverride: aux.llmOverride } : {}),
+                },
+                { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+              );
+              return chamada.result.text;
+            },
+          });
+          runLog.info('resumo do card', { status: r.status });
+        }
+      } catch (err) {
+        runLog.warn('resumo do card não atualizado — o turno segue', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
     }
 
     const blocked = outcomes.find((o) => o.kind === 'blocked');

@@ -198,6 +198,8 @@ interface FormState {
   cases_enabled: boolean;
   estado_do_funil_ligado: boolean;
   modo_conservador: boolean;
+  /** PC-026: os rótulos das perguntas do resumo do card (até 15). */
+  perguntas_do_resumo: string[];
   split_messages: boolean;
   split_max_chars: number;
   /** Janela de rajada (ms) do agente. `null` = usa a env da instalação. */
@@ -312,6 +314,7 @@ export function buildState(args: {
     // PC-003: agente NOVO (sem versão) nasce com a marcação do funil desligada.
     estado_do_funil_ligado: version?.estado_do_funil_ligado ?? false,
     modo_conservador: version?.modo_conservador ?? false,
+    perguntas_do_resumo: version?.perguntas_do_resumo ?? [],
     split_messages: version?.split_messages ?? false,
     split_max_chars: version?.split_max_chars ?? 600,
     inbound_debounce_ms: version?.inbound_debounce_ms ?? null,
@@ -379,6 +382,7 @@ function toVersionPayload(s: FormState) {
     cases_enabled: s.cases_enabled,
     estado_do_funil_ligado: s.estado_do_funil_ligado,
     modo_conservador: s.modo_conservador,
+    perguntas_do_resumo: s.perguntas_do_resumo,
     split_messages: s.split_messages,
     split_max_chars: s.split_max_chars,
     inbound_debounce_ms: s.inbound_debounce_ms,
@@ -1397,6 +1401,11 @@ export function AgentForm(props: Props) {
                 "Ligado, o agente qualifica e passa para a equipe, mas não move o negócio para as etapas marcadas “só pessoa move” em Configurações › Etapas do funil. Bom para colocar um cliente novo no ar.",
               )}
             </p>
+            <PerguntasDoResumoInput
+              value={form.perguntas_do_resumo}
+              onChange={(v) => patch({ perguntas_do_resumo: v })}
+              disabled={disabled}
+            />
           </Card>
 
           {/* Propostas comerciais */}
@@ -1508,6 +1517,54 @@ export function AgentForm(props: Props) {
           isPending={publishing}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * PC-026: as perguntas do resumo do card — uma por linha, até 15. O texto da
+ * caixa fica no estado local (para a quebra de linha funcionar enquanto se
+ * digita); o formulário recebe só a lista limpa.
+ */
+function PerguntasDoResumoInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  const [texto, setTexto] = React.useState(() => value.join("\n"));
+  const lista = (bruto: string) =>
+    bruto
+      .split("\n")
+      .map((l) => l.replace(/\s+/g, " ").trim().slice(0, 80))
+      .filter((l) => l !== "")
+      .slice(0, 15);
+  const contagem = lista(texto).length;
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="perguntas_do_resumo">{t("Perguntas do resumo")}</Label>
+      <Textarea
+        id="perguntas_do_resumo"
+        rows={5}
+        value={texto}
+        onChange={(e) => {
+          setTexto(e.target.value);
+          onChange(lista(e.target.value));
+        }}
+        placeholder={t("Uma pergunta por linha. Ex.: Já teve o bebê")}
+        disabled={disabled}
+        data-testid="perguntas-do-resumo"
+      />
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "O card do negócio ganha um resumo só com as respostas do cliente a estas perguntas, atualizado quando o agente passa a conversa ou muda a etapa. Sem perguntas, nenhum resumo é feito. Dados de documento (CPF, RG, endereço) e de saúde nunca entram.",
+        )}{" "}
+        {contagem}/15
+      </p>
     </div>
   );
 }
