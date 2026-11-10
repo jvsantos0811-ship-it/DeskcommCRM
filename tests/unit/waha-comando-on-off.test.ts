@@ -213,14 +213,16 @@ describe("C-075 · comando do celular controla o automático", () => {
     expect(cap.conversationUpdates.some((u) => u.bot_silenced_until === "infinity")).toBe(false);
   });
 
-  it("mensagem NORMAL do celular continua pausando (com prazo, como antes)", async () => {
+  it("mensagem NORMAL do celular: a equipe assume (PC-029 — sem prazo, só o Devolver solta)", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
     await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("Oi, já te respondo"), "req-n");
 
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
     expect(pausa).toBeDefined();
-    expect(pausa!.bot_silenced_until).not.toBe("infinity");
+    expect(pausa!.bot_silenced_until).toBe("infinity");
+    // O motivo é o da RESPOSTA pelo celular, nunca o do comando `#off`.
     expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
+    expect(String(pausa!.last_handoff_reason)).not.toMatch(/#off/);
   });
 
   it("texto com #on/#off no MEIO da frase NÃO é comando (pausa como mensagem normal)", async () => {
@@ -250,13 +252,15 @@ describe("C-076 · o comando só VALE se o agente aceitar (config da UI)", () =>
   const auditado = () =>
     vi.mocked(audit).mock.calls.map((c) => (c[0] as { metadata?: Record<string, unknown> }).metadata ?? {});
 
-  it("DESLIGADO: '#off' é texto comum — pausa COM PRAZO, não revoga, nada de comando no rastro", async () => {
+  it("DESLIGADO: '#off' é texto comum — a equipe assume como em qualquer resposta, não revoga, nada de comando no rastro", async () => {
     const cap: Captura = { conversationUpdates: [], insertedMessages: [], rpcs: [] };
     await dispatchWahaEvent(makeAdmin(cap), SESSION, comando("#off"), "req-off-igual");
 
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
-    expect(pausa!.bot_silenced_until).not.toBe("infinity");
-    expect(Number.isFinite(new Date(String(pausa!.bot_silenced_until)).getTime())).toBe(true);
+    // PC-029: a resposta pelo celular já cala de vez; o que separa o texto
+    // comum do comando é o MOTIVO, a revogação e o rastro.
+    expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
+    expect(String(pausa!.last_handoff_reason)).not.toMatch(/#off/);
     expect(deleteMessage).not.toHaveBeenCalled();
     expect(cap.insertedMessages[0]!.metadata).toEqual({ raw_type: "text", fromMe: true });
     expect(auditado().some((m) => "control_command" in m)).toBe(false);
@@ -327,7 +331,9 @@ describe("C-076 · o comando só VALE se o agente aceitar (config da UI)", () =>
       "req-vizinho",
     );
     const pausa = cap.conversationUpdates.find((u) => u.last_handoff_reason !== undefined);
-    expect(pausa!.bot_silenced_until).not.toBe("infinity");
+    // Vale como resposta da equipe (PC-029), nunca como o comando `#off`.
+    expect(String(pausa!.last_handoff_reason)).toMatch(/manual/i);
+    expect(String(pausa!.last_handoff_reason)).not.toMatch(/#off/);
     expect(deleteMessage).not.toHaveBeenCalled();
   });
 

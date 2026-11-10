@@ -341,6 +341,13 @@ export const pipelineConfigPatchSchema = z.object({
   reabertura: z.enum(["mesmo_registro", "novo_negocio"]).optional(),
   /** O que a retomada copia da origem; ausente é o piso (`custom_fields` e tags). */
   reabertura_campos: z.array(z.enum(CAMPOS_COPIAVEIS_NA_RETOMADA)).max(8).optional(),
+  /**
+   * PC-029: a etapa para onde o card vai quando a equipe assume a conversa
+   * respondendo (pela tela ou pelo celular) — ex.: "Análise humana". Só move
+   * card que está ANTES dela e não é ganho nem perda
+   * (`lib/escalacao/equipe-assumiu.ts`). `null` tira a configuração (não move).
+   */
+  etapa_quando_equipe_assume: z.string().uuid().nullable().optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 

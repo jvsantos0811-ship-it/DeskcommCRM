@@ -65,11 +65,14 @@ export const routingConfigSchema = z.object({
     .default(null),
   /**
    * "A conversa fica com quem atendeu" (ideia de @gustavorodcruz96, #1527).
-   * Desligado = o comportamento de sempre: a resposta humana cala a IA por
-   * alguns minutos e a conversa encerrada que recebe mensagem nova volta para a
-   * fila e para o roteamento. Ligado: responder pelo Inbox numa conversa sem
-   * dono a assume (a IA fica calada até alguém devolver), e a conversa
-   * encerrada volta direto para o último atendente, se ele ainda é da equipe.
+   * Desligado = a conversa encerrada que recebe mensagem nova volta para a fila
+   * e para o roteamento. Ligado: ela volta direto para o último atendente, se
+   * ele ainda é da equipe.
+   *
+   * Desde o PC-029 (10/11/2026) a outra metade deste ajuste virou regra para
+   * todos: responder pelo Inbox (ou pelo celular do número) ASSUME a conversa e
+   * cala a IA até alguém devolver, com ou sem este ajuste
+   * (`lib/escalacao/equipe-assumiu.ts`).
    *
    * ⚠️ O BANCO LÊ ESTE CAMINHO EXATO: `fn_service_inbound` (migration 0396)
    * compara `settings->'routing'->'conversation_stays_with_attendant'` com o

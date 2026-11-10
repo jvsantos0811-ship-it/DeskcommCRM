@@ -255,7 +255,7 @@ test.describe("Inbox — o balão diz de onde saiu a mensagem", () => {
       page.getByText(corpo, { exact: true }).locator("xpath=..");
 
     const esperado: Array<[string, string]> = [
-      ["RESPOSTA PELO CELULAR", "Celular"],
+      ["RESPOSTA PELO CELULAR", "Equipe (celular)"],
       ["RESPOSTA DO AGENTE", "IA"],
       ["RESPOSTA DIGITADA POR MIM", "Você"],
       ["RESPOSTA DIGITADA PELO COLEGA", "Atendente"],
@@ -289,7 +289,7 @@ test.describe("Inbox — o balão diz de onde saiu a mensagem", () => {
     // um componente que carimbasse "Celular" em toda bolha passaria nos
     // casos acima.
     const bolhaDoCliente = balaoCom("PERGUNTA DO CLIENTE");
-    for (const rotulo of ["Celular", "IA", "Você", "Atendente"]) {
+    for (const rotulo of ["Equipe (celular)", "IA", "Você", "Atendente"]) {
       await expect(
         bolhaDoCliente,
         `a mensagem do cliente não pode levar o rótulo "${rotulo}"`,

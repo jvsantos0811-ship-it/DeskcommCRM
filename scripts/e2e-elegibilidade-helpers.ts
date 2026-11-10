@@ -169,7 +169,7 @@ async function main(): Promise<void> {
         const contactId = args[0];
         if (!contactId) throw new Error("contactId obrigatório");
         const { rows } = await pool.query(
-          `select id, ai_authorized_at, ai_authorized_reason from contacts where id = $1`,
+          `select id, ai_authorized_at, ai_authorized_reason, force_human from contacts where id = $1`,
           [contactId],
         );
         out(rows[0] ?? null);

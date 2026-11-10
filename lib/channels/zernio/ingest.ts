@@ -33,7 +33,7 @@ import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import { equipeAssumiuRespondendo } from "@/lib/escalacao/equipe-assumiu";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
@@ -213,11 +213,17 @@ export async function ingestZernioInbound(
         existente.id,
         inseridaNaExistente,
       );
-      if (input.socialMessage && msg.direction === "outbound") {
-        await pausarIaPorAtendimentoManual(admin, {
+      // PC-029: SAÍDA feita por fora do CRM numa conversa que JÁ existe = a
+      // equipe respondeu pelo celular (ou por outra plataforma da conta). Antes
+      // só as redes sociais calavam a IA aqui: no WhatsApp em coexistência a
+      // resposta pelo app era gravada e a IA seguia falando por cima.
+      if (msg.direction === "outbound") {
+        await equipeAssumiuRespondendo(admin, {
           organizationId: input.organizationId,
           conversationId: existente.id,
-          canal: "zernio",
+          origem: "celular",
+          userId: null,
+          texto: msg.text,
         });
       }
     }
@@ -289,10 +295,12 @@ export async function ingestZernioInbound(
   // outra plataforma na mesma conta). A IA para nesta conversa. O eco do nosso
   // próprio envio já saiu como `"duplicate"` acima. NÃO mexe na origem do lead.
   if (msg.direction === "outbound") {
-    await pausarIaPorAtendimentoManual(admin, {
+    await equipeAssumiuRespondendo(admin, {
       organizationId: input.organizationId,
       conversationId,
-      canal: "zernio",
+      origem: "celular",
+      userId: null,
+      texto: msg.text,
     });
   }
 

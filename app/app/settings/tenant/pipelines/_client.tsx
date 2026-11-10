@@ -20,6 +20,7 @@ import type { PipelineConfigPatch } from "@/lib/schemas/settings";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
+import { etapaQuandoAEquipeAssume } from "@/lib/escalacao/equipe-assumiu-regra";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
 import {
@@ -343,6 +344,10 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  // PC-029: para onde o card vai quando a equipe assume respondendo. Vazio = não move.
+  const [etapaDaEquipe, setEtapaDaEquipe] = useState(
+    etapaQuandoAEquipeAssume(pipeline.settings) ?? "",
+  );
   // O texto CSV de importação de opções (#2521), por chave de campo — vive só
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
@@ -420,6 +425,7 @@ function PipelineEditor({
       won_reason_required: wonRequired,
       comanda_no_ganho: comandaNoGanho,
       reabertura: retomaComoNovo ? "novo_negocio" : "mesmo_registro",
+      etapa_quando_equipe_assume: etapaDaEquipe || null,
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -558,6 +564,37 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t(
             "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.",
+          )}
+        </p>
+      </div>
+
+      {/* ─── PC-029: A ETAPA QUANDO A EQUIPE ASSUME ───────────────────
+          Quando alguém da equipe responde (pela tela ou pelo celular), o card
+          vai para esta etapa — só se estiver ANTES dela e não for ganho nem
+          perda. Vazio = o card não muda de etapa. */}
+      <div className="space-y-1">
+        <Label htmlFor={`etapa-da-equipe-${pipeline.id}`} className="text-xs">
+          {t("Etapa quando a equipe assume")}
+        </Label>
+        <select
+          id={`etapa-da-equipe-${pipeline.id}`}
+          data-testid="etapa-quando-equipe-assume"
+          className="h-8 w-full max-w-xs rounded-md border border-input bg-background px-2 text-xs"
+          value={etapaDaEquipe}
+          onChange={(e) => setEtapaDaEquipe(e.target.value)}
+        >
+          <option value="">{t("Não mover o card")}</option>
+          {etapas
+            .filter((e) => !e.is_archived)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quando alguém da equipe responde o cliente, pela tela ou pelo celular, o card vai para esta etapa (ex.: Análise humana). Card que já está depois dela, ganho ou perdido fica onde está.",
           )}
         </p>
       </div>

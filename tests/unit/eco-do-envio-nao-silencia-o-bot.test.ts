@@ -18,7 +18,8 @@
  * ⚠️ ATUALIZAÇÃO (merge do #406): as duas linhas citadas acima são do estado em
  * `c5b45b24` e não existem mais. O gesto foi unificado com o dos outros canais
  * em `pausarIaPorAtendimentoManual` (`lib/escalacao/atendimento-manual.ts`), e o
- * prazo virou `PRAZO_DO_SILENCIO_MS`. O DEFEITO é o mesmo, e ficou PIOR de
+ * prazo virou `PRAZO_DO_SILENCIO_MS` (e, no PC-029, a resposta pelo celular
+ * passou a ser `equipeAssumiuRespondendo`, sem prazo). O DEFEITO é o mesmo, e ficou PIOR de
  * herdar: o #406 propunha `bot_silenced_until='infinity'` neste caminho, ou
  * seja, a IA muda para sempre por ter falado. Estes casos passaram a guardar a
  * chamada nova — a citação acima fica como registro do que foi medido, não como
@@ -48,7 +49,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
 import { dispatchWahaEvent, type WahaEnvelope, type WahaPayload } from "@/lib/waha/ingest";
-import { PRAZO_DO_SILENCIO_MS } from "@/lib/escalacao/atendimento-manual";
+import { MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR } from "@/lib/escalacao/equipe-assumiu-regra";
 
 interface Linha {
   id: string;
@@ -249,14 +250,12 @@ describe("eco do próprio envio — a IA não se cala por ter falado", () => {
       "o atendente respondeu pelo celular e a IA continuou solta — é o defeito do #371 de volta",
     ).not.toBeNull();
 
-    // …e o silêncio tem PRAZO. As duas condições ficam LIGADAS de propósito:
-    // separadas, um conserto que voltasse a gravar 'infinity' aqui deixaria este
-    // caso verde, e a decisão do dono do produto ("sim, mas com prazo") morreria
-    // sem nenhum vermelho.
-    expect(conversa.bot_silenced_until, "voltou a calar a IA para sempre").not.toBe("infinity");
-    const ate = new Date(String(conversa.bot_silenced_until)).getTime();
-    expect(Number.isFinite(ate), "bot_silenced_until tem de ser um instante real").toBe(true);
-    expect(ate).toBeLessThanOrEqual(Date.now() + PRAZO_DO_SILENCIO_MS);
+    // …e o silêncio é DURÁVEL (PC-029, decisão do João em 10/11/2026: a equipe
+    // que responde assume, e a IA só volta pelo "Devolver para a IA"). Antes era
+    // "sim, mas com prazo" — o prazo saiu de propósito, e este caso fica
+    // vermelho se ele voltar sem decisão nova.
+    expect(conversa.bot_silenced_until, "a IA voltaria sozinha depois do prazo").toBe("infinity");
+    expect(conversa.last_handoff_reason).toBe(MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR);
   });
 
   it("CONTROLE 2: sem envio em voo, qualquer mensagem do celular silencia", async () => {

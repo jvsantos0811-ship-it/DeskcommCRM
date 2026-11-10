@@ -186,9 +186,9 @@ describe("MessageBubble — ocultação local de recebida", () => {
 });
 
 describe("MessageBubble — rótulo de origem", () => {
-  it("resposta pelo celular (external_device) mostra 'Celular'", () => {
+  it("resposta pelo celular (external_device) mostra 'Equipe (celular)' (PC-029)", () => {
     render(<MessageBubble message={msg({ sent_via: "external_device" })} />);
-    expect(screen.getByText("Celular")).toBeInTheDocument();
+    expect(screen.getByText("Equipe (celular)")).toBeInTheDocument();
   });
 
   it("automação tem rótulo próprio — o motor passou a gravar esse valor (#652)", () => {
@@ -249,7 +249,7 @@ describe("MessageBubble — rótulo de origem", () => {
     render(
       <MessageBubble message={msg({ sent_via: "external_device", direction: "inbound" })} />,
     );
-    expect(screen.queryByText("Celular")).not.toBeInTheDocument();
+    expect(screen.queryByText("Equipe (celular)")).not.toBeInTheDocument();
   });
 
   it("system leva 'Sistema' — a integração respondeu, mas não foi a IA", () => {
