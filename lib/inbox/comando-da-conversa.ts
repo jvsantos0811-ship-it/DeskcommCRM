@@ -270,6 +270,12 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
   // diz QUEM respondeu é o do celular ("Equipe (celular)"), e não o genérico
   // "pausado para este cliente": o "Devolver" desfaz os dois de uma vez.
   const equipePeloCelular = silencio.duravel && fatos.last_handoff_reason === MOTIVO_ATENDIMENTO_MANUAL;
+  // PC-029: quem ASSUME (pelo botão ou respondendo) também deixa o contato "só
+  // humano" — então, com uma pessoa no comando e o silêncio durável, o rótulo
+  // é "alguém assumiu", e não o genérico da trava do contato. O "Devolver"
+  // desfaz as duas travas (`devolverAtendimentoAoAgente`), então a ação que a
+  // tela sugere continua sendo a certa.
+  const pessoaAssumiu = silencio.duravel && Boolean(fatos.assigned_to_user_id);
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
@@ -282,7 +288,7 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
           // decide a AÇÃO — não há nenhuma. Nomear a trava menor faria a tela
           // sugerir um "devolver" que o `stopGate` recusaria na sequência.
           "contato_descadastrado"
-        : travado && !(equipePeloCelular && !fatos.assigned_to_user_id)
+        : travado && !(equipePeloCelular && !fatos.assigned_to_user_id) && !pessoaAssumiu
           ? "contato_travado"
           : // Ordem importa: a trava do CONTATO é mais forte e mais ampla que a da
             // conversa, então ela nomeia o motivo mesmo havendo silêncio local —

@@ -106,6 +106,22 @@ describe("comandoDaConversa — o automático está ativo?", () => {
     expect(r.motivo).toBe("contato_travado");
   });
 
+  it("PC-029: quem assume também trava o contato — com dono, o rótulo continua 'alguém assumiu'", () => {
+    // O Assumir (botão ou resposta da equipe) deixa o contato "só humano" junto
+    // com o silêncio durável. Nomear a trava do contato aqui apagaria QUEM
+    // assumiu do selo; o Devolver desfaz as duas travas de uma vez.
+    const r = comandoDaConversa(
+      fatos({ force_human: true, bot_silenced_until: "infinity", assigned_to_user_id: ATENDENTE }),
+      AGORA,
+    );
+    expect(r.motivo).toBe("atendente_no_comando");
+    expect(r.travaVigente).toBe(true);
+    // Controle: sem dono, a trava do contato continua nomeando o motivo.
+    expect(
+      comandoDaConversa(fatos({ force_human: true, bot_silenced_until: "infinity" }), AGORA).motivo,
+    ).toBe("contato_travado");
+  });
+
   it("dono + silêncio durável: o motivo é que alguém assumiu", () => {
     const r = comandoDaConversa(
       fatos({ status: "claimed", assigned_to_user_id: ATENDENTE, bot_silenced_until: "infinity" }),
