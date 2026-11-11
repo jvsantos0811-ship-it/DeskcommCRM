@@ -25,7 +25,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, estado_do_funil_ligado, modo_conservador, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, estado_do_funil_ligado, modo_conservador, perguntas_do_resumo, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -123,21 +123,33 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // anterior — senão uma integração que cria rascunho pela API desligaria a
   // ferramenta sem ninguém pedir.
   const corpoCru = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  if (!("estado_do_funil_ligado" in corpoCru) || !("modo_conservador" in corpoCru)) {
+  if (
+    !("estado_do_funil_ligado" in corpoCru) ||
+    !("modo_conservador" in corpoCru) ||
+    !("perguntas_do_resumo" in corpoCru)
+  ) {
     const { data: anterior } = await admin
       .from("ai_agent_versions")
-      .select("estado_do_funil_ligado, modo_conservador")
+      .select("estado_do_funil_ligado, modo_conservador, perguntas_do_resumo")
       .eq("agent_id", id)
       .eq("organization_id", organizationId)
       .order("version_number", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const a = anterior as { estado_do_funil_ligado?: boolean; modo_conservador?: boolean } | null;
+    const a = anterior as {
+      estado_do_funil_ligado?: boolean;
+      modo_conservador?: boolean;
+      perguntas_do_resumo?: string[] | null;
+    } | null;
     if (a && !("estado_do_funil_ligado" in corpoCru) && typeof a.estado_do_funil_ligado === "boolean") {
       v.estado_do_funil_ligado = a.estado_do_funil_ligado;
     }
     if (a && !("modo_conservador" in corpoCru) && typeof a.modo_conservador === "boolean") {
       v.modo_conservador = a.modo_conservador;
+    }
+    // PC-026: a lista do resumo do card segue para a versão nova quando o corpo não a manda.
+    if (a && !("perguntas_do_resumo" in corpoCru) && Array.isArray(a.perguntas_do_resumo)) {
+      v.perguntas_do_resumo = a.perguntas_do_resumo;
     }
   }
 
@@ -208,6 +220,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         cases_enabled: v.cases_enabled,
         estado_do_funil_ligado: v.estado_do_funil_ligado,
         modo_conservador: v.modo_conservador,
+        perguntas_do_resumo: v.perguntas_do_resumo,
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         inbound_debounce_ms: v.inbound_debounce_ms,

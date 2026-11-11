@@ -3594,3 +3594,19 @@ Não provado pela tela nesta entrega: o fluxo inteiro contra a ZapSign de verdad
 conta de teste do escritório, que o João está criando; a chave entra pela tela, nunca pelo
 chat). O envio pela IA (`enviar_contrato`), a aprovação da equipe antes do envio e a
 reclamação que passa para humano são da parte 2.
+
+## J49 — O card mostra o nome de quem conversa e o resumo das respostas `[P1]` (2026-11-10, PC-026)
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J49.1 | A recepção chama `confirmar_nome("ana")` | título do card vira "Ana", origem `ia`, linha do tempo "Título: Ana (nome confirmado pela IA)" | **DB** — `tests/invariants/titulo-confirmado-e-resumo.test.ts` (código real sobre o pool) |
+| J49.2 | A equipe edita o título à mão, e a IA confirma outro nome depois | o título da equipe fica | **DB** (mesmo arquivo: UPDATE comum marca `pessoa`, e a IA recebe `protegido`) |
+| J49.3 | Familiar falando ("sou a filha dela, Carla") | título "Carla" | **UNIT** (`normalizarNomeConfirmado`) — o nome que a IA passa é o de quem fala |
+| J49.4 | Passagem com cartão ("Nome confirmado: Carla") | título confere com o cartão | fiação no turno (`passar_para_agente` → `aplicarNomeConfirmado`); sem e2e (o CI não sobe o worker) |
+| J49.5 | 5 perguntas no agente, cliente respondeu 3 | bloco com 3 linhas, texto da equipe fora do bloco intacto, UMA chamada de IA | **UNIT** — `lib/agent-engine/agent/resumo-do-card.test.ts` |
+| J49.6 | Resposta com CPF, nome de doença ou CID | não aparece no bloco (documento some; saúde vira sim/não/informado) | **UNIT** (mesmo arquivo) |
+| J49.7 | Agente sem "Perguntas do resumo" | nenhum bloco, nenhuma chamada de IA | **UNIT** (mesmo arquivo) |
+
+Não provado pela tela nesta entrega: o Testar mostra `confirmar_nome` como proposta (não
+executa), e o bloco aparece no card só depois de um turno real com passagem, caso ou etapa
+mudada pela IA.
