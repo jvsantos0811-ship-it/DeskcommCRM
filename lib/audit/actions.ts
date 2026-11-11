@@ -217,6 +217,12 @@ export const AUDIT_ACTIONS = [
   "platform_admin.incident_viewed",
   "incident.resolved",
   "platform_admin.usage_viewed",
+  // PC-028: o painel da agência (/admin/agencia) — ver, lançar e exportar.
+  "platform_admin.agencia_viewed",
+  "agencia.cliente_salvo",
+  "agencia.pagamento_lancado",
+  "agencia.config_salva",
+  "agencia.exported",
   "platform_admin.users_listed",
   "platform_admin.user_viewed",
   "platform_admin.platform_admins_listed",

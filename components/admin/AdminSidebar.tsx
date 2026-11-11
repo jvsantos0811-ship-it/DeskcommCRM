@@ -50,6 +50,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/lgpd", label: "LGPD", icon: Scales },
   { href: "/admin/incidents", label: "Incidents", icon: Warning },
   { href: "/admin/usage", label: "Usage", icon: ChartBar },
+  // PC-028: o painel da agência — clientes, pagamentos, custo e margem.
+  { href: "/admin/agencia", label: "Agência", icon: Buildings },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/platform-admins", label: "Platform Admins", icon: ShieldCheck },
   // A porta da tela de marca. Ela NÃO entra em `lib/navigation/registry.ts`:
