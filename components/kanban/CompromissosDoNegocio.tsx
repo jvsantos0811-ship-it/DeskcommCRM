@@ -155,17 +155,26 @@ export function CompromissosDoNegocio({
     desmarcar: t("Desmarcar"),
   };
 
+  // A revisão vale a da lista MAIS NOVA: depois de remarcar, a lista recarrega
+  // com a revisão nova, e usar a da foto tirada ao clicar faria a agenda recusar
+  // (`appointment_stale`) um pedido que a pessoa acabou de ver na tela.
+  const atual = (c: CompromissoListado) => (lista.data ?? []).find((x) => x.id === c.id) ?? c;
+  const recarregarSeRecusar = { onError: () => void lista.refetch() };
+
   const agir = (c: CompromissoListado, a: AcaoNoCompromisso) => {
     if (a === "remarcar") return setRemarcando(c);
     if (a === "desmarcar") {
       setMotivo("");
       return setDesmarcando(c);
     }
-    desfecho.mutate({
-      id: c.id,
-      revision: c.revision,
-      status: a === "confirmar" ? "confirmed" : a === "compareceu" ? "completed" : "no_show",
-    });
+    desfecho.mutate(
+      {
+        id: c.id,
+        revision: atual(c).revision,
+        status: a === "confirmar" ? "confirmed" : a === "compareceu" ? "completed" : "no_show",
+      },
+      recarregarSeRecusar,
+    );
   };
 
   if (!contactId) return null;
@@ -217,7 +226,9 @@ export function CompromissosDoNegocio({
                         "h-6 px-2 text-[11px]",
                         a === "desmarcar" && "text-destructive",
                       )}
-                      disabled={desfecho.isPending || cancelar.isPending}
+                      // Enquanto a lista recarrega (logo depois de marcar ou
+                      // remarcar), a revisão na tela ainda é a velha.
+                      disabled={desfecho.isPending || cancelar.isPending || lista.isFetching}
                       data-testid={`compromisso-${a}`}
                       onClick={() => agir(c, a)}
                     >
@@ -243,7 +254,7 @@ export function CompromissosDoNegocio({
       {remarcando && (
         <DialogoDeHorario
           modo="remarcar"
-          compromisso={remarcando}
+          compromisso={atual(remarcando)}
           contactId={contactId}
           conversationId={conversationId}
           fuso={fuso}
@@ -274,8 +285,8 @@ export function CompromissosDoNegocio({
               onClick={() => {
                 if (!desmarcando) return;
                 cancelar.mutate(
-                  { id: desmarcando.id, revision: desmarcando.revision, reason: motivo.trim() },
-                  { onSuccess: () => setDesmarcando(null) },
+                  { id: desmarcando.id, revision: atual(desmarcando).revision, reason: motivo.trim() },
+                  { onSuccess: () => setDesmarcando(null), ...recarregarSeRecusar },
                 );
               }}
             >
