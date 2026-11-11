@@ -69,7 +69,7 @@ describe("agendar pelo pop-up (PC-027)", () => {
     comQuery(<CompromissosDoNegocio contactId="c1" conversationId={null} podeAgendar aberto />);
     await waitFor(() => expect(screen.getByTestId("compromisso-do-negocio")).toBeTruthy());
     fireEvent.click(screen.getByTestId("compromisso-confirmar"));
-    expect(estado.desfecho).toHaveBeenCalledWith({ id: "a1", revision: 3, status: "confirmed" });
+    expect(estado.desfecho).toHaveBeenCalledWith({ id: "a1", revision: 3, status: "confirmed" }, expect.anything());
 
     fireEvent.click(screen.getByTestId("compromisso-desmarcar"));
     const confirmar = (await screen.findByTestId("confirmar-desmarcar")) as HTMLButtonElement;
@@ -78,6 +78,32 @@ describe("agendar pelo pop-up (PC-027)", () => {
     fireEvent.click(screen.getByTestId("confirmar-desmarcar"));
     expect(estado.cancelar).toHaveBeenCalledWith(
       { id: "a1", revision: 3, reason: "cliente pediu" },
+      expect.anything(),
+    );
+  });
+
+  it("depois que a lista recarrega (ex.: remarcou), desmarcar leva a revisão NOVA, não a da foto", async () => {
+    estado.compromissos = [
+      { id: "a1", revision: 3, titulo: "Consulta", iniciaEm: daqui(2), terminaEm: daqui(2.1), situacao: "confirmed", donoId: "d" },
+    ];
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <CompromissosDoNegocio contactId="c1" conversationId={null} podeAgendar aberto />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("compromisso-do-negocio")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("compromisso-desmarcar"));
+    await screen.findByTestId("confirmar-desmarcar");
+    // A agenda muda a revisão (remarcação) e a lista recarrega com o diálogo aberto.
+    estado.compromissos = [
+      { id: "a1", revision: 4, titulo: "Consulta", iniciaEm: daqui(3), terminaEm: daqui(3.1), situacao: "confirmed", donoId: "d" },
+    ];
+    await qc.invalidateQueries({ queryKey: ["agenda"] });
+    fireEvent.change(screen.getByTestId("motivo-de-desmarcar"), { target: { value: "cliente pediu" } });
+    fireEvent.click(screen.getByTestId("confirmar-desmarcar"));
+    expect(estado.cancelar).toHaveBeenCalledWith(
+      { id: "a1", revision: 4, reason: "cliente pediu" },
       expect.anything(),
     );
   });
