@@ -21,6 +21,7 @@ import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { importarOpcoesCsv } from "@/lib/leads/campos-pesquisaveis";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { etapaQuandoAEquipeAssume } from "@/lib/escalacao/equipe-assumiu-regra";
+import { etapaDoContrato } from "@/lib/contratos/regra-da-ia";
 import { etapasForaDaMedida, marcoDeQualificacao } from "@/lib/dados/parou-antes";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
@@ -352,6 +353,10 @@ function PipelineEditor({
   const [etapaDaEquipe, setEtapaDaEquipe] = useState(
     etapaQuandoAEquipeAssume(pipeline.settings) ?? "",
   );
+  // PC-030: a etapa em que a IA pode enviar o contrato. Vazio = a IA não envia.
+  const [etapaDoContratoEscolhida, setEtapaDoContratoEscolhida] = useState(
+    etapaDoContrato(pipeline.settings) ?? "",
+  );
   // O texto CSV de importação de opções (#2521), por chave de campo — vive só
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
@@ -432,6 +437,7 @@ function PipelineEditor({
       marco_de_qualificacao: marcoEscolhido || null,
       etapas_fora_da_medida: foraDaMedida,
       etapa_quando_equipe_assume: etapaDaEquipe || null,
+      etapa_do_contrato: etapaDoContratoEscolhida || null,
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -656,6 +662,37 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t(
             "Quando alguém da equipe responde o cliente, pela tela ou pelo celular, o card vai para esta etapa (ex.: Análise humana). Card que já está depois dela, ganho ou perdido fica onde está.",
+          )}
+        </p>
+      </div>
+
+      {/* ─── PC-030: A ETAPA EM QUE A IA ENVIA O CONTRATO ─────────────
+          A ferramenta `enviar_contrato` só gera e manda o contrato com o card
+          nesta etapa (e com o modelo aprovado, os dados confirmados e o
+          "já tem advogado ou processo?" = NÃO). Vazio = a IA não envia. */}
+      <div className="space-y-1">
+        <Label htmlFor={`etapa-do-contrato-${pipeline.id}`} className="text-xs">
+          {t("Etapa em que a IA envia o contrato")}
+        </Label>
+        <select
+          id={`etapa-do-contrato-${pipeline.id}`}
+          data-testid="etapa-do-contrato"
+          className="h-8 w-full max-w-xs rounded-md border border-input bg-background px-2 text-xs"
+          value={etapaDoContratoEscolhida}
+          onChange={(e) => setEtapaDoContratoEscolhida(e.target.value)}
+        >
+          <option value="">{t("A IA não envia contrato")}</option>
+          {etapas
+            .filter((e) => !e.is_archived)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Com o card nesta etapa (ex.: Aguardando assinatura), a IA gera o contrato pelo modelo aprovado e manda o link de assinatura. Precisa da assinatura eletrônica ligada em Configurações.",
           )}
         </p>
       </div>

@@ -540,6 +540,21 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
 
   // ─────────────────────────── Lembrar e buscar ────────────────────────────
   {
+    // PC-026 (fork): o resumo das respostas no card do negócio. Uma chamada
+    // barata por MOMENTO (passagem, caso aberto, etapa mudada pela IA), nunca
+    // por mensagem, e nenhuma quando o agente não tem "Perguntas do resumo".
+    id: "resumo_do_card",
+    rotulo: "Resumir as respostas no card",
+    oQueFaz:
+      "Escreve no card do negócio só as respostas do cliente às perguntas que o agente pede, para a equipe que vai assumir não precisar ler a conversa inteira.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha:
+      "O card mostra uma resposta que o cliente não deu, ou deixa de mostrar uma que ele deu, e a equipe age em cima do resumo errado.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "compaction",
     rotulo: "Resumir a conversa longa",
     oQueFaz:

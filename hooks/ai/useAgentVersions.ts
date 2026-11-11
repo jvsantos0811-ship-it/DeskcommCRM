@@ -29,6 +29,8 @@ export interface AgentVersionRow {
   cases_enabled: boolean;
   estado_do_funil_ligado: boolean;
   modo_conservador: boolean;
+  /** PC-026: os rótulos das perguntas do resumo do card. */
+  perguntas_do_resumo: string[] | null;
   operator_enabled: boolean;
   operator_model: string | null;
   operator_tool_ids: string[];

@@ -364,6 +364,12 @@ export const pipelineConfigPatchSchema = z.object({
    * (`lib/escalacao/equipe-assumiu.ts`). `null` tira a configuração (não move).
    */
   etapa_quando_equipe_assume: z.string().uuid().nullable().optional(),
+  /**
+   * PC-030: a etapa em que a IA pode enviar o contrato pela assinatura
+   * eletrônica (ex.: "Aguardando assinatura"). `null` tira a configuração: a
+   * IA não envia contrato neste funil.
+   */
+  etapa_do_contrato: z.string().uuid().nullable().optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 
