@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Contratos do negócio",
-    "subtitle": "PDF do escritório (anexado ou gerado pelo modelo aprovado) enviado pelo WhatsApp; desfecho marcado à mão ou acompanhado pelo serviço de assinatura eletrônica (fork, migrations 9008 e 9027)",
+    "subtitle": "PDF do escritório (anexado ou gerado pelo modelo aprovado) enviado pelo WhatsApp; desfecho marcado à mão ou acompanhado pelo serviço de assinatura eletrônica (fork, migrations 9008 e 9027; a IA envia pelo modelo aprovado, com aprovação opcional da equipe)",
     "output": "contratos-do-negocio.html",
     "quality_profile": "standard"
   },
@@ -38,7 +38,10 @@
     { "id": "modelos", "lane": "data", "col": 6, "type": "database", "label": "contrato_modelos (versão + aprovado pelo advogado)" },
     { "id": "servico_externo", "lane": "saida", "col": 4, "type": "external", "label": "Serviço de assinatura (ZapSign)" },
     { "id": "casos", "lane": "saida", "col": 5, "type": "database", "label": "agent_cases (tipo contrato)" },
-    { "id": "ganho", "lane": "saida", "col": 6, "type": "service", "label": "confirmarAssinatura (etapa de ganho + tag)" }
+    { "id": "ganho", "lane": "saida", "col": 6, "type": "service", "label": "confirmarAssinatura (etapa de ganho + tag)" },
+    { "id": "ferramenta_ia", "lane": "api", "col": 11, "type": "service", "label": "Turno da IA: enviar_contrato · reclamacao_do_contrato · situação do contrato" },
+    { "id": "enviar_pela_ia", "lane": "api", "col": 12, "type": "service", "label": "enviarContratoPelaIa (NÃO confirmado, etapa, aprovação, janela de 24 h)" },
+    { "id": "analise_humana", "lane": "saida", "col": 7, "type": "service", "label": "levarParaAnaliseHumana (moveLeadHandler, sai de Aguardando assinatura)" }
   ],
   "edges": [
     { "id": "e1", "from": "secao", "to": "rota_anexar", "label": "PDF + nome" },
@@ -79,6 +82,14 @@
     { "id": "e36", "from": "acompanhar", "to": "bucket", "label": "via assinada" },
     { "id": "e37", "from": "acompanhar", "to": "ganho", "label": "assinado" },
     { "id": "e38", "from": "acompanhar", "to": "casos", "label": "conferir pelo CPF; recusa; prazo vencido" },
-    { "id": "e39", "from": "ganho", "to": "timeline", "label": "negócio ganho" }
+    { "id": "e39", "from": "ganho", "to": "timeline", "label": "negócio ganho" },
+    { "id": "e40", "from": "ferramenta_ia", "to": "enviar_pela_ia", "label": "cliente aceitou, dados confirmados" },
+    { "id": "e41", "from": "enviar_pela_ia", "to": "tabela", "label": "rascunho da IA (origem ia)" },
+    { "id": "e42", "from": "enviar_pela_ia", "to": "rota_enviar", "label": "aprovação desligada: envia pelo caminho de sempre" },
+    { "id": "e43", "from": "enviar_pela_ia", "to": "casos", "label": "pronto para aprovar · fora da janela · não gerado" },
+    { "id": "e44", "from": "ferramenta_ia", "to": "analise_humana", "label": "já tem advogado/processo · reclamação do contrato" },
+    { "id": "e45", "from": "analise_humana", "to": "timeline", "label": "card em Análise humana" },
+    { "id": "e46", "from": "tabela", "to": "ferramenta_ia", "label": "situação do contrato no turno" },
+    { "id": "e47", "from": "rota_enviar", "to": "casos", "label": "aprovar fecha o caso de aprovação" }
   ]
 }

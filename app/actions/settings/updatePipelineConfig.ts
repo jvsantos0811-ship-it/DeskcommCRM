@@ -116,6 +116,22 @@ export async function updatePipelineConfig(
       nextSettings.etapa_quando_equipe_assume = etapa;
     }
   }
+  // PC-030: a etapa em que a IA envia o contrato — também deste funil.
+  if (parsed.data.etapa_do_contrato !== undefined) {
+    const etapa = parsed.data.etapa_do_contrato;
+    if (etapa === null) {
+      delete nextSettings.etapa_do_contrato;
+    } else {
+      const { data: daqui } = await supabase
+        .from("crm_stages")
+        .select("id")
+        .eq("id", etapa)
+        .eq("pipeline_id", pipelineId)
+        .maybeSingle();
+      if (!daqui) return { ok: false, error: "etapa_de_outro_funil" };
+      nextSettings.etapa_do_contrato = etapa;
+    }
+  }
 
   // Campo que passa a ser do Contato e que uma regra ativa do gatilho por data
   // lê (#2791): a regra seguiria ligada e pararia de disparar em silêncio.

@@ -22,6 +22,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { BUCKET_DOS_CONTRATOS, caminhoDoAssinado, pareceUmPdf } from "@/lib/contratos/arquivo";
+import { fecharCasoDeAprovacao } from "@/lib/contratos/caso-do-contrato";
 import { provedorDeAssinatura } from "@/lib/contratos/provedores";
 import { COLUNAS_DO_CONTRATO, carregarContrato, paraATela, type LinhaDoContrato } from "@/lib/contratos/servidor";
 import {
@@ -168,6 +169,17 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         }),
       );
     }
+  }
+
+  // O rascunho que a IA gerou e a equipe descartou ("Corrigir"): o caso de
+  // aprovação sai da fila com o motivo.
+  if (desfecho === "cancelado" && contrato.status === "rascunho") {
+    await fecharCasoDeAprovacao(admin, {
+      orgId,
+      contratoId: contrato.id,
+      userId: authz.user.id,
+      nota: motivo ? `Rascunho descartado para corrigir: ${motivo}` : "Rascunho descartado para corrigir.",
+    });
   }
 
   if (contrato.lead_id) {

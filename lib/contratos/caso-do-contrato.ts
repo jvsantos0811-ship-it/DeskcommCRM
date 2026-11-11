@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { TipoDeCaso } from "@/lib/ai/case-copy";
+import { CASO_CONTRATO_PRONTO_PARA_APROVAR } from "@/lib/contratos/regra-da-ia";
 import { logger } from "@/lib/logger";
 
 /** O assunto do caso na fila (vocabulário de `TIPOS_DE_CASO`, nunca literal solto). */
@@ -87,5 +88,61 @@ export async function abrirCasoDoContrato(
       detalhe: err instanceof Error ? err.message.slice(0, 160) : "erro",
     });
     return { caseId: null, jaHaviaAberto: false };
+  }
+}
+
+/**
+ * Fecha o caso "Contrato pronto para aprovar" do contrato quando a equipe já
+ * decidiu pelo card: aprovou (o contrato saiu) ou descartou o rascunho para
+ * corrigir. Sem isso o caso ficava aberto na fila depois de resolvido. Só o
+ * caso DESTE contrato e com ESTE título; nota em caso alheio não fecha nada.
+ * Fechar emite `ai.case_closed`, que tira o aviso da Central. Nunca lança.
+ */
+export async function fecharCasoDeAprovacao(
+  admin: SupabaseClient,
+  f: { orgId: string; contratoId: string; userId: string | null; nota: string },
+): Promise<number> {
+  try {
+    const { data } = await admin
+      .from("agent_cases")
+      .select("id, context_snapshot")
+      .eq("organization_id", f.orgId)
+      .eq("kind", TIPO_DO_CASO)
+      .eq("title", CASO_CONTRATO_PRONTO_PARA_APROVAR)
+      .in("status", ["awaiting_human", "awaiting_lead"])
+      .limit(50);
+    const ids = ((data ?? []) as { id: string; context_snapshot: { contrato_id?: unknown } | null }[])
+      .filter((c) => c.context_snapshot?.contrato_id === f.contratoId)
+      .map((c) => c.id);
+    let fechados = 0;
+    for (const id of ids) {
+      const agora = new Date().toISOString();
+      const { data: fechado } = await admin
+        .from("agent_cases")
+        .update({ status: "resolved", closed_at: agora, updated_at: agora })
+        .eq("organization_id", f.orgId)
+        .eq("id", id)
+        .in("status", ["awaiting_human", "awaiting_lead"])
+        .select("id");
+      if ((fechado ?? []).length === 0) continue;
+      fechados += 1;
+      await admin.from("agent_case_events").insert({
+        organization_id: f.orgId,
+        case_id: id,
+        kind: "resolved",
+        actor_kind: f.userId ? "human" : "system",
+        actor_user_id: f.userId,
+        body: f.nota.slice(0, 2000),
+        metadata: { contrato_id: f.contratoId },
+      });
+    }
+    return fechados;
+  } catch (err) {
+    logger.warn("[contrato] caso de aprovação não fechado", {
+      organization_id: f.orgId,
+      contrato_id: f.contratoId,
+      detalhe: err instanceof Error ? err.message.slice(0, 160) : "erro",
+    });
+    return 0;
   }
 }

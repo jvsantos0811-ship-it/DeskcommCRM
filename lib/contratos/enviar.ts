@@ -27,6 +27,7 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { BUCKET_DOS_CONTRATOS, caminhoDaCopiaNaConversa, nomeDoArquivoParaOCliente } from "@/lib/contratos/arquivo";
 import { servicoDaOrganizacao } from "@/lib/contratos/assinatura/conta";
 import { ErroDoServico, type Signatario } from "@/lib/contratos/assinatura/servico";
+import { fecharCasoDeAprovacao } from "@/lib/contratos/caso-do-contrato";
 import { cpfValido } from "@/lib/contratos/modelo-do-contrato";
 import { provedorDeAssinatura, type PreparoDaAssinatura } from "@/lib/contratos/provedores";
 import { COLUNAS_DO_CONTRATO, carregarContrato, paraATela, type LinhaDoContrato } from "@/lib/contratos/servidor";
@@ -294,6 +295,16 @@ export async function enviarContrato(
       com_link: Boolean(preparo.linkAssinatura),
     },
   });
+
+  // Rascunho da IA aprovado pela equipe: o caso "Contrato pronto para aprovar" sai da fila.
+  if (!reenvio) {
+    await fecharCasoDeAprovacao(admin, {
+      orgId: e.orgId,
+      contratoId: contrato.id,
+      userId: e.userId,
+      nota: "Contrato aprovado e enviado ao cliente pelo card.",
+    });
+  }
 
   const [tela] = await paraATela(admin, e.orgId, [(enviado ?? contrato) as unknown as LinhaDoContrato]);
   return { ok: true, contrato: tela!, enviado: true };

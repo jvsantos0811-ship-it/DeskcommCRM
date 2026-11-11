@@ -457,6 +457,9 @@ export function applyPreviewPolicy(
                 'schedule_followup',
                 'open_human_case',
                 'provide_case_update',
+                'enviar_contrato',
+                'reclamacao_do_contrato',
+                'confirmar_nome',
               ].includes(name)
             ) {
               p.result.proposals.push({ tool: name, arguments: args });
