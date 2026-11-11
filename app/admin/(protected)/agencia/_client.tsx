@@ -300,7 +300,7 @@ export function AgenciaClient() {
                       <td className="px-3 py-2 tabular-nums">
                         {brl(c.custo_total_brl_cents)}{" "}
                         <span
-                          className="rounded bg-warning-bg px-1 text-[10px] text-warning-fg"
+                          className="rounded-sm bg-warning-bg px-1 text-[10px] text-warning-fg"
                           title={t("O custo do WhatsApp é estimado pela tabela de preço.")}
                         >
                           {t("estimado")}

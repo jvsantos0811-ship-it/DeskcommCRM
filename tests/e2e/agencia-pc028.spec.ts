@@ -91,38 +91,43 @@ test.beforeAll(async () => {
   await db.from("agencia_clientes").insert({ organization_id: orgB, plano: "Entrada", teste_ate: dia(2) });
 
   // Custo de IA e conversas da IA da A, com um lead de nome e telefone que NÃO podem aparecer.
-  const { data: contato } = await db
-    .from("contacts")
-    .insert({ organization_id: orgA, display_name: LEAD_NOME, name: LEAD_NOME, phone_number: LEAD_FONE })
-    .select("id")
-    .single();
   const { data: sessao } = await db
     .from("channel_sessions")
     .insert({ organization_id: orgA, waha_session_name: `e2e-agencia-${SUFIXO}`, webhook_secret_encrypted: "\\x00", status: "WORKING" })
     .select("id")
     .single();
+  // Duas conversas da IA: uma por contato (a conversa é única por contato e canal).
   for (const n of [1, 2]) {
-    const { data: conversa } = await db
-      .from("conversations")
-      .insert({ organization_id: orgA, contact_id: contato!.id, channel_session_id: sessao!.id, status: "open" })
+    const { data: contato, error: erroContato } = await db
+      .from("contacts")
+      .insert({ organization_id: orgA, display_name: LEAD_NOME, name: LEAD_NOME, phone_number: `${LEAD_FONE}${n}` })
       .select("id")
       .single();
-    await db.from("messages").insert({
+    if (erroContato || !contato) throw new Error(`contacts: ${erroContato?.message}`);
+    const { data: conversa, error: erroConversa } = await db
+      .from("conversations")
+      .insert({ organization_id: orgA, contact_id: contato.id, channel_session_id: sessao!.id, status: "open" })
+      .select("id")
+      .single();
+    if (erroConversa || !conversa) throw new Error(`conversations: ${erroConversa?.message}`);
+    const { error: erroMensagem } = await db.from("messages").insert({
       organization_id: orgA,
-      conversation_id: conversa!.id,
+      conversation_id: conversa.id,
       channel_session_id: sessao!.id,
-      contact_id: contato!.id,
+      contact_id: contato.id,
       direction: "outbound",
       status: "sent",
       sent_via: "ai",
       type: "text",
       body: `Mensagem secreta ${SUFIXO} ${n}`,
     });
+    if (erroMensagem) throw new Error(`messages: ${erroMensagem.message}`);
   }
-  await db.from("llm_calls").insert([
+  const { error: erroLlm } = await db.from("llm_calls").insert([
     { organization_id: orgA, provider: "anthropic", model: "x", cost_cents: 300, created_at: new Date(Date.now() - 86_400_000).toISOString() },
     { organization_id: orgA, provider: "anthropic", model: "x", cost_cents: 200, created_at: new Date(Date.now() - 2 * 86_400_000).toISOString() },
   ]);
+  if (erroLlm) throw new Error(`llm_calls: ${erroLlm.message}`);
 });
 
 test("o dono vê os números que batem com a conta à mão e com o Usage", async ({ page }) => {

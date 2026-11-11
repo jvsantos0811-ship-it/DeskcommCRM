@@ -162,11 +162,27 @@ afterAll(async () => {
 });
 
 describe("o painel da agência (9030)", () => {
-  it("⭐ só o service_role: anon e o admin da organização não leem nem executam", async () => {
+  it("⭐ só o service_role: anon e o admin da organização não leem, não escrevem nem executam", async () => {
+    // Controle positivo: as linhas DA PRÓPRIA organização existem — a recusa
+    // não é "tabela vazia", é falta de acesso.
+    await pool.query(`insert into agencia_clientes (organization_id, plano) values ($1,'Controle') on conflict (organization_id) do nothing`, [ORG]);
+    await pool.query(`insert into agencia_pagamentos (organization_id, tipo, pago_em, valor_cents, forma) values ($1,'outro',current_date,100,'pix')`, [ORG]);
+    const { rows: existe } = await pool.query<{ n: number }>(
+      `select (select count(*) from agencia_clientes where organization_id = $1)::int + (select count(*) from agencia_pagamentos where organization_id = $1)::int as n`,
+      [ORG],
+    );
+    expect(existe[0]!.n).toBeGreaterThanOrEqual(2);
     for (const papel of ["anon", "authenticated"] as const) {
       for (const tabela of ["agencia_clientes", "agencia_pagamentos", "agencia_config"]) {
         await expect(como(papel, `select * from ${tabela}`)).rejects.toThrow(/permission denied/);
+        await expect(como(papel, `delete from ${tabela}`)).rejects.toThrow(/permission denied/);
       }
+      await expect(como(papel, `insert into agencia_clientes (organization_id, plano) values ('${ORG}','x')`)).rejects.toThrow(/permission denied/);
+      await expect(como(papel, `update agencia_clientes set plano = 'x'`)).rejects.toThrow(/permission denied/);
+      await expect(
+        como(papel, `insert into agencia_pagamentos (organization_id, tipo, pago_em, valor_cents, forma) values ('${ORG}','outro',current_date,1,'pix')`),
+      ).rejects.toThrow(/permission denied/);
+      await expect(como(papel, `update agencia_config set cotacao_usd_brl = 1`)).rejects.toThrow(/permission denied/);
       await expect(como(papel, `select * from fn_agencia_numeros(now() - interval '1 day', now())`)).rejects.toThrow(/permission denied/);
       await expect(como(papel, `select * from fn_agencia_por_agente(now() - interval '1 day', now())`)).rejects.toThrow(/permission denied/);
     }

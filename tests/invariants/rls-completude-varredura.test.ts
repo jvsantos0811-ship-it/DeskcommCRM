@@ -400,6 +400,23 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "continua lendo 0 de B; o gerente de A lê 0 de B; INSERT e a função de " +
       "gravar pela sessão dão permission denied. Migration 9020 (fork).",
   },
+  {
+    tabela: "agencia_clientes",
+    razao:
+      "tests/invariants/painel-da-agencia.test.ts (\"⭐ só o service_role\") — tabela da " +
+      "INSTALAÇÃO (o dono da agência), sem policy e sem grant a anon/authenticated: com a " +
+      "linha da própria organização existindo (controle positivo), o admin dessa organização " +
+      "por JWT e o anon recebem `permission denied` em SELECT, INSERT, UPDATE e DELETE — " +
+      "zero da própria e zero do vizinho. Migration 9030 (fork, PC-028).",
+  },
+  {
+    tabela: "agencia_pagamentos",
+    razao:
+      "tests/invariants/painel-da-agencia.test.ts (\"⭐ só o service_role\") — tabela da " +
+      "INSTALAÇÃO, sem policy e sem grant a anon/authenticated: com o pagamento da própria " +
+      "organização existindo (controle positivo), o admin dessa organização por JWT e o anon " +
+      "recebem `permission denied` em SELECT, INSERT e DELETE. Migration 9030 (fork, PC-028).",
+  },
 ];
 
 /**

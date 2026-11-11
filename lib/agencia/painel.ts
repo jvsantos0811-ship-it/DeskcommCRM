@@ -11,8 +11,8 @@
  *    (`agencia_pagamentos`) — a cobrança do produto não guarda a lista.
  *  · Custo de IA: `llm_calls.cost_cents` no período (centavos de DÓLAR), a
  *    mesma leitura da tela de Usage; em reais pela cotação da tela.
- *  · Custo do WhatsApp: SEMPRE estimado — a Zernio/Meta não devolve o custo ao
- *    CRM. Mensagens de modelo por categoria × a tabela de preço da tela;
+ *  · Custo do WhatsApp: SEMPRE estimado — o provedor do canal oficial não
+ *    devolve o custo ao CRM. Mensagens de modelo por categoria × a tabela de preço da tela;
  *    resposta dentro da janela de 24 h e modelo na janela grátis do anúncio
  *    (até 72 h depois da chegada pelo anúncio de clique) contam R$ 0.
  *  · Resultado do cliente: `fn_agencia_numeros` (migration 9030).
