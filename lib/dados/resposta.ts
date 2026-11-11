@@ -10,6 +10,7 @@ import {
   type Paineis,
   type ResumoDoRetrato,
 } from "@/lib/dados/retrato";
+import type { PeriodoResolvido } from "@/lib/dados/periodo";
 
 /**
  *  - `retrato`: a tela lê o retrato do dia (gerente, administrador, leitor e
@@ -53,6 +54,8 @@ export interface RespostaDaQualidade {
   por_etapa: ConteudoDoRetrato["por_etapa"];
   motivos: ConteudoDoRetrato["motivos"];
   paineis: Paineis | null;
+  /** PC-025: o período escolhido (dias do fuso da organização, inclusivos). Nulo = "Tudo". */
+  periodo: PeriodoResolvido | null;
 }
 
 export interface EntradaDaResposta {
@@ -66,6 +69,7 @@ export interface EntradaDaResposta {
   nomes: Map<string, string>;
   podeAtualizar: boolean;
   rotuloDoInteresse: string | null;
+  periodo?: PeriodoResolvido | null;
 }
 
 /** O próximo "Atualizar agora" permitido, ou nulo se já pode. */
@@ -104,5 +108,6 @@ export function montarResposta(e: EntradaDaResposta): RespostaDaQualidade {
     por_etapa: c?.por_etapa ?? [],
     motivos: c?.motivos ?? [],
     paineis: c ? montarPaineis(c) : null,
+    periodo: e.periodo ?? null,
   };
 }

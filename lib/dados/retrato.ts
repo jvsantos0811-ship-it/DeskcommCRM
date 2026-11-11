@@ -413,15 +413,30 @@ export function montarRetrato(e: EntradaDoRetrato): ConteudoDoRetrato {
   const leads = e.linhas.map((l) => leadDoRetrato(l, e.agora, e.fuso));
   // A ordem que a tela usa nas listas: maior nota primeiro, depois o mais novo.
   leads.sort((a, b) => b.nota - a.nota || b.criado_em.localeCompare(a.criado_em) || a.id.localeCompare(b.id));
+  return montarConteudo(leads, e);
+}
+
+/**
+ * Resumo e séries a partir de leads JÁ montados (e já ordenados). É o miolo de
+ * `montarRetrato` e o que o período do painel (PC-025) usa para refazer os
+ * números só com os leads que entraram no período, sem reler o banco.
+ *
+ * `dias`: os dias do gráfico "por dia". Ausente = os últimos 14 até hoje.
+ */
+export function montarConteudo(
+  leads: LeadDoRetrato[],
+  e: Pick<EntradaDoRetrato, "agora" | "fuso" | "pipelineId" | "moeda" | "tipos" | "etapas">,
+  dias?: readonly string[],
+): ConteudoDoRetrato {
   const ctx: Contexto = { agora: e.agora, fuso: e.fuso, pipelineId: e.pipelineId, moeda: e.moeda, tipos: e.tipos };
   const resumo = resumir(leads, ctx);
 
   const hoje = diaNoFuso(e.agora, e.fuso);
-  const por_dia: PontoPorDia[] = [];
-  for (let i = DIAS_DO_GRAFICO - 1; i >= 0; i -= 1) {
-    const dia = somarDias(hoje, -i);
-    por_dia.push({ dia, leads: leads.filter((l) => l.dia === dia).length });
-  }
+  const diasDoGrafico =
+    dias ?? Array.from({ length: DIAS_DO_GRAFICO }, (_, i) => somarDias(hoje, i - (DIAS_DO_GRAFICO - 1)));
+  const porDia = new Map<string, number>();
+  for (const l of leads) porDia.set(l.dia, (porDia.get(l.dia) ?? 0) + 1);
+  const por_dia: PontoPorDia[] = diasDoGrafico.map((dia) => ({ dia, leads: porDia.get(dia) ?? 0 }));
 
   const funil: PassoDoFunilContado[] = [
     { passo: "entraram", leads: resumo.leads },

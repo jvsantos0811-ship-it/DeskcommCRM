@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { EditorDeWidget } from "./EditorDeWidget";
 import { usePaineis } from "./useDados";
+import type { PeriodoPedido } from "@/lib/dados/periodo";
 import { WidgetCard } from "./WidgetCard";
 
 /**
@@ -20,7 +21,14 @@ import { WidgetCard } from "./WidgetCard";
  * Primeiro acesso sem painel nenhum: um botão cria o "Painel comercial" modelo,
  * em vez de deixar a pessoa diante de uma tela vazia sem saber por onde começar.
  */
-export function DadosClient({ podeEditar }: { podeEditar: boolean }) {
+export function DadosClient({
+  podeEditar,
+  periodo = null,
+}: {
+  podeEditar: boolean;
+  /** PC-025: o período da página vale para todos os gráficos; nulo = o de cada gráfico. */
+  periodo?: PeriodoPedido | null;
+}) {
   const t = useT();
   const { lista, criar, salvar, apagar } = usePaineis();
   const paineis = lista.data ?? [];
@@ -179,6 +187,7 @@ export function DadosClient({ podeEditar }: { podeEditar: boolean }) {
               <WidgetCard
                 key={w.id}
                 widget={w}
+                periodo={periodo}
                 acoes={
                   podeEditar ? (
                     <div className="flex shrink-0 gap-0.5">

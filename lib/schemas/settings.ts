@@ -341,6 +341,14 @@ export const pipelineConfigPatchSchema = z.object({
    */
   comanda_no_ganho: z.boolean().optional(),
   /**
+   * PC-025: a "Etapa marco de qualificação" do painel de Dados (ex.:
+   * Qualificado) — a medida "parou antes da qualificação" conta quem nunca
+   * chegou a ela nem às depois dela. `null` tira a configuração.
+   */
+  marco_de_qualificacao: z.string().uuid().nullable().optional(),
+  /** PC-025: etapas que ficam fora da medida (ex.: Demanda futura, Análise humana). */
+  etapas_fora_da_medida: z.array(z.string().uuid()).max(50).optional(),
+  /**
    * O que acontece quando um negócio ENCERRADO volta (issue #1538). Ausente é
    * `mesmo_registro`, o comportamento de antes: reabre o mesmo negócio. Com
    * `novo_negocio`, mover o encerrado para etapa aberta é recusado e a saída é
