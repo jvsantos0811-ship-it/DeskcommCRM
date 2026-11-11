@@ -1311,6 +1311,7 @@ jobs:
         sons-dos-avisos.spec.ts
         suspensao-administrativa.spec.ts
         telas-de-conversa-compactas.spec.ts
+        agendar-pelo-card-pc027.spec.ts
         registro-da-conversa.spec.ts
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
