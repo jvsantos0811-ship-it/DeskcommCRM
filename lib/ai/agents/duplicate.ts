@@ -33,7 +33,7 @@ export const DUPLICATE_AGENT_COLUMNS =
  * basta, se o INSERT não a escreve a cópia nasce com o default do banco.
  */
 export const DUPLICATE_VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, estado_do_funil_ligado, modo_conservador, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, estado_do_funil_ligado, modo_conservador, perguntas_do_resumo, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
 
 export type DuplicateAgentError =
   | "not_found"
@@ -93,6 +93,8 @@ export function versionPayloadFrom(src: Record<string, unknown>) {
     cases_enabled: src.cases_enabled,
     estado_do_funil_ligado: src.estado_do_funil_ligado,
     modo_conservador: src.modo_conservador,
+    // PC-026: a lista do resumo do card acompanha a cópia.
+    perguntas_do_resumo: src.perguntas_do_resumo ?? [],
     // Papel Operador (spec 16). Duplicar um agente tem de duplicar o papel
     // inteiro: sem estas três, a cópia nasce com o Operador desligado e o dono
     // descobre isso quando o clone não organiza nada.

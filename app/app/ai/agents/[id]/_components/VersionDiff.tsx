@@ -105,6 +105,7 @@ export function VersionDiff({ versionA, versionB }: Props) {
   const t = useT();
   const tools = diffArr(versionA.tool_ids ?? [], versionB.tool_ids ?? []);
   const handoffKw = diffArr(versionA.handoff_keywords ?? [], versionB.handoff_keywords ?? []);
+  const perguntasDoResumo = diffArr(versionA.perguntas_do_resumo ?? [], versionB.perguntas_do_resumo ?? []);
   const followupFlows = diffArr(
     versionA.followup?.flow_pointer_ids ?? [],
     versionB.followup?.flow_pointer_ids ?? [],
@@ -167,6 +168,14 @@ export function VersionDiff({ versionA, versionB }: Props) {
         <Pills label={t("Adicionadas")} tone="add" items={handoffKw.added} />
         <Pills label={t("Removidas")} tone="del" items={handoffKw.removed} />
         {handoffKw.added.length === 0 && handoffKw.removed.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("Sem mudanças.")}</p>
+        ) : null}
+      </Section>
+
+      <Section title={t("Perguntas do resumo")}>
+        <Pills label={t("Adicionadas")} tone="add" items={perguntasDoResumo.added} />
+        <Pills label={t("Removidas")} tone="del" items={perguntasDoResumo.removed} />
+        {perguntasDoResumo.added.length === 0 && perguntasDoResumo.removed.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t("Sem mudanças.")}</p>
         ) : null}
       </Section>

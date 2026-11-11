@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Card do negócio com o nome de quem conversa e o resumo das respostas
+---
+O título do card passa a ser o nome de quem está conversando assim que a IA o confirma — pela nova ferramenta `confirmar_nome` (sempre disponível para o agente que conversa) ou pela linha "Nome confirmado" do cartão de passagem entre agentes. O nome sai com iniciais maiúsculas e sem emoji; se quem fala é um familiar, vale o nome do familiar. Título editado à mão pela equipe nunca é trocado pela IA, e a linha do tempo registra "Título: … (nome confirmado pela IA)". O nome do contato não muda. Na tela do agente, o novo campo **Perguntas do resumo** (até 15, uma por linha) liga um bloco "Resumo da IA" no começo da descrição do card, só com as respostas do cliente a essas perguntas — uma linha por pergunta respondida, até 600 caracteres, sem dado de documento (CPF, RG, endereço, CEP, data de nascimento) e com saúde só como "sim/não". O bloco é atualizado quando o agente passa a conversa (para outro agente ou para a equipe), abre um caso ou muda a etapa, com no máximo uma chamada ao modelo mais barato por vez; o texto da equipe fora do bloco nunca muda. Sem perguntas na lista, nada é feito e nenhuma IA é chamada. Os cards existentes só mudam na próxima atualização de cada um.

@@ -1311,6 +1311,7 @@ jobs:
         sons-dos-avisos.spec.ts
         suspensao-administrativa.spec.ts
         telas-de-conversa-compactas.spec.ts
+        agendar-pelo-card-pc027.spec.ts
         registro-da-conversa.spec.ts
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
@@ -1323,7 +1324,6 @@ jobs:
         esperando-a-equipe.spec.ts
         funil-de-entrada-por-numero.spec.ts
         funil-e-inbox-pc024.spec.ts
-        agendar-pelo-card-pc027.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

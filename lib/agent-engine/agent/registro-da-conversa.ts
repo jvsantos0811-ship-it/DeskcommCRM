@@ -189,7 +189,8 @@ export function sanearTexto(texto: string): string {
     .trim();
 }
 
-function simOuNao(resposta: string): string | null {
+/** "sim" / "não" quando a resposta começa assim; senão `null`. Puro. */
+export function simOuNao(resposta: string): string | null {
   const t = normalizarParaComparacao(resposta).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (/^(sim|s|pode|claro|autorizo|ok|tudo bem|aceito|concordo|positivo)\b/.test(t)) return 'sim';
   if (/^(nao|n|negativo|nem|prefiro nao)\b/.test(t)) return 'não';
