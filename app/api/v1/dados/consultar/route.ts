@@ -11,6 +11,10 @@
  *
  * Teto de linhas por consulta (`TETO`): o resultado diz `truncado` quando bate
  * nele, em vez de devolver um número menor sem avisar.
+ *
+ * PERÍODO DA PÁGINA (PC-025): `?periodo=…` (e `de`/`ate` no personalizado) vale
+ * por cima de `periodo_dias` — dias inteiros do fuso da organização, os dois
+ * inclusivos. A resposta diz qual período valeu (`periodo`).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -27,6 +31,9 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
+import { periodoDosParametros, resolverPeriodo } from "@/lib/dados/periodo";
+import { diaNoFuso } from "@/lib/dados/retrato";
+import { periodoNoFuso } from "@/lib/datas/periodo-no-fuso";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +73,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   });
   if (!parsed.success) return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
   const w = parsed.data;
-  const desde = new Date(Date.now() - w.periodo_dias * 86_400_000).toISOString();
+  const periodo = resolverPeriodo(periodoDosParametros(p), diaNoFuso(new Date(), fuso));
+  const limites = periodo ? periodoNoFuso(periodo.de, periodo.ate, fuso) : null;
+  const desde = limites?.inicio
+    ? limites.inicio.toISOString()
+    : new Date(Date.now() - w.periodo_dias * 86_400_000).toISOString();
+  // O fim só existe com o período da página; sem ele, "até agora" como sempre.
+  const ate = limites?.fimExclusivo ? limites.fimExclusivo.toISOString() : null;
   const supabase = await createClient();
 
   if (w.metrica === "conversas_iniciadas") {
@@ -76,6 +89,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .eq("organization_id", orgId)
       .gte("created_at", desde)
       .limit(TETO);
+    if (ate) q = q.lt("created_at", ate);
     if (w.owner_user_id) q = q.eq("assigned_to_user_id", w.owner_user_id);
     const { data, error } = await q;
     if (error) return fail("internal_error", t("Não foi possível calcular este gráfico."), 500, { requestId });
@@ -85,7 +99,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       created_at: b.created_at,
       dono: b.assigned_to_user_id ? (nomes.get(b.assigned_to_user_id) ?? t("Sem nome")) : t("Sem dono"),
     }));
-    return ok({ ...calcularConversas(w, linhas, fuso), truncado: brutas.length >= TETO }, { requestId });
+    return ok({ ...calcularConversas(w, linhas, fuso), truncado: brutas.length >= TETO, periodo }, { requestId });
   }
 
   let q = supabase
@@ -95,9 +109,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     )
     .eq("organization_id", orgId)
     .limit(TETO);
-  if (w.metrica === "leads_criados") q = q.gte("created_at", desde);
-  else if (w.metrica === "negocios_abertos" || w.metrica === "valor_em_aberto") q = q.eq("status", "open");
-  else q = q.in("status", ["won", "lost"]).gte("closed_at", desde);
+  if (w.metrica === "leads_criados") {
+    q = q.gte("created_at", desde);
+    if (ate) q = q.lt("created_at", ate);
+  } else if (w.metrica === "negocios_abertos" || w.metrica === "valor_em_aberto") q = q.eq("status", "open");
+  else {
+    q = q.in("status", ["won", "lost"]).gte("closed_at", desde);
+    if (ate) q = q.lt("closed_at", ate);
+  }
   if (w.pipeline_id) q = q.eq("pipeline_id", w.pipeline_id);
   if (w.owner_user_id) q = q.eq("owner_user_id", w.owner_user_id);
 
@@ -116,5 +135,5 @@ export async function GET(req: NextRequest): Promise<Response> {
     origem: b.source,
     motivo: b.lost_reason,
   }));
-  return ok({ ...calcularNegocios(w, linhas, fuso), truncado: brutas.length >= TETO }, { requestId });
+  return ok({ ...calcularNegocios(w, linhas, fuso), truncado: brutas.length >= TETO, periodo }, { requestId });
 }

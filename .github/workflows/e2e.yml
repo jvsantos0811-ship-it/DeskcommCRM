@@ -1324,6 +1324,8 @@ jobs:
         esperando-a-equipe.spec.ts
         funil-de-entrada-por-numero.spec.ts
         funil-e-inbox-pc024.spec.ts
+        dados-pc025.spec.ts
+        agencia-pc028.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

@@ -76,6 +76,30 @@ export async function updatePipelineConfig(
   if (parsed.data.reabertura_campos !== undefined) {
     nextSettings.reabertura_campos = parsed.data.reabertura_campos;
   }
+  // PC-025: o marco de qualificação e as etapas fora da medida — só etapas DESTE funil.
+  if (parsed.data.marco_de_qualificacao !== undefined || parsed.data.etapas_fora_da_medida !== undefined) {
+    const pedidas = [
+      ...(parsed.data.marco_de_qualificacao ? [parsed.data.marco_de_qualificacao] : []),
+      ...(parsed.data.etapas_fora_da_medida ?? []),
+    ];
+    if (pedidas.length > 0) {
+      const { data: daqui } = await supabase
+        .from("crm_stages")
+        .select("id")
+        .eq("pipeline_id", pipelineId)
+        .in("id", [...new Set(pedidas)]);
+      if ((daqui ?? []).length !== new Set(pedidas).size) return { ok: false, error: "etapa_de_outro_funil" };
+    }
+    if (parsed.data.marco_de_qualificacao !== undefined) {
+      if (parsed.data.marco_de_qualificacao === null) delete nextSettings.marco_de_qualificacao;
+      else nextSettings.marco_de_qualificacao = parsed.data.marco_de_qualificacao;
+    }
+    if (parsed.data.etapas_fora_da_medida !== undefined) {
+      const fora = [...new Set(parsed.data.etapas_fora_da_medida)];
+      if (fora.length === 0) delete nextSettings.etapas_fora_da_medida;
+      else nextSettings.etapas_fora_da_medida = fora;
+    }
+  }
   // PC-029: a etapa quando a equipe assume — tem de ser uma etapa DESTE funil.
   if (parsed.data.etapa_quando_equipe_assume !== undefined) {
     const etapa = parsed.data.etapa_quando_equipe_assume;

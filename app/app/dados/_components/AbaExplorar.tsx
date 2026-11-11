@@ -14,9 +14,12 @@ import {
   type GrupoDoExplorar,
   type Medida,
 } from "@/lib/dados/retrato";
+import type { PeriodoPedido } from "@/lib/dados/periodo";
 import type { RespostaDaQualidade } from "@/lib/dados/resposta";
 import { cn } from "@/lib/utils";
 
+import { MedidaMotivoDePerda } from "./MedidaMotivoDePerda";
+import { MedidaParouAntes } from "./MedidaParouAntes";
 import { nomeDoLead, rotuloDaOrigem, rotuloDaTemperatura, Secao, SeloDoNivel, TabelaDeLeads, useDinheiro, type T } from "./pecas";
 
 function rotuloDoDia(d: string, t: T): string {
@@ -42,13 +45,22 @@ function rotuloDaFaixa(f: string, t: T): string {
  * "Abrir no funil", e o grupo que tem filtro no funil (nível, temperatura,
  * interesse) abre inteiro de uma vez.
  */
-export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
+/**
+ * PC-025: duas medidas que não saem do retrato — leem ao vivo, com o período da
+ * página: o motivo de perda (pela data da perda) e "parou antes da
+ * qualificação". Escolhidas no mesmo "Medir", trocam o painel de baixo.
+ */
+const MEDIDAS_AO_VIVO = ["motivo_de_perda", "parou_antes"] as const;
+type MedidaAoVivo = (typeof MEDIDAS_AO_VIVO)[number];
+
+export function AbaExplorar({ dados, periodo = null }: { dados: RespostaDaQualidade; periodo?: PeriodoPedido | null }) {
   const t = useT();
   const pid = dados.pipeline_id;
   const brl = useDinheiro(dados.resumo?.moeda ?? "BRL");
   const interesse = dados.rotulo_do_interesse ?? t("Interesse");
   const [agrupar, setAgrupar] = useState<Agrupamento>("primeira_resposta");
   const [medir, setMedir] = useState<Medida>("pct_qualificacao");
+  const [aoVivo, setAoVivo] = useState<MedidaAoVivo | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const grupos = dados.paineis?.explorar[agrupar] ?? [];
   const porId = useMemo(() => new Map(dados.leads.map((l) => [l.id, l])), [dados.leads]);
@@ -105,6 +117,11 @@ export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
     }
   };
 
+  const rotuloAoVivo: Record<MedidaAoVivo, string> = {
+    motivo_de_perda: t("Motivo de perda"),
+    parou_antes: t("Parou antes da qualificação"),
+  };
+
   const valorDe = (g: GrupoDoExplorar): number => (medir === "nota_media" ? (g.nota_media ?? 0) : g[medir]);
   const textoDe = (g: GrupoDoExplorar): string =>
     medir === "pct_resposta" || medir === "pct_qualificacao"
@@ -139,6 +156,7 @@ export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
   return (
     <div className="flex flex-col gap-5">
       <section aria-label={t("Montar a análise")} className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-5">
+        {aoVivo === null && (
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("Agrupar por")}>
           <span className="mr-1 w-24 text-xs font-semibold uppercase tracking-wide text-text-muted">{t("Agrupar por")}</span>
           {AGRUPAMENTOS.map((g) => (
@@ -157,6 +175,7 @@ export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
             </button>
           ))}
         </div>
+        )}
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("Medir")}>
           <span className="mr-1 w-24 text-xs font-semibold uppercase tracking-wide text-text-muted">{t("Medir")}</span>
           {MEDIDAS.map((m) => (
@@ -164,16 +183,35 @@ export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
               key={m}
               type="button"
               data-testid={`explorar-medir-${m}`}
-              aria-pressed={medir === m}
-              onClick={() => setMedir(m)}
-              className={chip(medir === m)}
+              aria-pressed={aoVivo === null && medir === m}
+              onClick={() => {
+                setMedir(m);
+                setAoVivo(null);
+              }}
+              className={chip(aoVivo === null && medir === m)}
             >
               {rotuloDaMedida[m]}
+            </button>
+          ))}
+          {MEDIDAS_AO_VIVO.map((m) => (
+            <button
+              key={m}
+              type="button"
+              data-testid={`explorar-medir-${m}`}
+              aria-pressed={aoVivo === m}
+              onClick={() => setAoVivo(m)}
+              className={chip(aoVivo === m)}
+            >
+              {rotuloAoVivo[m]}
             </button>
           ))}
         </div>
       </section>
 
+      {aoVivo === "motivo_de_perda" && <MedidaMotivoDePerda periodo={periodo} />}
+      {aoVivo === "parou_antes" && <MedidaParouAntes periodo={periodo} />}
+
+      {aoVivo === null && (
       <div className="flex flex-wrap items-start gap-5">
         <Secao
           className="min-w-0 flex-[1_1_480px]"
@@ -250,9 +288,10 @@ export function AbaExplorar({ dados }: { dados: RespostaDaQualidade }) {
                 { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },
               ]}
             />
-          )}
+                    )}
         </Secao>
       </div>
+      )}
     </div>
   );
 }

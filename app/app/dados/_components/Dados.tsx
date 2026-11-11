@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { ApiError } from "@/lib/api/types";
 import { quandoFoiGerado } from "@/lib/dados/retrato";
+import {
+  parametrosDoPeriodo,
+  periodoDosParametros,
+  rotuloDoPeriodo,
+  type PeriodoPedido,
+} from "@/lib/dados/periodo";
 import type { RespostaDaQualidade } from "@/lib/dados/resposta";
 import { ArrowsClockwise, Clock } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
@@ -15,6 +21,7 @@ import { AbaExplorar } from "./AbaExplorar";
 import { AbaGestao } from "./AbaGestao";
 import { AbaQualidade } from "./AbaQualidade";
 import { DadosClient } from "./DadosClient";
+import { SeletorDePeriodo } from "./SeletorDePeriodo";
 import { useAtualizarAgora, useQualidade } from "./useQualidade";
 
 const ABAS = ["qualidade", "dinheiro", "gestao", "explorar", "meus"] as const;
@@ -47,8 +54,18 @@ export function Dados({ podeEditar }: { podeEditar: boolean }) {
   const params = useSearchParams();
   const pedida = params.get("aba");
   const aba: Aba = (ABAS as readonly string[]).includes(pedida ?? "") ? (pedida as Aba) : "qualidade";
-  const q = useQualidade();
+  // PC-025: o período mora no endereço — o link copiado abre com o mesmo recorte.
+  const periodo = periodoDosParametros(params);
+  const q = useQualidade(periodo);
   const dados = q.data;
+
+  const mudarPeriodo = (novo: PeriodoPedido | null) => {
+    const p = new URLSearchParams(params.toString());
+    for (const k of ["periodo", "de", "ate"]) p.delete(k);
+    for (const [k, v] of Object.entries(parametrosDoPeriodo(novo))) p.set(k, v);
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   const irPara = (a: Aba) => {
     const p = new URLSearchParams(params.toString());
@@ -93,8 +110,10 @@ export function Dados({ podeEditar }: { podeEditar: boolean }) {
         ))}
       </nav>
 
+      <SeletorDePeriodo key={JSON.stringify(periodo)} valor={periodo} onMudar={mudarPeriodo} />
+
       {aba === "meus" ? (
-        <DadosClient podeEditar={podeEditar} />
+        <DadosClient podeEditar={podeEditar} periodo={periodo} />
       ) : q.isLoading ? (
         <p className="text-sm text-text-muted">{t("Carregando…")}</p>
       ) : q.isError || !dados ? (
@@ -102,14 +121,18 @@ export function Dados({ podeEditar }: { podeEditar: boolean }) {
           {t("Não foi possível carregar os painéis agora. Recarregue a página.")}
         </p>
       ) : dados.modo === "sem_retrato" ? (
-        <SemRetrato dados={dados} />
+        <>
+          <SemRetrato dados={dados} />
+          {/* PC-025: as medidas ao vivo do Explorar não dependem do retrato. */}
+          {aba === "explorar" && <AbaExplorar dados={dados} periodo={periodo} />}
+        </>
       ) : (
         <>
           <Legenda dados={dados} />
           {aba === "qualidade" && <AbaQualidade dados={dados} />}
           {aba === "dinheiro" && <AbaDinheiro dados={dados} />}
           {aba === "gestao" && <AbaGestao dados={dados} />}
-          {aba === "explorar" && <AbaExplorar dados={dados} />}
+          {aba === "explorar" && <AbaExplorar dados={dados} periodo={periodo} />}
         </>
       )}
     </div>
@@ -192,9 +215,19 @@ function Atualizacao({ dados }: { dados: RespostaDaQualidade }) {
 
 function Legenda({ dados }: { dados: RespostaDaQualidade }) {
   const t = useT();
+  // PC-025: com período, a legenda diz qual é a turma de leads.
+  const doPeriodo = dados.periodo ? (
+    <span className="font-semibold text-text" data-testid="dados-legenda-periodo">
+      {t("Leads que entraram de {periodo} (horário da organização).").replace(
+        "{periodo}",
+        rotuloDoPeriodo(dados.periodo, t),
+      )}{" "}
+    </span>
+  ) : null;
   if (dados.modo === "ao_vivo") {
     return (
       <p className="text-sm text-text-muted" data-testid="dados-legenda">
+        {doPeriodo}
         {t(
           "Os seus leads, calculados agora. O retrato da manhã, com a comparação com ontem e com 7 dias atrás, fica com quem vê todos os leads da empresa.",
         )}
@@ -206,6 +239,7 @@ function Legenda({ dados }: { dados: RespostaDaQualidade }) {
   const retratoDas = t("Retrato das {quando}.").replace("{quando}", quando);
   return (
     <p className="text-sm text-text-muted" data-testid="dados-legenda">
+      {doPeriodo}
       {retratoDas}{" "}
       {t(
         "Cada número compara com ontem e com 7 dias atrás. Clicar num número abre o funil ao vivo, que pode ter mudado desde o retrato.",

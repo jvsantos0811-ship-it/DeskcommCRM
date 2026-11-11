@@ -12,15 +12,25 @@
  * INVOKER — a RLS entrega só os leads dele), sem comparação e sem gravar nada.
  *
  * Os nomes dos leads são lidos AGORA, pela RLS: o retrato não guarda nome.
+ *
+ * PERÍODO (PC-025): `?periodo=hoje|7d|30d|mes|mes_passado` ou
+ * `?periodo=personalizado&de=AAAA-MM-DD&ate=AAAA-MM-DD`. Os dias são do fuso da
+ * organização e inclusivos; o retrato fica só com os leads que ENTRARAM no
+ * período e as contas são refeitas pelas mesmas funções (`recortarPeloPeriodo`).
+ * As comparações recortam os retratos de ontem e de 7 dias pelo mesmo período.
+ * Sem `periodo`, nada muda.
  */
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { montarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
 import { montarResposta, type CabecalhoDoRetrato, type ModoDoPainel } from "@/lib/dados/resposta";
-import { somarDias, type ConteudoDoRetrato, type ResumoDoRetrato } from "@/lib/dados/retrato";
+import { diaNoFuso, somarDias, type ConteudoDoRetrato, type ResumoDoRetrato } from "@/lib/dados/retrato";
+import { periodoDosParametros, resolverPeriodo, type PeriodoResolvido } from "@/lib/dados/periodo";
+import { recortarPeloPeriodo } from "@/lib/dados/recorte-do-periodo";
 import { rotuloDoInteresse } from "@/lib/kanban/vocabulary";
 import type { PipelineVocabulary } from "@/lib/kanban/types";
 import { logger } from "@/lib/logger";
@@ -40,13 +50,14 @@ interface LinhaDoRetratoGravado extends ConteudoDoRetrato {
   fuso: string;
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "crm_dados_retrato" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
   const supabase = await createClient();
   const agora = new Date();
+  const pedido = periodoDosParametros(req.nextUrl.searchParams);
 
   const { data: ve, error: eVe } = await supabase.rpc("fn_dados_ve_a_org_inteira", { p_org: orgId });
   if (eVe) return fail("internal_error", "Erro ao ler os painéis de Dados.", 500, { requestId });
@@ -58,6 +69,7 @@ export async function GET(): Promise<Response> {
   let fuso = fusoUtilizavel(authz.org.timezone);
   let ontem: ResumoDoRetrato | null = null;
   let seteDias: ResumoDoRetrato | null = null;
+  let periodo: PeriodoResolvido | null = null;
 
   if (veAOrgInteira) {
     const { data, error } = await supabase
@@ -83,15 +95,27 @@ export async function GET(): Promise<Response> {
       };
       const diaOntem = somarDias(r.dia, -1);
       const diaSete = somarDias(r.dia, -7);
+      // Com período, a comparação precisa da LISTA dos retratos de antes (para
+      // recortar a mesma turma); sem período, basta o resumo.
       const { data: antes } = await supabase
         .from("crm_dados_retrato")
-        .select("dia, resumo")
+        .select(pedido ? "dia, gerado_em, fuso, resumo, leads, por_dia, funil, por_etapa, motivos" : "dia, resumo")
         .eq("organization_id", orgId)
         .in("dia", [diaOntem, diaSete]);
-      for (const a of (antes ?? []) as Array<{ dia: string; resumo: ResumoDoRetrato }>) {
-        if (a.dia === diaOntem) ontem = a.resumo;
-        if (a.dia === diaSete) seteDias = a.resumo;
+      periodo = resolverPeriodo(pedido, diaNoFuso(agora, fuso));
+      for (const a of (antes ?? []) as unknown as LinhaDoRetratoGravado[]) {
+        let resumo: ResumoDoRetrato | null = a.resumo;
+        if (periodo) {
+          // Retrato de mais de 7 dias fica sem a lista: sem ela não há como recortar.
+          resumo =
+            a.leads && a.leads.length > 0
+              ? recortarPeloPeriodo(a, periodo, new Date(a.gerado_em), fusoUtilizavel(a.fuso)).resumo
+              : null;
+        }
+        if (a.dia === diaOntem) ontem = resumo;
+        if (a.dia === diaSete) seteDias = resumo;
       }
+      if (periodo) conteudo = recortarPeloPeriodo(conteudo, periodo, new Date(r.gerado_em), fuso);
     } else {
       modo = "sem_retrato";
     }
@@ -101,6 +125,8 @@ export async function GET(): Promise<Response> {
       const vivo = await montarRetratoDaOrg(supabase, orgId, agora);
       fuso = vivo.fuso;
       conteudo = vivo;
+      periodo = resolverPeriodo(pedido, diaNoFuso(agora, fuso));
+      if (periodo) conteudo = recortarPeloPeriodo(vivo, periodo, agora, fuso);
     } catch (e) {
       logger.warn("dados: conta ao vivo falhou", { requestId, message: e instanceof Error ? e.message : String(e) });
       return fail("internal_error", "Erro ao calcular os seus números.", 500, { requestId });
@@ -129,6 +155,8 @@ export async function GET(): Promise<Response> {
     rotulo = rotuloDoInteresse((p as { vocabulary?: PipelineVocabulary } | null)?.vocabulary);
   }
 
+  if (modo === "sem_retrato") periodo = resolverPeriodo(pedido, diaNoFuso(agora, fuso));
+
   return ok(
     montarResposta({
       modo,
@@ -141,6 +169,7 @@ export async function GET(): Promise<Response> {
       nomes,
       podeAtualizar: veAOrgInteira && roleAtLeast(authz.org.role, "manager"),
       rotuloDoInteresse: rotulo,
+      periodo,
     }),
     { requestId },
   );

@@ -2,15 +2,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import { parametrosDoPeriodo, type PeriodoPedido } from "@/lib/dados/periodo";
 import type { RespostaDaQualidade } from "@/lib/dados/resposta";
 
 const CHAVE = ["dados", "qualidade"] as const;
 
-/** O que as abas de Dados mostram: o retrato do dia (ou a conta ao vivo de "só os seus"). */
-export function useQualidade() {
+/**
+ * O que as abas de Dados mostram: o retrato do dia (ou a conta ao vivo de "só
+ * os seus"), recortado pelo período escolhido (PC-025; nulo = "Tudo").
+ */
+export function useQualidade(periodo: PeriodoPedido | null = null) {
+  const qs = new URLSearchParams(parametrosDoPeriodo(periodo)).toString();
   return useQuery({
-    queryKey: CHAVE,
-    queryFn: () => apiClient.get<{ data: RespostaDaQualidade }>("/api/v1/dados/qualidade").then((r) => r.data),
+    queryKey: [...CHAVE, qs],
+    queryFn: () =>
+      apiClient
+        .get<{ data: RespostaDaQualidade }>(`/api/v1/dados/qualidade${qs ? `?${qs}` : ""}`)
+        .then((r) => r.data),
     // O retrato muda uma vez por dia (ou no "Atualizar agora"): sem refetch a cada foco.
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
