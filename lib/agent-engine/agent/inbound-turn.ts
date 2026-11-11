@@ -185,6 +185,7 @@ import {
   aberturaDoTurnoDaPassagem,
   esperaAntesDeFalar,
   lerPassagemDoTurno,
+  negocioDoContato,
   turnoDaPassagemTemOQueFazer,
   ultimoEnvioDaConversa,
 } from './passagem-entre-agentes';
@@ -292,6 +293,9 @@ import {
 } from '@/lib/messaging/frase-segura';
 import { registrarRecusaDaIa } from './recusas';
 import { blocoDosCamposDoNegocio } from './campos-do-negocio-no-turno';
+import { levarParaAnaliseHumana } from '@/lib/contratos/analise-humana';
+import { blocoDoContrato, contratoNoTurno, type ContratoNoTurno } from '@/lib/contratos/contrato-no-turno';
+import { enviarContratoPelaIa, resultadoDoEnvioParaOModelo } from '@/lib/contratos/enviar-pela-ia';
 import { aplicarNomeConfirmado } from '@/lib/leads/titulo-confirmado';
 import { atualizarResumoDoCard, etapaDoNegocioAtivo, houveCasoOuEtapaNova } from './resumo-do-card';
 import {
@@ -487,6 +491,30 @@ export const AGENT_TOOL_DEFS = {
     inputSchema: z
       .object({
         note_id: z.string().describe('id da nota (como aparece no índice, entre colchetes)'),
+      })
+      .passthrough(),
+  },
+  // PC-030: a IA gera e envia o contrato pela assinatura eletrônica. Só entra
+  // no turno com a assinatura ligada e a etapa do contrato configurada no funil;
+  // o resto (etapa, advogado/processo, modelo aprovado, dados) é conferido na
+  // hora e volta como frase de ensino.
+  enviar_contrato: {
+    description:
+      'Gera o contrato pelo modelo aprovado do escritório, com os dados que o cliente CONFIRMOU, e manda o link de ' +
+      'assinatura pelo WhatsApp. Use quando o cliente aceitou seguir e os dados do contrato estão confirmados. ' +
+      'Antes, pergunte se ele já tem advogado ou processo sobre esse pedido. Se faltar dado, a resposta diz o que ' +
+      'perguntar. Depois de enviado, explique em poucas palavras como assinar, sem prometer resultado nem prazo do caso. ' +
+      'Você nunca muda cláusula, valor ou condição do contrato.',
+    inputSchema: z.object({}).passthrough(),
+  },
+  reclamacao_do_contrato: {
+    description:
+      'O cliente reclamou ou questionou o contrato enviado (cláusula, valor, condição, dado errado, "não concordo", ' +
+      'pede mudança). Passa a conversa para uma pessoa da equipe e leva o card para Análise humana; o pedido de ' +
+      'assinatura continua aberto. NÃO use para dúvida de como assinar (aí você ajuda). Depois de chamar, não responda mais.',
+    inputSchema: z
+      .object({
+        palavras_do_cliente: z.string().describe('o que o cliente disse sobre o contrato, nas palavras dele (até 300 caracteres)'),
       })
       .passthrough(),
   },
@@ -3337,12 +3365,19 @@ async function executarTurnoDoAgente(
   // — medido num tenant de produção: caso aberto, funil parado em "Novo contato".
   // Nunca bloqueia nem derruba o turno — mesma disciplina de `triggerHandoff` (G1-G4),
   // que já chama o mesmo helper para o handoff por palavra-chave do cliente.
+  // `leadId` aqui é o CONTATO (o harness chama o contato de lead); a etapa é
+  // do NEGÓCIO. Sem resolver o negócio ativo, a consulta por id não achava
+  // nada e o card nunca se movia (achado no PC-030).
   const moverParaHandoffBestEffort = (reason: string): void => {
-    moverLeadParaEtapaDeHandoff(createAdminClient(), {
-      organizationId: tenantId,
-      leadId,
-      reason,
-    }).catch((err) => {
+    void (async () => {
+      const negocio = leadId ? await negocioDoContato(pool, tenantId, leadId) : null;
+      if (!negocio) return;
+      await moverLeadParaEtapaDeHandoff(createAdminClient(), {
+        organizationId: tenantId,
+        leadId: negocio.id,
+        reason,
+      });
+    })().catch((err) => {
       runLog.warn('moverLeadParaEtapaDeHandoff falhou (best-effort, caso humano)', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -3451,6 +3486,93 @@ async function executarTurnoDoAgente(
    */
   const mcpToolIdsDoTurno: string[] = [];
 
+  // A passagem para a equipe pelo PRÓPRIO modelo (F4-06), num lugar só: a
+  // ferramenta `request_human_handoff` e as passagens que o contrato pede
+  // (PC-030: cliente com advogado ou processo; reclamação do contrato) usam o
+  // mesmo caminho — mesmo aviso ao lead, mesmo `force_human`, mesma fila.
+  const passarParaAEquipeNoTurno = async (raw: unknown): Promise<Record<string, unknown>> => {
+    // PC-002b, item 7(b): a conversa já está na fila COM a IA (a equipe foi
+    // avisada e ninguém assumiu). Pedir de novo não abre outra passagem nem
+    // manda outro aviso — e o turno segue sendo da IA, que responde o lead.
+    if (await conversaNaFilaComIa(pool, { tenantId, leadId, conversationId: input.conversationId })) {
+      return {
+        ok: true,
+        status: 'ja_na_fila',
+        message:
+          'A equipe JÁ foi avisada desta conversa e ninguém assumiu ainda. Continue atendendo o lead ' +
+          'normalmente: responda o que der, sem prometer horário de contato, e não peça a passagem de novo.',
+      };
+    }
+    passouParaAEquipe = true;
+    // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
+    // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a
+    // renovação — sem esta linha o "digitando…" reacendia DEPOIS do "vou te
+    // passar para a equipe", até o `finally`.
+    pararDigitando();
+    try {
+      // ═══ O PISO: se o modelo não falou, o sistema fala ═══
+      //
+      // A descrição da tool manda avisar o lead ANTES de chamá-la, e a
+      // mensagem de retorno repete. Mas capacidade que depende de o modelo
+      // LEMBRAR é capacidade que não existe metade das vezes — a mesma
+      // conclusão que fez `expectativaDeAtendimento` parar de esperar que
+      // ele consultasse a disponibilidade sozinho.
+      //
+      // `seq` é o contador de mensagens FÍSICAS já enviadas neste turno. Zero
+      // significa: o modelo decidiu passar a conversa sem dizer nada a
+      // ninguém — e depois desta tool ele não consegue mais falar, porque
+      // `force_human` arma o `stopGate`. Então o aviso determinístico sai
+      // AGORA, antes do handoff.
+      //
+      // `seq > 0` significa que ele JÁ falou neste turno; mandar o aviso ali
+      // em cima seria o robô dizendo duas vezes a mesma coisa, com palavras
+      // diferentes. Confiamos na fala dele e registramos que o piso não foi
+      // preciso.
+      const aviso =
+        seq === 0
+          ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+              ...avisoDaEscalacao().base,
+              motivo: 'pediu_humano',
+            })
+          : ({ avisado: true } as const);
+      // O contexto do TURNO vai junto, e sai da closure: `previous` é o
+      // checkpoint durável e `inboundsPendentes` é o que o cliente disse e
+      // ainda não foi respondido — os dois já estão em memória, então o
+      // briefing enriquecido não custa uma consulta a mais.
+      const res = await applyRequestHumanHandoff(
+        pool,
+        { tenantId, leadId, conversationId: input.conversationId },
+        {
+          conversationSummary: buildHandoffSummary(previous),
+          contextoDoTurno: { checkpoint: previous, pendentesDoCliente: inboundsPendentes },
+          avisoAoLead: aviso,
+          // #2210: com a mensagem na mão o handoff pergunta ao banco se a
+          // derivação da mídia ainda estava em aberto — e aí grava a marca
+          // que permite devolver o atendimento sozinho quando o texto chegar.
+          gatilho: { inboundMessageId: input.inboundMessageId },
+          log: runLog,
+        },
+        raw,
+      );
+      if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
+      return { ok: true, status: res.status, message: res.message };
+    } catch (err) {
+      noteRunError(err instanceof Error ? err : new Error(String(err)));
+      return {
+        ok: false,
+        error: {
+          code: 'internal_error',
+          message: 'erro interno ao acionar o handoff humano — encerre o turno agora.',
+        },
+      };
+    }
+  };
+
+  // PC-030: o contrato do cliente neste turno (ferramentas e bloco do turno).
+  const contratoDoTurno: ContratoNoTurno =
+    leadId && agentConfig !== null && preview?.kind !== 'sandbox'
+      ? await contratoNoTurno(createAdminClient(), tenantId, leadId)
+      : { enviarDisponivel: false, contrato: null, leadId: null };
   // PC-026: o resumo do card atualiza nos MOMENTOS do turno (passagem, caso
   // aberto, etapa mudada pela IA). O começo do turno e a etapa de agora são a
   // régua do fim. Só quando o agente tem "Perguntas do resumo" — sem lista,
@@ -4784,85 +4906,80 @@ async function executarTurnoDoAgente(
     // lead/conversation vêm da ROW do job (closure), nunca do payload do modelo.
     request_human_handoff: tool({
       ...AGENT_TOOL_DEFS.request_human_handoff,
-      execute: async (raw) => {
-        // PC-002b, item 7(b): a conversa já está na fila COM a IA (a equipe foi
-        // avisada e ninguém assumiu). Pedir de novo não abre outra passagem nem
-        // manda outro aviso — e o turno segue sendo da IA, que responde o lead.
-        if (await conversaNaFilaComIa(pool, { tenantId, leadId, conversationId: input.conversationId })) {
-          return {
-            ok: true,
-            status: 'ja_na_fila',
-            message:
-              'A equipe JÁ foi avisada desta conversa e ninguém assumiu ainda. Continue atendendo o lead ' +
-              'normalmente: responda o que der, sem prometer horário de contato, e não peça a passagem de novo.',
-          };
-        }
-        passouParaAEquipe = true;
-        // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
-        // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a
-        // renovação — sem esta linha o "digitando…" reacendia DEPOIS do "vou te
-        // passar para a equipe", até o `finally`.
-        pararDigitando();
+      execute: async (raw) => passarParaAEquipeNoTurno(raw),
+    }),
+  };
+
+  // PC-030: o contrato pela IA. `enviar_contrato` só entra com a assinatura
+  // eletrônica ligada e a "Etapa em que a IA envia o contrato" no funil;
+  // `reclamacao_do_contrato`, com um contrato enviado esperando assinatura.
+  if (agentConfig !== null && contratoDoTurno.enviarDisponivel) {
+    rawTools.enviar_contrato = tool({
+      ...AGENT_TOOL_DEFS.enviar_contrato,
+      execute: async (): Promise<Record<string, unknown>> => {
         try {
-          // ═══ O PISO: se o modelo não falou, o sistema fala ═══
-          //
-          // A descrição da tool manda avisar o lead ANTES de chamá-la, e a
-          // mensagem de retorno repete. Mas capacidade que depende de o modelo
-          // LEMBRAR é capacidade que não existe metade das vezes — a mesma
-          // conclusão que fez `expectativaDeAtendimento` parar de esperar que
-          // ele consultasse a disponibilidade sozinho.
-          //
-          // `seq` é o contador de mensagens FÍSICAS já enviadas neste turno. Zero
-          // significa: o modelo decidiu passar a conversa sem dizer nada a
-          // ninguém — e depois desta tool ele não consegue mais falar, porque
-          // `force_human` arma o `stopGate`. Então o aviso determinístico sai
-          // AGORA, antes do handoff.
-          //
-          // `seq > 0` significa que ele JÁ falou neste turno; mandar o aviso ali
-          // em cima seria o robô dizendo duas vezes a mesma coisa, com palavras
-          // diferentes. Confiamos na fala dele e registramos que o piso não foi
-          // preciso.
-          const aviso =
-            seq === 0
-              ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
-                  ...avisoDaEscalacao().base,
-                  motivo: 'pediu_humano',
-                })
-              : ({ avisado: true } as const);
-          // O contexto do TURNO vai junto, e sai da closure: `previous` é o
-          // checkpoint durável e `inboundsPendentes` é o que o cliente disse e
-          // ainda não foi respondido — os dois já estão em memória, então o
-          // briefing enriquecido não custa uma consulta a mais.
-          const res = await applyRequestHumanHandoff(
-            pool,
-            { tenantId, leadId, conversationId: input.conversationId },
-            {
-              conversationSummary: buildHandoffSummary(previous),
-              contextoDoTurno: { checkpoint: previous, pendentesDoCliente: inboundsPendentes },
-              avisoAoLead: aviso,
-              // #2210: com a mensagem na mão o handoff pergunta ao banco se a
-              // derivação da mídia ainda estava em aberto — e aí grava a marca
-              // que permite devolver o atendimento sozinho quando o texto chegar.
-              gatilho: { inboundMessageId: input.inboundMessageId },
-              log: runLog,
-            },
-            raw,
-          );
-          if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
-          return { ok: true, status: res.status, message: res.message };
+          const r = await enviarContratoPelaIa(createAdminClient(), {
+            orgId: tenantId,
+            contactId: leadId,
+            conversationId: input.conversationId,
+            agentId: agentConfig.agentId,
+            requestId: liveJob().id,
+          });
+          if (r.status === 'tem_advogado_ou_processo') {
+            const passagem = await passarParaAEquipeNoTurno({
+              por_que: 'O cliente já tem advogado ou processo sobre este pedido: o contrato não foi enviado.',
+            });
+            await levarParaAnaliseHumana(createAdminClient(), {
+              orgId: tenantId,
+              leadId: r.leadId,
+              motivo: 'Cliente já tem advogado ou processo sobre o pedido: contrato não enviado',
+              requestId: liveJob().id,
+            });
+            return { ok: true, status: 'passou_para_a_equipe', message: r.mensagem, passagem };
+          }
+          return resultadoDoEnvioParaOModelo(r);
         } catch (err) {
-          noteRunError(err instanceof Error ? err : new Error(String(err)));
+          runLog.warn('enviar_contrato falhou — a IA avisa que a equipe manda', {
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+          });
           return {
             ok: false,
             error: {
-              code: 'internal_error',
-              message: 'erro interno ao acionar o handoff humano — encerre o turno agora.',
+              code: 'contrato_nao_gerado',
+              message: 'não consegui gerar o contrato agora. Diga ao cliente que a equipe vai mandar o contrato em seguida.',
             },
           };
         }
       },
-    }),
-  };
+    });
+  }
+  if (agentConfig !== null && contratoDoTurno.contrato?.status === 'enviado' && contratoDoTurno.leadId) {
+    const leadDoContrato = contratoDoTurno.leadId;
+    rawTools.reclamacao_do_contrato = tool({
+      ...AGENT_TOOL_DEFS.reclamacao_do_contrato,
+      execute: async (raw): Promise<Record<string, unknown>> => {
+        const parsed = z.object({ palavras_do_cliente: z.string().min(1).max(600) }).safeParse(raw);
+        if (!parsed.success) {
+          return {
+            ok: false,
+            error: { code: 'invalid_input', message: 'mande `palavras_do_cliente` com o que o cliente disse sobre o contrato.' },
+          };
+        }
+        const palavras = parsed.data.palavras_do_cliente.slice(0, 300);
+        const passagem = await passarParaAEquipeNoTurno({
+          por_que: 'O cliente questionou o contrato enviado.',
+          cliente_quer: palavras,
+        });
+        await levarParaAnaliseHumana(createAdminClient(), {
+          orgId: tenantId,
+          leadId: leadDoContrato,
+          motivo: `Cliente questionou o contrato: "${palavras}"`,
+          requestId: liveJob().id,
+        });
+        return passagem;
+      },
+    });
+  }
 
   // F3-02: a tool nativa só entra com janela configurada e callback habilitado
   // na versão publicada. Tenant/lead vêm da ROW do job (closure), nunca do
@@ -5629,6 +5746,8 @@ async function executarTurnoDoAgente(
     // estado da qualificação em vez de adivinhar. Fora do teste sem contato.
     const camposDoNegocioBlock =
       preview?.kind === 'sandbox' ? '' : await blocoDosCamposDoNegocio(pool, tenantId, leadId || null);
+    // PC-030: a situação do contrato e as regras do contrato enviado.
+    const contratoBlock = blocoDoContrato(contratoDoTurno, fusoDaOrg);
     // PC-014: a chegada desta conversa — quem passou para este agente e o
     // cartão da passagem (ou a linha da equipe que devolveu). Fica enquanto a
     // passagem mais recente for para ESTE agente. Falha de leitura = sem bloco.
@@ -5675,6 +5794,7 @@ async function executarTurnoDoAgente(
       chegadaBlock,
       registroBlock,
       camposDoNegocioBlock,
+      contratoBlock,
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,

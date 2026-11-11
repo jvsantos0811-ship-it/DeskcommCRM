@@ -154,11 +154,21 @@ describe("fiação — o \"digitando…\" cobre o turno inteiro até a 1ª bolha
     // O aviso do piso (`seq === 0`) vai ao canal por `avisarLeadDaEscalacao`, que
     // NÃO passa pelos `send` acima. Sem parar aqui, a renovação de 10s reacendia
     // o "digitando…" depois do "vou te passar para a equipe".
+    //
+    // Desde o PC-030 a passagem mora num lugar só (`passarParaAEquipeNoTurno`),
+    // que a ferramenta `request_human_handoff` e as passagens do contrato
+    // (advogado/processo, reclamação) chamam. A cerca segue a passagem até lá:
+    // a ferramenta delega, e dentro do lugar único o "parar" vem antes do aviso.
     const tool = FONTE_INBOUND.indexOf("    request_human_handoff: tool({");
     expect(tool).toBeGreaterThan(-1);
-    const aviso = FONTE_INBOUND.indexOf("avisarLeadDaEscalacao(", tool);
-    expect(aviso).toBeGreaterThan(tool);
-    expect(FONTE_INBOUND.slice(tool, aviso)).toMatch(/^\s*pararDigitando\(\);$/m);
+    expect(FONTE_INBOUND.slice(tool, tool + 200)).toMatch(
+      /execute: async \(raw\) => passarParaAEquipeNoTurno\(raw\)/,
+    );
+    const passagem = FONTE_INBOUND.indexOf("const passarParaAEquipeNoTurno = async");
+    expect(passagem).toBeGreaterThan(-1);
+    const aviso = FONTE_INBOUND.indexOf("avisarLeadDaEscalacao(", passagem);
+    expect(aviso).toBeGreaterThan(passagem);
+    expect(FONTE_INBOUND.slice(passagem, aviso)).toMatch(/^\s*pararDigitando\(\);$/m);
   });
 });
 
