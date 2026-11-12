@@ -166,6 +166,18 @@ export interface TokenUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * PC-035: a gravação de cache dividida pela validade que o PROVEDOR cobrou —
+   * quantos tokens no cache de 5 minutos (1.25×) e quantos no de 1 hora (2×).
+   * Presentes os dois, o custo usa a tarifa de cada parte; ausentes, vale a
+   * validade configurada na instalação (`cacheTtl`), como sempre.
+   *
+   * Por que existe: uma resposta com laço de ferramentas grava o prefixo fixo
+   * em 1 hora e a cauda da conversa em 5 minutos. Cobrar tudo pela validade da
+   * instalação (1 h) punha no painel ~60% a mais na parte de 5 minutos.
+   */
+  cacheWrite5mTokens?: number;
+  cacheWrite1hTokens?: number;
 }
 
 /**
@@ -262,10 +274,21 @@ export function costCents(
   }
   const cacheWrite = cacheTtl === '5m' ? p.cacheWrite5m : p.cacheWrite1h;
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
+  // PC-035: com a divisão informada pelo provedor, cada parte paga a sua tarifa.
+  // O que a divisão não cobrir (provedor que arredonda, parte sem validade)
+  // continua na tarifa da validade configurada.
+  const em5m = usage.cacheWrite5mTokens;
+  const em1h = usage.cacheWrite1hTokens;
+  const custoDaGravacao =
+    em5m !== undefined && em1h !== undefined
+      ? em5m * p.cacheWrite5m +
+        em1h * p.cacheWrite1h +
+        Math.max(0, usage.cacheWriteTokens - em5m - em1h) * cacheWrite
+      : usage.cacheWriteTokens * cacheWrite;
   const usd =
     (noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +
-      usage.cacheWriteTokens * cacheWrite +
+      custoDaGravacao +
       usage.outputTokens * p.output) /
     1_000_000;
   return usd * 100;

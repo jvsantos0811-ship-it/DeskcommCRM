@@ -109,6 +109,15 @@ import {
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, mensagensPendentesDoCliente, ritualBlocks } from "./abertura/ritual";
+import {
+  aberturaEmDuasPartesLigada,
+  aberturaEmTexto,
+  BLOCO_DA_JANELA,
+  blocosDaAbertura,
+  buildOpeningEmDuasPartes,
+  type AberturaEmDuasPartes,
+} from "./abertura/duas-partes";
+import { passadaEncerraOTurno } from "./sem-passada-final";
 import { gravarTempoDoTurno } from "./tempo-do-turno";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1633,6 +1642,24 @@ export interface AgentTurnInput {
   conversationId: string;
   /** Id da mensagem que criou o job inbound; não é usado por follow-ups. */
   inboundMessageId?: string;
+  /**
+   * PC-035: a mesma abertura em DUAS PARTES (histórico primeiro, o que muda
+   * depois). Só o turno inbound a oferece, e ela só é usada com a chave da
+   * organização ligada (`settings.conversa.abertura_em_duas_partes`) e fora do
+   * Testar. Ausente = a abertura de sempre.
+   */
+  buildOpeningEmDuasPartes?: (ritual: {
+    previous: LeadCheckpointRow | null;
+    leadState: LeadStateRow | null;
+    context: LeadContext;
+    notesIndexBlock: string;
+    compromissosBlock?: string;
+    origemBlock?: string;
+    currentInboundText?: string;
+    naoEnviadas?: readonly string[];
+    projeta?: boolean;
+    entregues?: readonly string[];
+  }) => AberturaEmDuasPartes;
   /** monta a abertura APÓS o ritual de leitura (inbound vs. bloco temporal do follow-up). */
   buildOpening: (ritual: {
     previous: LeadCheckpointRow | null;
@@ -2123,10 +2150,18 @@ async function executarTurnoDoAgente(
   const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
   // PC-002b (item 4): o horário da equipe da organização, lido UMA vez por
   // turno. Falha de leitura = sem horário (a trava age como antes).
-  const horarioDaEquipe: HorarioDaEquipe | null = await pool
+  const settingsDaOrg: unknown = await pool
     .query<{ settings: unknown }>('select settings from organizations where id = $1', [tenantId])
-    .then((r) => horarioDaEquipeDaOrg(r.rows[0]?.settings ?? null))
-    .catch(() => null);
+    .then((r) => r.rows[0]?.settings ?? null)
+    .catch(() => undefined);
+  const horarioDaEquipe: HorarioDaEquipe | null =
+    settingsDaOrg === undefined ? null : horarioDaEquipeDaOrg(settingsDaOrg);
+  // PC-035: a abertura em duas partes e o laço sem passada final. Três condições,
+  // todas necessárias: a chave da organização LIGADA, o turno ser o inbound (só
+  // ele oferece `buildOpeningEmDuasPartes`) e não ser o Testar. Falha na leitura
+  // das configurações = desligado.
+  const duasPartes =
+    !preview && input.buildOpeningEmDuasPartes !== undefined && aberturaEmDuasPartesLigada(settingsDaOrg);
 
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
@@ -2595,13 +2630,16 @@ async function executarTurnoDoAgente(
    * conversa. O ramo sem versão publicada segue com os knobs da instalação, que
    * é o único caso em que ela é a fonte legítima.
    */
-  const turnContextKnobs =
-    agentConfig !== null
+  const turnContextKnobs = {
+    ...(agentConfig !== null
       ? {
           historyLimit: agentConfig.historyMessageWindow,
           maxTokens: agentConfig.historyTokenWindow,
         }
-      : contextKnobs;
+      : contextKnobs),
+    // PC-035: com a chave ligada, a janela anda em blocos (o limite é o mesmo).
+    ...(duasPartes ? { blocoDaJanela: BLOCO_DA_JANELA } : {}),
+  };
 
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
@@ -2908,6 +2946,11 @@ async function executarTurnoDoAgente(
         // conversa já é longa, ou seja, mais tarde e com menos gente olhando.
         knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
         notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
+        // PC-035: o gatilho mede a janela DE SEMPRE (a em blocos pode ter até um
+        // bloco a menos), para a compactação disparar na mesma hora de antes.
+        ...(openingContext.mensagensNaJanelaDeSempre !== undefined
+          ? { mensagensParaOGatilho: openingContext.mensagensNaJanelaDeSempre }
+          : {}),
       },
       {
         registry: deps.registry,
@@ -2948,6 +2991,7 @@ async function executarTurnoDoAgente(
         messages: trimTranscriptToBudget(
           openingContext.context.messages,
           deps.knobs.compaction.transcriptMaxTokens,
+          duasPartes ? BLOCO_DA_JANELA : undefined,
         ),
       };
     }
@@ -5695,7 +5739,7 @@ async function executarTurnoDoAgente(
       effectiveContext.messages,
       currentInboundText ?? undefined,
     ).length;
-    const openingBase = input.buildOpening({
+    const ritualDaAbertura = {
       naoEnviadas,
       previous: effectivePrevious,
       leadState,
@@ -5706,7 +5750,14 @@ async function executarTurnoDoAgente(
       compromissosBlock,
       origemBlock,
       ...(currentInboundText !== null ? { currentInboundText } : {}),
-    });
+    };
+    // PC-035: com a chave ligada, a abertura vem em duas partes (o histórico
+    // primeiro, em blocos; o que muda depois). Sem ela, a de sempre.
+    const partesDaAbertura: AberturaEmDuasPartes | null =
+      duasPartes && input.buildOpeningEmDuasPartes !== undefined
+        ? input.buildOpeningEmDuasPartes(ritualDaAbertura)
+        : null;
+    const openingBase = partesDaAbertura !== null ? '' : input.buildOpening(ritualDaAbertura);
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
     // split_messages está on — Onda 4). Vazios são omitidos.
@@ -5803,9 +5854,11 @@ async function executarTurnoDoAgente(
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');
     const openingText =
-      openingSuffixes.length === 0
-        ? openingBase
-        : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+      partesDaAbertura !== null
+        ? aberturaEmTexto(partesDaAbertura, openingSuffixes)
+        : openingSuffixes.length === 0
+          ? openingBase
+          : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
     // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
@@ -5821,9 +5874,21 @@ async function executarTurnoDoAgente(
           });
     const openingTextOnly: ModelMessage[] = [{ role: 'user', content: openingText }];
     const openingMessages: ModelMessage[] =
-      nativeParts.length === 0
-        ? openingTextOnly
-        : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
+      partesDaAbertura !== null
+        ? [
+            {
+              role: 'user',
+              content: [
+                // O histórico em blocos com o ponto de cache no fim, depois o que
+                // muda (ver `blocosDaAbertura`).
+                ...blocosDaAbertura(partesDaAbertura, openingSuffixes),
+                ...nativeParts,
+              ],
+            },
+          ]
+        : nativeParts.length === 0
+          ? openingTextOnly
+          : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
 
     // MEMÓRIA DE DUPLICATA CRUZADA (near-dup): semeia a régua com o que JÁ saiu
     // para esta conversa desde a última inbound do cliente. Num turno fresco que
@@ -5886,7 +5951,13 @@ async function executarTurnoDoAgente(
         // before_send volta ao modelo para ele reescrever (o 1º veto ensina).
         ...(preview?.kind === 'assisted'
           ? { pararQuando: () => preview.result.candidates.length > 0 }
-          : {}),
+          : duasPartes
+            ? // PC-035, sem passada final: a passada que enviou a mensagem (envio
+              // ACEITO) sem pedir consulta encerra o turno; as ferramentas de
+              // registro pedidas junto já executaram. Veto, erro de ferramenta ou
+              // consulta → o laço segue como sempre.
+              { pararQuando: ({ steps }) => passadaEncerraOTurno(steps[steps.length - 1]) }
+            : {}),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -7127,6 +7198,31 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         naoEnviadas,
       }) =>
         buildOpeningMessage(
+          previous,
+          leadState,
+          context,
+          notesIndexBlock,
+          projeta,
+          entregues,
+          compromissosBlock,
+          currentInboundText,
+          origemBlock,
+          naoEnviadas,
+        ),
+      // PC-035: só vale com a chave da organização ligada (ver `duasPartes`).
+      buildOpeningEmDuasPartes: ({
+        previous,
+        leadState,
+        context,
+        notesIndexBlock,
+        projeta,
+        entregues,
+        compromissosBlock,
+        origemBlock,
+        currentInboundText,
+        naoEnviadas,
+      }) =>
+        buildOpeningEmDuasPartes(
           previous,
           leadState,
           context,

@@ -35,6 +35,30 @@ export interface LeadContextKnobs {
   historyLimit: number;
   /** Teto do payload serializado, contado por countPayloadTokens (default 1000). */
   maxTokens: number;
+  /**
+   * PC-035: a janela do histórico desliza em BLOCOS deste tamanho (ex.: 20), e
+   * não mensagem a mensagem. Ausente = o corte de sempre.
+   *
+   * Com a abertura em duas partes, o histórico é o começo do prompt e vai para o
+   * cache: se a janela anda uma mensagem a cada turno, o começo muda todo turno
+   * e nada é reaproveitado. Em blocos, o começo fica idêntico até a conversa
+   * crescer um bloco inteiro — ver `inicioDaJanelaEmBlocos`.
+   */
+  blocoDaJanela?: number;
+}
+
+/**
+ * Onde a janela começa, contando as mensagens da conversa desde a primeira
+ * (PC-035). `total` é quantas a conversa tem; `limite`, quantas cabem.
+ *
+ * Até o limite, começa em 0. Passou, o começo anda de `bloco` em `bloco`: o
+ * menor múltiplo do bloco que deixa a janela dentro do limite. A janela fica
+ * com `limite - bloco + 1` a `limite` mensagens, e o começo só muda quando a
+ * conversa cresce um bloco inteiro. Função pura.
+ */
+export function inicioDaJanelaEmBlocos(total: number, limite: number, bloco: number): number {
+  if (total <= limite) return 0;
+  return Math.ceil((total - limite) / bloco) * bloco;
 }
 
 /** Uma mensagem do histórico, já curada. */
@@ -52,6 +76,12 @@ export interface LeadContextMessage {
    * parseável por `Date.parse` (o offset preserva o instante exato).
    */
   sent_at: string;
+  /**
+   * PC-035: quem mandou a mensagem de saída — a IA, uma pessoa da equipe (pelo
+   * CRM ou pelo celular) ou um envio automático. Só é preenchido na janela em
+   * blocos (`LeadContextKnobs.blocoDaJanela`): fora dela o payload é o de sempre.
+   */
+  de?: 'ia' | 'equipe' | 'automatico';
   /** Metadados de mídia (Onda 3): presentes só em mensagens com mídia. */
   type?: string;
   media_storage_path?: string | null;
@@ -153,7 +183,18 @@ export type LeadContextErrorCode = 'lead_not_found' | 'crm_error' | 'crm_unavail
  * instrutiva, sem stack e sem credencial.
  */
 export type LeadContextResult =
-  | { ok: true; context: LeadContext; tokenCount: number; lgpd: LgpdInput }
+  | {
+      ok: true;
+      context: LeadContext;
+      tokenCount: number;
+      lgpd: LgpdInput;
+      /**
+       * PC-035: quantas mensagens a conversa tem ao todo (até o limite da
+       * janela), só na janela em blocos. É o número que a janela de sempre
+       * teria — a compactação decide por ele, para o gatilho não mudar.
+       */
+      mensagensNaJanelaDeSempre?: number;
+    }
   | { ok: false; error: { code: LeadContextErrorCode; message: string } };
 
 function teach(code: LeadContextErrorCode, message: string): LeadContextResult {
@@ -210,6 +251,9 @@ interface HistoryRow {
   media_mime: string | null;
   media_derived_text: string | null;
   sent_at: Date;
+  /** Só na janela em blocos (PC-035). */
+  sent_via?: string | null;
+  total?: string | number | null;
 }
 
 export async function getLeadContext(
@@ -242,6 +286,11 @@ export async function getLeadContext(
   //
   // Conversa: a do job quando informada (fonte confiável); senão a 1:1 mais
   // recente do contato. Grupos NUNCA (regra dura nº 12).
+  // PC-035: na janela em blocos a consulta traz também quem enviou e o total da
+  // conversa (`count(*) over ()` conta antes do `limit`). Fora dela, a consulta é
+  // a de sempre, byte a byte.
+  const bloco = knobs.blocoDaJanela;
+  const emBlocos = bloco !== undefined && bloco > 1;
   const conversaHistoricoEDesfechos = async (): Promise<{
     conversationId: string | null;
     history: HistoryRow[];
@@ -262,7 +311,7 @@ export async function getLeadContext(
         ? db
             .query<HistoryRow>(
               `select direction, type, body, media_url, media_storage_path, media_mime,
-                      media_derived_text, sent_at
+                      media_derived_text, sent_at${emBlocos ? ', sent_via, count(*) over () as total' : ''}
                from messages
                where organization_id = $1 and conversation_id = $2
                  and direction in ('inbound', 'outbound')
@@ -347,6 +396,15 @@ export async function getLeadContext(
     false,
   );
 
+  // PC-035: o começo da janela anda em blocos. A consulta trouxe as últimas
+  // `historyLimit`; daqui saem as mais antigas que ficam antes do começo do bloco.
+  const total = emBlocos ? Number(history[0]?.total ?? history.length) : history.length;
+  const historico = emBlocos
+    ? history.slice(
+        Math.max(0, inicioDaJanelaEmBlocos(total, knobs.historyLimit, bloco) - (total - history.length)),
+      )
+    : history;
+
   const context = fitToBudget(
     {
       previous_service: { label: 'Histórico encerrado. Desfechos anteriores não são tarefas ou compromissos pendentes.', outcomes: previousOutcomes.map((d) => d.desfecho) },
@@ -373,11 +431,18 @@ export async function getLeadContext(
       last_human_decision: lastHumanDecision,
       last_proposal,
     },
-    history,
+    historico,
     knobs.maxTokens,
     input.fuso,
+    emBlocos ? bloco : undefined,
   );
-  return { ok: true, context, tokenCount: countPayloadTokens(JSON.stringify(context)), lgpd };
+  return {
+    ok: true,
+    context,
+    tokenCount: countPayloadTokens(JSON.stringify(context)),
+    lgpd,
+    ...(emBlocos ? { mensagensNaJanelaDeSempre: Math.min(total, knobs.historyLimit) } : {}),
+  };
 }
 
 /** As colunas do CRM de que o corpo de UMA mensagem depende. */
@@ -434,6 +499,8 @@ function fitToBudget(
   history: HistoryRow[],
   maxTokens: number,
   fuso: string,
+  /** PC-035: com bloco, o corte por orçamento também anda em blocos. */
+  bloco?: number,
 ): LeadContext {
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
@@ -447,13 +514,25 @@ function fitToBudget(
       // Hora de PAREDE do tenant, não UTC cru — ver o comentário de `sent_at` na
       // interface acima e o cabeçalho de `isoLocalComOffset`.
       sent_at: isoLocalComOffset(m.sent_at, fuso),
+      ...(bloco !== undefined && m.direction === 'outbound' ? { de: autorDaSaida(m.sent_via) } : {}),
       ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
     };
   });
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
+  // PC-035: na janela em blocos o orçamento conta SÓ as mensagens. O cadastro
+  // (etiquetas, última decisão) muda de um turno para o outro, e contá-lo aqui
+  // faria o começo da janela ir e voltar por causa de uma etiqueta — e cada ida
+  // e volta regrava o cache do histórico inteiro.
   const over = (msgs: LeadContextMessage[]): boolean =>
-    countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;
+    bloco !== undefined
+      ? countPayloadTokens(JSON.stringify(msgs)) > maxTokens
+      : countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;
 
+  if (bloco !== undefined) {
+    while (messages.length > bloco && over(messages)) {
+      messages = messages.slice(bloco);
+    }
+  }
   while (messages.length > 1 && over(messages)) {
     messages = messages.slice(1);
   }
@@ -461,6 +540,13 @@ function fitToBudget(
     messages = [{ ...messages[0]!, body: messages[0]!.body.slice(0, Math.floor(messages[0]!.body.length / 2)) }];
   }
   return build(messages);
+}
+
+/** Quem mandou a mensagem de saída, pelo `sent_via` da linha (PC-035). */
+function autorDaSaida(sentVia: string | null | undefined): 'ia' | 'equipe' | 'automatico' {
+  if (sentVia === 'ai') return 'ia';
+  if (sentVia === 'user' || sentVia === 'crm' || sentVia === 'external_device') return 'equipe';
+  return 'automatico';
 }
 
 /** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
