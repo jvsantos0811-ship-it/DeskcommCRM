@@ -35,7 +35,7 @@
  * código garante (`sanearItem`) antes de gravar. A resposta de saúde tem três
  * valores honestos — "sim", "não", "não sabe" — e guarda a data quando há uma
  * ("perícia dia 20/11" → "sim · 20/11"). Nome de benefício do INSS (lista
- * fechada em `NOMES_DE_BENEFICIO`) não é dado de saúde (PC-038).
+ * fechada em `NOMES_DE_BENEFICIO`) sozinho não é dado de saúde (PC-038).
  *
  * ## Promessas
  *
@@ -173,12 +173,18 @@ const SAUDE_GENERICA =
   /(sa[uú]de|m[eé]dic|afast|licen[cç]a|atestado|laudo|per[ií]cia|tratament|doen[cç]a|diagn|exame|internad|hospital|incapac|consent)/i;
 
 /**
- * NOME DE BENEFÍCIO DO INSS NÃO É DADO DE SAÚDE (PC-038). Lista FECHADA: só
- * estes nomes saem do teste de saúde — "auxílio-doença" casava com "doença" e
- * "Benefício negado: auxílio-doença" virava "informado", no card e no registro
- * que a IA relê. O resto da frase continua sendo testado: "auxílio-doença por
- * depressão" segue sendo saúde. "Aposentadoria por incapacidade permanente" é
- * o nome atual da aposentadoria por invalidez (o mesmo benefício).
+ * NOME DE BENEFÍCIO DO INSS NÃO É DADO DE SAÚDE (PC-038) — mas só quando vem
+ * sozinho. Lista FECHADA: "auxílio-doença" casava com "doença" e "Benefício
+ * negado: auxílio-doença" virava "informado", no card e no registro que a IA
+ * relê. "Aposentadoria por incapacidade permanente" é o nome atual da
+ * aposentadoria por invalidez (o mesmo benefício).
+ *
+ * O nome só deixa de ser saúde quando o RESTO do texto (sem o nome) tem apenas
+ * sim/não, data, mês/ano, "negado/cortado/indeferido/em análise/pedido" e
+ * conectivos. Qualquer outra palavra ("por fibromialgia", "por causa do
+ * lúpus") → continua saúde: a lista de doenças do código não é completa, e o
+ * nome do benefício não pode virar a porta de um diagnóstico que ela não
+ * conhece (revisão do PC-038).
  */
 const NOMES_DE_BENEFICIO = new RegExp(
   [
@@ -191,9 +197,32 @@ const NOMES_DE_BENEFICIO = new RegExp(
   'gi',
 );
 
-/** O texto sem os nomes de benefício da lista fechada (só para o teste de saúde). Puro. */
-function semNomeDeBeneficio(texto: string): string {
-  return texto.replace(NOMES_DE_BENEFICIO, ' ');
+/** O que pode estar ao lado do nome do benefício sem que a frase vire saúde (sem acento). */
+const PALAVRAS_AO_LADO_DO_BENEFICIO = new Set([
+  'sim', 's', 'nao', 'n',
+  'negado', 'negada', 'negados', 'negadas', 'cortado', 'cortada', 'cortados', 'cortadas',
+  'indeferido', 'indeferida', 'indeferidos', 'indeferidas', 'analise', 'pedido', 'pedida', 'pedidos', 'pedidas',
+  'e', 'ou', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas', 'por', 'pelo', 'pela', 'para', 'pra',
+  'o', 'a', 'os', 'as', 'um', 'uma', 'que', 'foi', 'ja', 'ainda', 'mas', 'desde', 'ate', 'ha',
+  'dia', 'mes', 'ano', 'anos', 'meses',
+  'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+]);
+
+function semAcento(texto: string): string {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+/**
+ * O texto traz um nome de benefício da lista e, fora dele, só palavras neutras
+ * (`true`) ou mais alguma coisa (`false`)? `null` quando não há nome de
+ * benefício. Puro.
+ */
+function soNomeDeBeneficio(texto: string): boolean | null {
+  const resto = texto.replace(NOMES_DE_BENEFICIO, ' ');
+  if (resto === texto) return null;
+  return semAcento(resto)
+    .split(/[^a-z0-9]+/)
+    .every((p) => p === '' || /^\d+$/.test(p) || PALAVRAS_AO_LADO_DO_BENEFICIO.has(p));
 }
 
 const CID_CODIGO = /\b(?:CID[\s:.-]*)?[A-TV-Z]\d{2}(?:\.\d{1,2})?\b/g;
@@ -217,28 +246,51 @@ export function sanearTexto(texto: string): string {
 }
 
 /**
- * Saúde em TRÊS valores honestos (PC-038). A primeira palavra não basta: "não
- * consigo pegar peso" AFIRMA a limitação (sequela: sim) e "não sei" é dúvida,
- * não negativa. A ordem importa: dúvida, recusa, limitação, negação, sim.
+ * Saúde em TRÊS valores honestos (PC-038): "sim", "não", "não sabe". A
+ * primeira palavra não basta, e o rótulo decide o sentido de "não consigo…".
+ * A ordem importa: dúvida, recusa, limitação (só em rótulo de limitação),
+ * "nunca mais…" fora dele, negação, sim.
  */
 const NAO_SABE =
-  /^(?:(?:nao|n) (?:sei|sabe|lembro|me lembro|tenho certeza|faco ideia)|sei la|nem sei|acho que|acho q|talvez)\b/;
+  /^(?:ainda )?(?:(?:nao|n) (?:sei|sabe|lembro|me lembro|tenho certeza|faco ideia)|sei la|nem sei|acho que|acho q|talvez)\b/;
 /** "não posso falar" é recusa de responder, não limitação: nem sim, nem não. */
 const RECUSA = /^(?:nao|n) (?:posso|pode|consigo|quero) (?:dizer|falar|informar|responder|contar|passar|explicar)\b/;
-const LIMITACAO = /^(?:nao|n) (?:consig|consegu|poss|pod|aguent)[a-z]*\b|^(?:nao|n) da mais\b/;
-const NAO = /^(?:nao|n|negativo|nem|prefiro nao|nunca|jamais|nenhum|nenhuma|nada)\b/;
+/**
+ * Limitação que continua: "não consigo", "não posso", "não aguento", "não dá
+ * mais", "não consegui mais…", "nunca mais consegui…". "Não consegui o laudo"
+ * (passado, uma vez) não é limitação.
+ */
+const LIMITACAO =
+  /^(?:nao|n) (?:consigo|consegue|conseguem|posso|pode|podem|aguento|aguenta)\b|^(?:nao|n) da mais\b|^(?:nao|n) (?:consegui|conseguiu|pude) mais\b|^nunca mais (?:consig|consegu|pud|poss|pod|aguent|trabalh|volt)/;
+/** "nunca mais consegui…" fora de rótulo de limitação não é "não": é informado. */
+const NUNCA_MAIS_CAPACIDADE = /^nunca mais (?:consig|consegu|pud|poss|pod|aguent|trabalh|volt)/;
+const NAO = /^(?:ainda nao|nao|n|negativo|nem|prefiro nao|nunca|jamais|nenhum|nenhuma|nada)\b/;
 const SIM = /^(?:sim|s|pode|claro|autorizo|ok|tudo bem|aceito|concordo|positivo)\b/;
 
 /**
- * "sim" / "não" / "não sabe" quando a resposta diz isso; senão `null`.
- * "não consigo…"/"não posso…" → "sim" (afirmam a limitação); "não sei",
- * "acho que" → "não sabe"; "não", "não tenho", "nunca" → "não". Puro.
+ * Rótulo que pergunta pela LIMITAÇÃO (sequela, dificuldade, limitação, "não
+ * consegue trabalhar"): só ali "não consigo…" afirma ("sim"). Rótulo de
+ * capacidade AFIRMADA ("Consegue trabalhar", "Ainda trabalha") fica de fora de
+ * propósito: lá "não consigo" é "não", e tratá-lo como limitação inverteria.
  */
-export function simOuNao(resposta: string): 'sim' | 'não' | 'não sabe' | null {
-  const t = normalizarParaComparacao(resposta).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const ROTULO_DE_LIMITACAO =
+  /\b(?:sequel|dificuldad|limitac|limitad)|\b(?:nao|sem) (?:consegue|conseguir|pode|poder|trabalha|trabalhar)\b/;
+/** Rótulo que pergunta por data ou prazo: ali a data sozinha já é "sim · <data>". */
+const ROTULO_DE_DATA = /^(?:data|quando)\b|\bprazo\b|\bdata marcada\b/;
+
+/**
+ * "sim" / "não" / "não sabe" quando a resposta diz isso; senão `null`.
+ * "não sei", "acho que" → "não sabe"; "não", "não tenho", "ainda não",
+ * "nunca" → "não". Em rótulo de limitação, "não consigo…"/"não posso…"/
+ * "nunca mais consegui…" → "sim" (afirmam a limitação); fora dele, "nunca mais
+ * consegui…" → `null` (informado). Puro.
+ */
+export function simOuNao(resposta: string, rotulo = ''): 'sim' | 'não' | 'não sabe' | null {
+  const t = semAcento(normalizarParaComparacao(resposta));
   if (NAO_SABE.test(t)) return 'não sabe';
   if (RECUSA.test(t)) return null;
-  if (LIMITACAO.test(t)) return 'sim';
+  if (ROTULO_DE_LIMITACAO.test(semAcento(rotulo)) && LIMITACAO.test(t)) return 'sim';
+  if (NUNCA_MAIS_CAPACIDADE.test(t)) return null;
   if (NAO.test(t)) return 'não';
   if (SIM.test(t)) return 'sim';
   return null;
@@ -271,25 +323,31 @@ export function dataNaResposta(resposta: string): string | null {
 }
 
 /**
- * A resposta de saúde como pode ser gravada: "sim", "não", "não sabe", "sim ·
- * <data>" quando ela traz uma data ("perícia dia 20/11" → "sim · 20/11") ou
- * "informado". Nunca diagnóstico, CID ou remédio. Idempotente: o valor gravado
- * passa por aqui de novo e sai igual. Puro.
+ * A resposta de saúde como pode ser gravada: "sim", "não", "não sabe",
+ * "informado" e, quando ela traz uma data, só a data ao lado: "sim · <data>"
+ * se a resposta disse sim ou o rótulo pergunta data/prazo ("Prazo ou data
+ * marcada: perícia dia 20/11" → "sim · 20/11"); senão "informado · <data>".
+ * Nunca diagnóstico, CID ou remédio. Idempotente: o valor gravado passa por
+ * aqui de novo e sai igual. Puro.
  */
-export function respostaDeSaude(resposta: string): string {
-  const valor = simOuNao(resposta);
+export function respostaDeSaude(resposta: string, rotulo = ''): string {
+  const valor = simOuNao(resposta, rotulo);
   if (valor === 'não' || valor === 'não sabe') return valor;
   const data = dataNaResposta(resposta);
-  if (data) return `sim · ${data}`;
+  if (data) return `${valor === 'sim' || ROTULO_DE_DATA.test(semAcento(rotulo)) ? 'sim' : 'informado'} · ${data}`;
   return valor ?? 'informado';
 }
 
-/** O assunto é de saúde? (tema ou resposta; nome de benefício da lista fechada não conta) */
+/**
+ * O assunto é de saúde? (tema ou resposta). Nome de benefício da lista
+ * fechada só deixa de contar quando vem sozinho (`soNomeDeBeneficio`).
+ */
 export function ehDeSaude(...textos: Array<string | null | undefined>): boolean {
   return textos.some((t) => {
     if (typeof t !== 'string') return false;
-    const s = semNomeDeBeneficio(t);
-    return DIAGNOSTICO.test(s) || SAUDE_GENERICA.test(s);
+    const so = soNomeDeBeneficio(t);
+    if (so !== null) return !so;
+    return DIAGNOSTICO.test(t) || SAUDE_GENERICA.test(t);
   });
 }
 
@@ -300,15 +358,16 @@ function cortar(texto: string, n: number): string {
 
 /**
  * O item como pode ser gravado: tema sem diagnóstico; resposta de saúde só
- * "sim"/"não"/"não sabe"/"sim · <data>"/"informado" (`respostaDeSaude`); nada de
- * CID, telefone ou e-mail. Nome de benefício ("auxílio-doença") não é saúde. Puro.
+ * "sim"/"não"/"não sabe"/"informado", com a data ao lado quando houver
+ * (`respostaDeSaude`, que lê o tema); nada de CID, telefone ou e-mail. Nome de
+ * benefício sozinho ("auxílio-doença") não é saúde. Puro.
  */
 export function sanearItem<T extends Pick<ItemDoRegistro, 'tema' | 'pergunta' | 'resposta'>>(item: T): T {
   const temaBruto = item.tema;
   const tema = DIAGNOSTICO.test(temaBruto) ? 'saúde' : cortar(sanearTexto(temaBruto) || 'assunto', 80);
   let resposta = item.resposta;
   if (resposta !== null) {
-    if (ehDeSaude(temaBruto, resposta)) resposta = respostaDeSaude(resposta);
+    if (ehDeSaude(temaBruto, resposta)) resposta = respostaDeSaude(resposta, temaBruto);
     else resposta = cortar(sanearTexto(resposta), 80) || null;
   }
   const pergunta = item.pergunta === null ? null : cortar(sanearTexto(item.pergunta), 240) || null;
