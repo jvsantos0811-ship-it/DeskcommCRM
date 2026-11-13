@@ -79,7 +79,7 @@ export function passadasDosPassos(steps: ReadonlyArray<PassoDoSdk> | undefined):
       cache_gravado_5m: porValidade?.em5m ?? null,
       cache_gravado_1h: porValidade?.em1h ?? null,
       saida: s.usage?.outputTokens ?? 0,
-      ferramentas: (s.toolCalls ?? []).map((c) => c.toolName),
+      ferramentas: (s.toolCalls ?? []).map((c: { toolName: string }) => c.toolName),
       texto_descartado_chars: (s.text ?? '').length,
     };
   });
