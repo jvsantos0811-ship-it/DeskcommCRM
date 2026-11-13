@@ -7532,6 +7532,7 @@ export type Database = {
           organization_id: string
           origem_da_escolha: string | null
           output_tokens: number
+          passadas: Json | null
           provider: string
           purpose: string
           status: string
@@ -7556,6 +7557,7 @@ export type Database = {
           organization_id: string
           origem_da_escolha?: string | null
           output_tokens?: number
+          passadas?: Json | null
           provider: string
           purpose?: string
           status?: string
@@ -7580,6 +7582,7 @@ export type Database = {
           organization_id?: string
           origem_da_escolha?: string | null
           output_tokens?: number
+          passadas?: Json | null
           provider?: string
           purpose?: string
           status?: string

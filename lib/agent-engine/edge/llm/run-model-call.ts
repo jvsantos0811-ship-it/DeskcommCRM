@@ -56,6 +56,12 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
+import {
+  gravacaoDaChamadaPorValidade,
+  passadasDosPassos,
+  type Passada,
+  type PassoDoSdk,
+} from '@/lib/ai/usage/passadas';
 import { costCents } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
@@ -261,7 +267,13 @@ export interface RunModelCallInput {
    * chamou `send_message` — um envio vetado devolve o erro ao modelo para ele
    * reescrever na etapa seguinte, e parar ali entregava rascunho vazio.
    */
-  pararQuando?: () => boolean;
+  pararQuando?: (laco: {
+    /** As passadas já concluídas, na ordem (PC-035: a regra "sem passada final" lê a última). */
+    steps: ReadonlyArray<{
+      toolCalls: ReadonlyArray<{ toolName: string }>;
+      toolResults: ReadonlyArray<{ toolName: string; output: unknown }>;
+    }>;
+  }) => boolean;
   /** Teto por chamada auxiliar; nunca aumenta o limite configurado pela organização. */
   maxOutputTokens?: number;
   /**
@@ -1152,6 +1164,21 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
+  // PC-035 (medição): o que cada passada do laço consumiu — só números e nomes
+  // de ferramenta. Montar isto nunca derruba a chamada: o modelo já respondeu.
+  let passadas: Passada[] = [];
+  try {
+    passadas = passadasDosPassos(result.steps as unknown as PassoDoSdk[]);
+  } catch {
+    passadas = [];
+  }
+  // A gravação de cache pela validade que o provedor COBROU (5 min a 1.25×, 1 h
+  // a 2×). Sem a divisão, vale a validade da instalação, como antes.
+  const gravacao = gravacaoDaChamadaPorValidade(passadas);
+  const usageParaOCusto =
+    gravacao !== null && gravacao.em5m + gravacao.em1h > 0
+      ? { ...usage, cacheWrite5mTokens: gravacao.em5m, cacheWrite1hTokens: gravacao.em1h }
+      : usage;
   // O TTL é o MESMO que gravou o prefixo estável acima: a gravação de cache custa
   // 1.25× a entrada em 5m e 2× em 1h, e supor a doutrina superfaturaria 60% da
   // parcela de cache write em quem usa o knob.
@@ -1165,7 +1192,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
   // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
   // primeiro, e só o `null` dele chega aqui.
-  let cost = costCents(model, usage, cfg.cacheTtl ?? '1h');
+  let cost = costCents(model, usageParaOCusto, cfg.cacheTtl ?? '1h');
   let origemDoCusto: 'catalogo_da_instalacao' | undefined;
   if (cost === null) {
     cost = await custoDoModeloForaDoMotor(db, {
@@ -1181,8 +1208,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, origem_da_escolha, agent_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15)
+        status, origem_da_escolha, agent_id, passadas)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15, $16::jsonb)
      returning id`,
     [
       input.tenantId,
@@ -1200,6 +1227,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       latencyMs,
       origem,
       input.agentId ?? null,
+      // Só as chamadas com laço de ferramentas guardam o detalhe. Chamada simples
+      // (classificadores, resumo) é uma passada sem ferramenta: a linha já diz tudo.
+      input.maxSteps !== undefined || passadas.length > 1 ? JSON.stringify(passadas) : null,
     ],
   );
 
@@ -1214,6 +1244,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // pegou. Vira coluna em llm_calls na frente de logs.
     origem_da_escolha: origem,
     ...usage,
+    passadas: passadas.length,
     cost_cents: cost,
     // Só quando o preço NÃO veio da tabela estática do motor: diz de qual caminho
     // saiu o número gravado, e é o que um operador procura quando pergunta "de

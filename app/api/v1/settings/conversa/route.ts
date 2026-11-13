@@ -13,6 +13,10 @@
  *  - `sem_fonte` (PC-020): a conferência "sem fonte, não afirma" — `decidindo`
  *    (padrão: veta e o modelo reescreve), `observando` (só registra) ou
  *    `desligada`.
+ *  - `abertura_em_duas_partes` (PC-035): a chave que põe o histórico da
+ *    conversa antes do que muda a cada resposta (para o provedor de IA
+ *    reaproveitar o que já leu) e encerra o turno quando a mensagem sai.
+ *    Ausente = DESLIGADA. Só o ADMIN muda (manager vê).
  *
  * Mesma forma de `settings/frase-segura`: merge NÃO destrutivo do jsonb, e a
  * leitura que falhou PARA a gravação (tratá-la como `{}` regravaria o settings
@@ -45,6 +49,10 @@ import {
   ESTADO_PADRAO_SEM_FONTE,
   lerEstadoSemFonte,
 } from "@/lib/agent-engine/guardrails/sem-fonte";
+import {
+  aberturaEmDuasPartesLigada,
+  aberturaEmDuasPartesSchema,
+} from "@/lib/agent-engine/agent/abertura/duas-partes";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +61,7 @@ const entradaSchema = z.strictObject({
   repeticao: ajustesDeRepeticaoSchema.optional(),
   frases_proibidas: frasesProibidasSchema.optional(),
   sem_fonte: ajustesSemFonteSchema.optional(),
+  abertura_em_duas_partes: aberturaEmDuasPartesSchema.optional(),
 });
 
 interface ContagemDaFrase {
@@ -91,6 +100,7 @@ function resposta(settings: Record<string, unknown>, contagem: ContagemDaFrase[]
     repeticao: ajustesParaGravar(lerAjustesDeRepeticao(settings)),
     frases_proibidas: { lista: lerFrasesProibidas(settings) },
     sem_fonte: { estado: lerEstadoSemFonte(settings) },
+    abertura_em_duas_partes: { ligada: aberturaEmDuasPartesLigada(settings) },
     contagem_das_frases: contagem,
     padrao: {
       sem_fonte: { estado: ESTADO_PADRAO_SEM_FONTE },
@@ -132,6 +142,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     return fail("forbidden", t("Só o administrador da empresa muda as frases proibidas."), 403, { requestId });
   }
 
+  // PC-035: a chave muda como a IA lê a conversa e quando o turno termina, em
+  // todos os agentes da empresa. É decisão de quem administra.
+  if (parsed.data.abertura_em_duas_partes !== undefined && !roleAtLeast(authz.org.role, "admin")) {
+    return fail("forbidden", t("Só o administrador da empresa muda esta chave."), 403, { requestId });
+  }
+
   const lido = await lerSettings(authz.org.orgId);
   if ("error" in lido) return fail("internal_error", lido.error?.message ?? "", 500, { requestId });
 
@@ -141,6 +157,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     ...(parsed.data.repeticao !== undefined ? { repeticao: parsed.data.repeticao } : {}),
     ...(parsed.data.frases_proibidas !== undefined ? { frases_proibidas: parsed.data.frases_proibidas } : {}),
     ...(parsed.data.sem_fonte !== undefined ? { sem_fonte: parsed.data.sem_fonte } : {}),
+    ...(parsed.data.abertura_em_duas_partes !== undefined
+      ? { abertura_em_duas_partes: parsed.data.abertura_em_duas_partes }
+      : {}),
   };
   const settings = { ...lido.settings, conversa };
 
@@ -158,7 +177,13 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     resourceType: "organization",
     resourceId: authz.org.orgId,
     requestId,
-    metadata: { chaves: Object.keys(parsed.data) },
+    metadata: {
+      chaves: Object.keys(parsed.data),
+      // Liga/desliga é o que o Gestor cruza com o custo: a auditoria guarda o valor.
+      ...(parsed.data.abertura_em_duas_partes !== undefined
+        ? { abertura_em_duas_partes: parsed.data.abertura_em_duas_partes.ligada }
+        : {}),
+    },
   });
 
   return ok(resposta(settings, await lerContagem(authz.org.orgId)), { requestId });
