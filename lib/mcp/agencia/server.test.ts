@@ -4,6 +4,7 @@ import { allTools } from "../tools";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN } from "./ferramentas-do-numero";
 import { ESCRITAS_DA_PORTA_ADMIN, LEITURAS_DA_PORTA_ADMIN, NUNCA_NA_PORTA_ADMIN } from "./porta-admin";
+import { ROLE_RANK } from "@/lib/auth/types";
 import { PAPEL_DA_PORTA } from "./auth";
 import { ferramentasDaPorta } from "./server";
 
@@ -61,9 +62,8 @@ describe("ferramentasDaPorta('leitura')", () => {
   // aparecendo na lista. Foi o que aconteceu com crm_get_ai_cost_by_response, que
   // nasceu pedindo `manager` — a mesma cerca já existia para a porta Admin.
   it("o papel da porta alcança todas as ferramentas dela", () => {
-    const rank = { viewer: 1, agent: 2, ai_operator: 3, manager: 4, admin: 5 } as const;
     for (const t of leitura) {
-      expect(rank[t.requiresRole] <= rank[PAPEL_DA_PORTA.leitura], t.name).toBe(true);
+      expect(ROLE_RANK[t.requiresRole] <= ROLE_RANK[PAPEL_DA_PORTA.leitura], t.name).toBe(true);
     }
   });
 });

@@ -148,13 +148,13 @@ export class LlmEnderecoExigeChaveDaEmpresaError extends Error {
   }
 }
 
+/** Postgres: coluna inexistente (`undefined_column`). */
+const COLUNA_INEXISTENTE = '42703';
+
 /**
  * O título do aviso na Central. Constante exportada porque é também a chave de
  * dedup: o aviso usa `kind='other'` sem referência (ver `recusarEndereco…`).
  */
-/** Postgres: coluna inexistente (`undefined_column`). */
-const COLUNA_INEXISTENTE = '42703';
-
 export const TITULO_ENDERECO_SEM_CHAVE_DA_EMPRESA =
   'A IA recusou usar o endereço próprio desta empresa sem a chave dela';
 
@@ -1207,35 +1207,29 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     if (cost !== null) origemDoCusto = 'catalogo_da_instalacao';
   }
 
-  // O `passadas` é a coluna da migration 9032. Numa instalação que subiu a imagem
-  // nova sem reaplicar o baseline, a coluna não existe — e sem a queda abaixo TODA
-  // chamada ao modelo morreria depois de o modelo já ter respondido (42703). O
-  // detalhe da medição é o que se perde; a resposta ao lead, não.
-  const colunasDaChamada =
-    `(organization_id, contact_id, job_id, variant_id, purpose, provider, model,
-        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, origem_da_escolha, agent_id`;
-  const valoresDaChamada =
-    `values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15`;
+  // Os dois INSERTs abaixo são escritos por extenso, com a lista de colunas
+  // literal. A cerca `tests/unit/execucao-do-agente-tem-dono.test.ts` varre esta
+  // fonte com uma regex para cobrar `agent_id` em cada um deles: SQL montado por
+  // pedaços deixa aquela cerca cega, e ela reprova quando não acha os dois.
   const parametrosDaChamada = [
-      input.tenantId,
-      input.leadId ?? null,
-      input.jobId ?? null,
-      input.variantId ?? null,
-      purpose,
-      config.provider,
-      model,
-      usage.inputTokens,
-      usage.outputTokens,
-      usage.cacheReadTokens,
-      usage.cacheWriteTokens,
-      cost,
-      latencyMs,
-      origem,
-      input.agentId ?? null,
-      // Só as chamadas com laço de ferramentas guardam o detalhe. Chamada simples
-      // (classificadores, resumo) é uma passada sem ferramenta: a linha já diz tudo.
+    input.tenantId,
+    input.leadId ?? null,
+    input.jobId ?? null,
+    input.variantId ?? null,
+    purpose,
+    config.provider,
+    model,
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.cacheReadTokens,
+    usage.cacheWriteTokens,
+    cost,
+    latencyMs,
+    origem,
+    input.agentId ?? null,
   ];
+  // Só as chamadas com laço de ferramentas guardam o detalhe. Chamada simples
+  // (classificadores, resumo) é uma passada sem ferramenta: a linha já diz tudo.
   const passadasGravadas =
     input.maxSteps !== undefined || passadas.length > 1 ? JSON.stringify(passadas) : null;
 
@@ -1243,21 +1237,29 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   try {
     ({ rows } = await db.query<{ id: string }>(
       `insert into llm_calls
-       ${colunasDaChamada}, passadas)
-     ${valoresDaChamada}, $16::jsonb)
-     returning id`,
+         (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
+          input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
+          status, origem_da_escolha, agent_id, passadas)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15, $16::jsonb)
+       returning id`,
       [...parametrosDaChamada, passadasGravadas],
     ));
   } catch (erro) {
+    // `passadas` é a coluna da migration 9032. Numa instalação que subiu a imagem
+    // nova sem reaplicar o baseline, ela não existe — e sem esta queda TODA chamada
+    // ao modelo morreria DEPOIS de o modelo já ter respondido. Perde-se o detalhe
+    // da medição; a resposta ao lead e o custo, não.
     if ((erro as { code?: string } | null)?.code !== COLUNA_INEXISTENTE) throw erro;
     deps.log?.warn('llm: llm_calls sem a coluna passadas (migration 9032 não aplicada)', {
       organization_id: input.tenantId,
     });
     ({ rows } = await db.query<{ id: string }>(
       `insert into llm_calls
-       ${colunasDaChamada})
-     ${valoresDaChamada})
-     returning id`,
+         (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
+          input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
+          status, origem_da_escolha, agent_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15)
+       returning id`,
       parametrosDaChamada,
     ));
   }
