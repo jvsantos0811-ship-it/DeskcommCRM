@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chaveDoTema,
+  dataNaResposta,
   ehDeSaude,
   lerRegistroDoFechamento,
   mesclarRegistro,
@@ -9,8 +10,10 @@ import {
   promessaDaEquipe,
   REGISTRO_INSTRUCTION,
   renderRegistro,
+  respostaDeSaude,
   sanearItem,
   sanearTexto,
+  simOuNao,
   statusEfetivo,
   TETO_DO_BLOCO,
   type ItemDoRegistro,
@@ -249,5 +252,123 @@ describe('PC-019 + PC-018 — a trava de repetição consulta o registro', () =>
   it('pergunta nova passa', async () => {
     const reg = aplicar([], { perguntas: [], respostas: [{ tema: 'cidade', resposta: 'Contagem', recusou: false }], licencas: [], promessas_cumpridas: [] }, [], ctx(AS_10H02));
     expect(await perguntaJaRespondidaNoRegistro('Qual o seu nome completo?', perguntasRespondidas(reg), dice)).toBeNull();
+  });
+});
+
+describe('PC-038 — o registro guarda o nome do benefício, a data e a dúvida', () => {
+  it('⭐ tema "benefício" e resposta "auxílio-doença" grava "auxílio-doença"', () => {
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença' }).resposta).toBe('auxílio-doença');
+    expect(sanearItem({ tema: 'auxílio-doença negado', pergunta: null, resposta: 'sim, em maio' })).toMatchObject({
+      tema: 'auxílio-doença negado',
+      resposta: 'sim, em maio',
+    });
+    expect(ehDeSaude('aposentadoria por invalidez')).toBe(false);
+    expect(ehDeSaude('auxílio por incapacidade permanente')).toBe(false);
+  });
+
+  it('diagnóstico ao lado do nome do benefício continua saindo', () => {
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença por hérnia de disco' }).resposta).toBe(
+      'informado',
+    );
+    expect(ehDeSaude('auxílio-doença por depressão')).toBe(true);
+    expect(ehDeSaude('incapacidade para o trabalho')).toBe(true);
+  });
+
+  it('saúde em três valores honestos, e a data quando há', () => {
+    expect(sanearItem({ tema: 'sequela', pergunta: null, resposta: 'não consigo pegar peso' })).toMatchObject({
+      tema: 'saúde',
+      resposta: 'sim',
+    });
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'não sei' }).resposta).toBe('não sabe');
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'não tenho' }).resposta).toBe('não');
+    expect(sanearItem({ tema: 'data da perícia', pergunta: null, resposta: 'perícia dia 20/11' }).resposta).toBe(
+      'sim · 20/11',
+    );
+  });
+
+  it('o valor gravado passa de novo pelo saneamento e sai igual (a mescla saneia tudo que muda)', () => {
+    for (const resposta of ['sim', 'não', 'não sabe', 'informado', 'sim · 20/11', 'sim · março', 'sim · dia 20', 'informado · 20/11', 'informado · dia 10']) {
+      expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta }).resposta).toBe(resposta);
+    }
+  });
+});
+
+describe('PC-038 — simOuNao e a data da resposta', () => {
+  it.each([
+    ['sim', '', 'sim'],
+    ['Sim, pode usar', '', 'sim'],
+    ['não', '', 'não'],
+    ['não tenho', '', 'não'],
+    ['ainda não', '', 'não'],
+    ['nunca', '', 'não'],
+    ['nenhum', '', 'não'],
+    ['não consigo pegar peso', 'sequela', 'sim'],
+    ['não posso ficar em pé muito tempo', 'dificuldade', 'sim'],
+    ['não aguento mais a dor', 'limitação', 'sim'],
+    ['nunca mais consegui pegar peso', 'sequela', 'sim'],
+    ['não consegui mais trabalhar', 'sequela', 'sim'],
+    ['não consigo pegar peso', 'tem laudo', null],
+    ['não consigo trabalhar', 'ainda trabalha', 'não'],
+    ['não consigo trabalhar desde março', 'afastado mais de 60 dias', null],
+    ['não consigo andar faz 5 anos', 'deficiência ou doença há 2 anos', null],
+    ['não consegui o laudo', 'tem laudo', 'não'],
+    ['não consegui fazer o exame', 'sequela', null],
+    ['não consegui voltar a trabalhar', 'sequela', null],
+    ['nunca mais consegui trabalhar', 'afastamento', null],
+    ['não sei', '', 'não sabe'],
+    ['n sei', '', 'não sabe'],
+    ['ainda não sei', '', 'não sabe'],
+    ['acho que sim', '', 'não sabe'],
+    ['não tenho certeza', '', 'não sabe'],
+    ['não lembro', '', 'não sabe'],
+    ['talvez', '', 'não sabe'],
+    ['não posso falar sobre isso', 'sequela', null],
+    ['perícia dia 20/11', '', null],
+  ] as const)('%j (rótulo %j) → %j', (resposta, rotulo, esperado) => {
+    expect(simOuNao(resposta, rotulo)).toBe(esperado);
+  });
+
+  it('a data é só a data: numérica, por extenso ou "dia N"; nada de pressão, dose ou CID', () => {
+    expect(dataNaResposta('perícia dia 20/11')).toBe('20/11');
+    expect(dataNaResposta('marcada para 05/12/2026 às 14h')).toBe('05/12/2026');
+    expect(dataNaResposta('laudo de Março de 2026')).toBe('março de 2026');
+    expect(dataNaResposta('volta no dia 7')).toBe('dia 7');
+    expect(dataNaResposta('maior dor que já senti')).toBeNull();
+    expect(dataNaResposta('CID M54.5, 500mg')).toBeNull();
+    expect(dataNaResposta('45/13')).toBeNull();
+    expect(respostaDeSaude('não, a perícia foi cancelada dia 20/11')).toBe('não');
+    expect(respostaDeSaude('sim, laudo de março')).toBe('sim · março');
+    expect(respostaDeSaude('afastado com laudo de depressão')).toBe('informado');
+  });
+});
+
+describe('PC-038 (revisão) — o registro também fecha a brecha', () => {
+  it('⭐ benefício com doença fora da lista grava "informado"; sozinho ou "negado em março", grava o nome', () => {
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença por fibromialgia' }).resposta).toBe(
+      'informado',
+    );
+    expect(
+      sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio por incapacidade temporária por causa do lúpus' })
+        .resposta,
+    ).toBe('informado');
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença, negado em março' }).resposta).toBe(
+      'auxílio-doença, negado em março',
+    );
+    expect(ehDeSaude('auxílio-doença por fibromialgia')).toBe(true);
+    expect(ehDeSaude('auxílio-doença')).toBe(false);
+  });
+
+  it('⭐ posse, data e "nunca mais" no registro: "não", "não", "informado · data"', () => {
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'não consegui o laudo' }).resposta).toBe('não');
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'ainda não, consulta dia 20/11' }).resposta).toBe('não');
+    expect(sanearItem({ tema: 'sequela', pergunta: null, resposta: 'fiquei bem, voltei ao médico dia 10' }).resposta).toBe(
+      'informado · dia 10',
+    );
+    expect(sanearItem({ tema: 'sequela', pergunta: null, resposta: 'nunca mais consegui pegar peso' }).resposta).toBe('sim');
+    expect(sanearItem({ tema: 'afastamento', pergunta: null, resposta: 'nunca mais consegui trabalhar' }).resposta).toBe(
+      'informado',
+    );
+    expect(respostaDeSaude('laudo de março', 'tem laudo')).toBe('informado · março');
+    expect(respostaDeSaude('perícia dia 20/11', 'prazo ou data marcada')).toBe('sim · 20/11');
   });
 });

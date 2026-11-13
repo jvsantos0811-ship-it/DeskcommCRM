@@ -21,13 +21,15 @@
  *    para outro agente, passagem para pessoa ou caso aberto, mudança de etapa
  *    feita pela IA) — e no máximo UMA chamada barata por momento.
  *  - LGPD: telefone, CID e nome de etiqueta saem; saúde vira "sim"/"não"/
- *    "informado" (nunca diagnóstico ou remédio); dado de documento (CPF, RG,
- *    endereço, CEP, data de nascimento) nunca entra, mesmo que a pergunta peça.
+ *    "não sabe"/"sim · <data>"/"informado" (nunca diagnóstico ou remédio); dado
+ *    de documento (CPF, RG, endereço, CEP, data de nascimento DA PESSOA) nunca
+ *    entra, mesmo que a pergunta peça. Nome de benefício ("auxílio-doença") não
+ *    é saúde, e a data do parto não é documento (PC-038).
  *
  * As respostas vêm do Registro da conversa (PC-019) e dos campos do negócio
  * CONFIRMADOS — nunca do texto livre da conversa inteira.
  */
-import { ehDeSaude, lerRegistro, sanearTexto, simOuNao } from './registro-da-conversa';
+import { ehDeSaude, lerRegistro, respostaDeSaude, sanearTexto } from './registro-da-conversa';
 import { extrairJsonDoTexto } from '@/lib/agent-engine/texto/extrair-json-do-texto';
 import { camposDoFunil, escopoDoCampo } from '@/lib/leads/campos-do-funil';
 import { statusDosCampos } from '@/lib/leads/status-dos-campos';
@@ -79,26 +81,125 @@ function comparavel(v: string): string {
     .trim();
 }
 
-/** A pergunta (ou a resposta) é sobre dado de documento? Esses nunca entram no bloco. */
+/** Dado de documento em qualquer contexto (pergunta ou resposta). Esses nunca entram no bloco. */
 const DOCUMENTO =
-  /\b(cpf|rg|identidade|cnh|titulo de eleitor|cep|endereco|rua|avenida|logradouro|bairro|nascimento|nasceu|data de nasc|pis|nis|nit|ctps|carteira de trabalho n)/;
+  /\b(cpf|rg|identidade|cnh|titulo de eleitor|cep|endereco|rua|avenida|logradouro|bairro|pis|nis|nit|ctps|carteira de trabalho n)/;
 const NUMERO_DE_DOCUMENTO = /\d{3}\.?\d{3}\.?\d{3}-?\d{2}|\b\d{5}-?\d{3}\b|\b\d{2}\.?\d{3}\.?\d{3}-?[\dxX]\b/;
 
 /**
+ * DATA DE NASCIMENTO: DA PESSOA SAI, DO BEBÊ FICA (PC-038). "nasceu" e
+ * "nascimento" derrubavam a linha em qualquer rótulo, e no salário-maternidade
+ * a data do parto — o fato que qualifica — sumia do card.
+ *
+ *  - "nasci" (1ª pessoa) é sempre a pessoa: sai em qualquer rótulo.
+ *  - Rótulo de parto, bebê, filho ou adoção: o nascimento ali é o do bebê, e
+ *    a data fica (CPF, RG, CEP e endereço continuam saindo).
+ *  - Rótulo que pergunta o nascimento ("Data de nascimento"): sai, como antes.
+ *  - Rótulo de identidade ou idade ("Idade…", "Idoso ou deficiência", "Quem
+ *    fala", "Titular…") e resposta que fala de nascimento: qualquer ano de até
+ *    hoje − 14 derruba a linha, mesmo solto ("sou de 1960", "nasceu em 55").
+ *    "pai de 58 anos" é idade, não ano, e fica.
+ *  - "idade" só na resposta: só a data completa antiga ("12/03/1960") derruba.
+ *  - Data antiga sem nada disso fica ("Data do acidente: 15/06/2009",
+ *    "Última contribuição", "Quando negou").
+ */
+const NASCI = /\bnasci\b/;
+const NASCIMENTO = /\bnasc/;
+const IDADE = /\bidade\b/;
+const PARTO = /\b(parto|bebes?|filh[oa]s?|adocao|adotad[oa]s?|adotar|adotei|adotou)\b/;
+/** Rótulo de identidade ou idade: ali, ano antigo (mesmo solto) é o nascimento de alguém. */
+const ROTULO_DE_PESSOA = /\b(idade|idos[oa]s?|quem fala|titular)\b/;
+/** Quantos anos atrás uma data passa a ser de nascimento de quem pede, e não de bebê. */
+const ANOS_DE_NASCIMENTO_DA_PESSOA = 14;
+
+const MESES_SEM_ACENTO = 'janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+const DATA_COMPLETA = new RegExp(
+  `\\b\\d{1,2}/\\d{1,2}/(\\d{4}|\\d{2})\\b|\\b(?:${MESES_SEM_ACENTO})(?:\\s+de\\s+|/)(\\d{4})\\b`,
+  'g',
+);
+/** Número que é quantidade, não ano: "58 anos", "10 dias", "2000 reais", "05 de março". */
+const NAO_E_ANO = `(?![/\\d])(?!\\s*(?:anos?|dias?|mes|meses|semanas?|horas?|kg|quilos?|reais|%|de\\s+(?:${MESES_SEM_ACENTO})))`;
+const ANO_SOLTO = new RegExp(`\\b(19\\d{2}|20\\d{2})\\b${NAO_E_ANO}`, 'g');
+/** Ano de dois dígitos depois de "em"/"de"/"ano": "nasceu em 55", "sou de 60", "ano 58". */
+const ANO_CURTO = new RegExp(`\\b(?:em|de|ano)\\s+(\\d{2})\\b${NAO_E_ANO}`, 'g');
+/**
+ * Ano de dois dígitos depois de separador de data ("04/58", "15.04.55"). Só em
+ * rótulo de identidade ou idade: fora dele, "saí antes do bebê nascer, em
+ * 05/09" é uma data de saída, não um nascimento.
+ */
+const ANO_CURTO_SEPARADOR = new RegExp(`[./-](\\d{2})\\b${NAO_E_ANO}`, 'g');
+
+/**
+ * Os anos que a resposta traz: só de datas completas, ou também soltos ("de
+ * 1960", "em 55"); com `separador`, também "04/58" e "15.04.55". Puro.
+ */
+function anosNaResposta(resposta: string, anoAtual: number, soltos: boolean, separador = false): number[] {
+  const t = resposta
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const doisDigitos = (n: number) => (n > anoAtual % 100 ? 1900 + n : 2000 + n);
+  const anos: number[] = [];
+  for (const m of t.matchAll(DATA_COMPLETA)) {
+    const bruto = m[1] ?? m[2];
+    if (!bruto) continue;
+    anos.push(bruto.length === 2 ? doisDigitos(Number(bruto)) : Number(bruto));
+  }
+  if (soltos) {
+    for (const m of t.matchAll(ANO_SOLTO)) anos.push(Number(m[1]));
+    for (const m of t.matchAll(ANO_CURTO)) anos.push(doisDigitos(Number(m[1])));
+  }
+  if (separador) {
+    for (const m of t.matchAll(ANO_CURTO_SEPARADOR)) anos.push(doisDigitos(Number(m[1])));
+  }
+  return anos;
+}
+
+/** O rótulo (pergunta, tema ou campo) é de dado de documento? Sem resposta: só o rótulo. Puro. */
+export function rotuloDeDocumento(rotulo: string): boolean {
+  const rot = comparavel(rotulo);
+  return DOCUMENTO.test(rot) || NASCI.test(rot) || (NASCIMENTO.test(rot) && !PARTO.test(rot));
+}
+
+/**
+ * A linha (rótulo + resposta) traz dado de documento? CPF, RG, CEP, endereço
+ * e a data de nascimento DA PESSOA; a data do parto, do bebê ou da adoção,
+ * não. `agora` dá o ano de corte (hoje − 14). Puro.
+ */
+export function ehDadoDeDocumento(rotulo: string, resposta: string, agora: Date = new Date()): boolean {
+  if (rotuloDeDocumento(rotulo)) return true;
+  const resp = comparavel(resposta);
+  if (DOCUMENTO.test(resp) || NUMERO_DE_DOCUMENTO.test(resposta) || NASCI.test(resp)) return true;
+  const rot = comparavel(rotulo);
+  if (PARTO.test(rot)) return false;
+  const anoAtual = agora.getFullYear();
+  const corte = anoAtual - ANOS_DE_NASCIMENTO_DA_PESSOA;
+  const temAnoAntigo = (soltos: boolean, separador = false) =>
+    anosNaResposta(resposta, anoAtual, soltos, separador).some((ano) => ano <= corte);
+  if (ROTULO_DE_PESSOA.test(rot)) return temAnoAntigo(true, true);
+  if (NASCIMENTO.test(resp)) return temAnoAntigo(true);
+  if (IDADE.test(resp)) return temAnoAntigo(false);
+  return false;
+}
+
+/**
  * A linha como pode entrar no bloco, ou `null` quando ela não pode entrar
- * (documento, vazia). Saúde vira "sim"/"não"/"informado". Puro.
+ * (documento, vazia). Saúde vira "sim"/"não"/"não sabe"/"sim · <data>"/
+ * "informado" (`respostaDeSaude`). `agora` só dá o ano de corte da data de
+ * nascimento. Puro.
  */
 export function sanearLinhaDoResumo(
   rotulo: string,
   resposta: string,
   etiquetas: readonly string[] = [],
+  agora: Date = new Date(),
 ): string | null {
   const r = resposta.replace(/\s+/g, ' ').trim();
   if (!r) return null;
-  if (DOCUMENTO.test(comparavel(rotulo)) || DOCUMENTO.test(comparavel(r)) || NUMERO_DE_DOCUMENTO.test(r)) return null;
+  if (ehDadoDeDocumento(rotulo, r, agora)) return null;
   let texto: string;
   if (ehDeSaude(rotulo, r)) {
-    texto = simOuNao(r) ?? 'informado';
+    texto = respostaDeSaude(r, rotulo);
   } else {
     texto = sanearTexto(r);
     for (const etiqueta of etiquetas) {
@@ -119,27 +220,62 @@ export interface LinhaDoModelo {
   resposta: string;
 }
 
+/** O rótulo sem o parêntese final: "Sequela (sim/não)" → "Sequela". Puro. */
+function semParenteseFinal(rotulo: string): string {
+  return rotulo.replace(/\s*\([^()]*\)\s*$/, '');
+}
+
 /**
  * Lê o que o modelo devolveu: só perguntas DA LISTA (casadas sem acento nem
  * caixa), uma vez cada, na ordem da lista. O que não está na lista é ignorado.
+ *
+ * O rótulo idêntico vale primeiro. Depois, o rótulo sem o parêntese final
+ * (PC-038): o modelo devolve "Sequela" para "Sequela (sim/não)", e a linha
+ * sumia sem aviso. Se esse rótulo curto casar com DOIS da lista, não casa
+ * nenhum (melhor faltar a linha do que pôr a resposta na pergunta errada).
  * Puro.
  */
 export function lerLinhasDoModelo(texto: string, perguntas: readonly string[]): LinhaDoModelo[] {
   const json = extrairJsonDoTexto(texto) as { linhas?: unknown } | null;
   const bruto = Array.isArray(json?.linhas) ? json.linhas : [];
-  const porChave = new Map<string, string>();
+  const doModelo: Array<{ chave: string; curta: string; resposta: string }> = [];
+  const vistas = new Set<string>();
   for (const item of bruto) {
     if (!item || typeof item !== 'object') continue;
     const p = (item as { pergunta?: unknown }).pergunta;
     const r = (item as { resposta?: unknown }).resposta;
     if (typeof p !== 'string' || typeof r !== 'string' || !r.trim()) continue;
     const chave = comparavel(p);
-    if (!porChave.has(chave)) porChave.set(chave, r);
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    doModelo.push({ chave, curta: comparavel(semParenteseFinal(p)), resposta: r });
   }
+  const lista = perguntas.map((pergunta) => ({
+    pergunta,
+    chave: comparavel(pergunta),
+    curta: comparavel(semParenteseFinal(pergunta)),
+  }));
+  const respostaDe = new Map<string, string>();
+  const usados = new Set<number>();
+  // 1) Rótulo idêntico (sem acento, caixa nem pontuação).
+  doModelo.forEach((m, i) => {
+    const alvo = lista.find((l) => l.chave === m.chave);
+    if (!alvo || respostaDe.has(alvo.pergunta)) return;
+    respostaDe.set(alvo.pergunta, m.resposta);
+    usados.add(i);
+  });
+  // 2) Sem o parêntese final, dos dois lados; dois rótulos possíveis = nenhum.
+  doModelo.forEach((m, i) => {
+    if (usados.has(i) || !m.curta) return;
+    const alvos = lista.filter((l) => l.curta === m.curta);
+    if (alvos.length !== 1) return;
+    const alvo = alvos[0]!;
+    if (!respostaDe.has(alvo.pergunta)) respostaDe.set(alvo.pergunta, m.resposta);
+  });
   const saida: LinhaDoModelo[] = [];
-  for (const pergunta of perguntas) {
-    const r = porChave.get(comparavel(pergunta));
-    if (r !== undefined) saida.push({ pergunta, resposta: r });
+  for (const l of lista) {
+    const r = respostaDe.get(l.pergunta);
+    if (r !== undefined) saida.push({ pergunta: l.pergunta, resposta: r });
   }
   return saida;
 }
@@ -253,26 +389,28 @@ export async function atualizarResumoDoCard(
   const statuses = statusDosCampos(lead.status_dos_campos);
   for (const campo of camposDoFunil(lead.settings)) {
     if (escopoDoCampo(campo) !== 'negocio' || statuses[campo.key] !== 'CONFIRMADO') continue;
-    if (DOCUMENTO.test(comparavel(`${campo.key} ${campo.label}`))) continue;
+    if (rotuloDeDocumento(`${campo.key} ${campo.label}`)) continue;
     const v = lead.custom_fields?.[campo.key];
     if (v === null || v === undefined || v === '') continue;
     respostas.push({ tema: campo.label, resposta: typeof v === 'string' ? v : JSON.stringify(v) });
   }
-  // Nada de documento chega ao modelo, nem pela resposta.
+  // Nada de documento chega ao modelo, nem pela resposta. Tema de parto, bebê,
+  // filho ou adoção passa: a data de nascimento ali é a do bebê (PC-038).
   const paraOModelo = respostas
-    .filter((r) => !DOCUMENTO.test(comparavel(r.tema)) && !NUMERO_DE_DOCUMENTO.test(r.resposta))
+    .filter((r) => !rotuloDeDocumento(r.tema) && !NUMERO_DE_DOCUMENTO.test(r.resposta))
     .map((r) => ({ tema: sanearTexto(r.tema).slice(0, 80), resposta: sanearTexto(r.resposta).slice(0, 200) }))
     .filter((r) => r.tema && r.resposta);
   if (paraOModelo.length === 0) return { status: 'sem_respostas' };
 
   const { sistema, mensagem } = pedidoAoModelo(perguntas, paraOModelo);
   const texto = await e.chamarModelo(sistema, mensagem);
+  const agora = e.agora ?? new Date();
   const linhas = lerLinhasDoModelo(texto, perguntas)
-    .map((l) => sanearLinhaDoResumo(l.pergunta, l.resposta, lead.tags ?? []))
+    .map((l) => sanearLinhaDoResumo(l.pergunta, l.resposta, lead.tags ?? [], agora))
     .filter((l): l is string => l !== null);
   if (linhas.length === 0) return { status: 'nada_util' };
 
-  const bloco = montarBloco(linhas, quandoDoResumo(e.agora ?? new Date(), e.fuso));
+  const bloco = montarBloco(linhas, quandoDoResumo(agora, e.fuso));
   const nova = aplicarBlocoNaDescricao(lead.description, bloco);
   const upd = await db.query<{ id: string }>(
     `update crm_leads set description = $3
