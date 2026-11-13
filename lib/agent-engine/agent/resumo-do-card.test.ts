@@ -400,6 +400,10 @@ describe('PC-038 (revisão) — rótulo de identidade ou idade: ano solto é nas
     expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '66 anos, 04/58', [], AGORA)).toBeNull();
     expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '15.04.55', [], AGORA)).toBeNull();
     expect(sanearLinhaDoResumo('Quem fala', 'eu, ano 58', [], AGORA)).toBeNull();
+    // O separador só vale em rótulo de identidade: data de saída perto de "nascer" fica.
+    expect(sanearLinhaDoResumo('Saída do último emprego', 'saí antes do bebê nascer, em 05/09', [], AGORA)).toBe(
+      'Saída do último emprego: saí antes do bebê nascer, em 05/09',
+    );
   });
 
   it('⭐ "Quem fala: filha, pelo pai de 58 anos" continua passando', () => {

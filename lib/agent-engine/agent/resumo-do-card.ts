@@ -120,14 +120,20 @@ const DATA_COMPLETA = new RegExp(
 /** Número que é quantidade, não ano: "58 anos", "10 dias", "2000 reais", "05 de março". */
 const NAO_E_ANO = `(?![/\\d])(?!\\s*(?:anos?|dias?|mes|meses|semanas?|horas?|kg|quilos?|reais|%|de\\s+(?:${MESES_SEM_ACENTO})))`;
 const ANO_SOLTO = new RegExp(`\\b(19\\d{2}|20\\d{2})\\b${NAO_E_ANO}`, 'g');
+/** Ano de dois dígitos depois de "em"/"de"/"ano": "nasceu em 55", "sou de 60", "ano 58". */
+const ANO_CURTO = new RegExp(`\\b(?:em|de|ano)\\s+(\\d{2})\\b${NAO_E_ANO}`, 'g');
 /**
- * Ano de dois dígitos depois de "em"/"de"/"ano" ou de separador de data:
- * "nasceu em 55", "sou de 60", "ano 58", "04/58", "15.04.55".
+ * Ano de dois dígitos depois de separador de data ("04/58", "15.04.55"). Só em
+ * rótulo de identidade ou idade: fora dele, "saí antes do bebê nascer, em
+ * 05/09" é uma data de saída, não um nascimento.
  */
-const ANO_CURTO = new RegExp(`(?:\\b(?:em|de|ano)\\s+|[./-])(\\d{2})\\b${NAO_E_ANO}`, 'g');
+const ANO_CURTO_SEPARADOR = new RegExp(`[./-](\\d{2})\\b${NAO_E_ANO}`, 'g');
 
-/** Os anos que a resposta traz: só de datas completas, ou também soltos ("de 1960", "em 55"). Puro. */
-function anosNaResposta(resposta: string, anoAtual: number, soltos: boolean): number[] {
+/**
+ * Os anos que a resposta traz: só de datas completas, ou também soltos ("de
+ * 1960", "em 55"); com `separador`, também "04/58" e "15.04.55". Puro.
+ */
+function anosNaResposta(resposta: string, anoAtual: number, soltos: boolean, separador = false): number[] {
   const t = resposta
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -142,6 +148,9 @@ function anosNaResposta(resposta: string, anoAtual: number, soltos: boolean): nu
   if (soltos) {
     for (const m of t.matchAll(ANO_SOLTO)) anos.push(Number(m[1]));
     for (const m of t.matchAll(ANO_CURTO)) anos.push(doisDigitos(Number(m[1])));
+  }
+  if (separador) {
+    for (const m of t.matchAll(ANO_CURTO_SEPARADOR)) anos.push(doisDigitos(Number(m[1])));
   }
   return anos;
 }
@@ -165,8 +174,10 @@ export function ehDadoDeDocumento(rotulo: string, resposta: string, agora: Date 
   if (PARTO.test(rot)) return false;
   const anoAtual = agora.getFullYear();
   const corte = anoAtual - ANOS_DE_NASCIMENTO_DA_PESSOA;
-  const temAnoAntigo = (soltos: boolean) => anosNaResposta(resposta, anoAtual, soltos).some((ano) => ano <= corte);
-  if (ROTULO_DE_PESSOA.test(rot) || NASCIMENTO.test(resp)) return temAnoAntigo(true);
+  const temAnoAntigo = (soltos: boolean, separador = false) =>
+    anosNaResposta(resposta, anoAtual, soltos, separador).some((ano) => ano <= corte);
+  if (ROTULO_DE_PESSOA.test(rot)) return temAnoAntigo(true, true);
+  if (NASCIMENTO.test(resp)) return temAnoAntigo(true);
   if (IDADE.test(resp)) return temAnoAntigo(false);
   return false;
 }
