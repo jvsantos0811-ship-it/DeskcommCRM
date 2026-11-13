@@ -63,7 +63,10 @@ export const crmGetAiCostByResponse: McpToolDefinition<typeof shape> = {
     `Janela de até ${JANELA_MAXIMA_DIAS} dias.`,
   inputSchema: shape,
   category: "read",
-  requiresRole: "manager",
+  // A porta Leitura roda como `agent` (PAPEL_DA_PORTA em ./auth.ts). Exigir
+  // `manager` aqui deixava a ferramenta registrada e inalcançável: toda
+  // chamada morria em 403 no ensureRole. É leitura pura, como as vizinhas.
+  requiresRole: "agent",
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
     const desde = new Date(input.desde);
