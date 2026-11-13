@@ -346,6 +346,21 @@ const PARES: Array<{
     simbolo: "KNOWLEDGE_SEARCH_AUTHOR_KINDS",
   },
   {
+    tabela: "crm_lead_ficha",
+    coluna: "origem",
+    // lib/dados/ficha.ts → ORIGENS_DA_FICHA (fork, migration 9033, PC-036): quem
+    // leu a ficha — o Leitor do CRM, a tarefa do Claude ou a correção do Gestor.
+    arquivo: "lib/dados/ficha.ts",
+    simbolo: "ORIGENS_DA_FICHA",
+  },
+  {
+    tabela: "leitor_rodadas",
+    coluna: "origem",
+    // lib/dados/leitor/rodadas.ts → ORIGENS_DA_RODADA (fork, 9022 + `claude` na 9033).
+    arquivo: "lib/dados/leitor/rodadas.ts",
+    simbolo: "ORIGENS_DA_RODADA",
+  },
+  {
     tabela: "crm_contracts",
     coluna: "status",
     // lib/contratos/vocabulario.ts → STATUS_DO_CONTRATO (fork, migration 9008).

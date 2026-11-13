@@ -51,7 +51,7 @@ interface AuditMcpToolCallInput {
    * Porta da agência por onde a chamada entrou (`leitura` | `admin`), quando
    * veio por `/api/mcp/agencia*` (migration 9014). Ausente = rota de sempre.
    */
-  portaDaAgencia?: "leitura" | "admin";
+  portaDaAgencia?: "leitura" | "admin" | "ficha";
   /**
    * Foto do alvo ANTES e DEPOIS de uma escrita pela porta Admin da agência
    * (só metadados — ver `lib/mcp/agencia/porta-admin.ts`). Foto grande demais

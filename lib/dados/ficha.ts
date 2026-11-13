@@ -86,6 +86,15 @@ export interface AtendidoPor {
 export const GATILHOS = ["chat_novo", "mensagem_do_lead", "mensagem_da_equipe", "lead_voltou"] as const;
 export type Gatilho = (typeof GATILHOS)[number];
 
+/**
+ * Quem leu a ficha (migration 9033, PC-036): o Leitor do CRM (`leitor_do_crm`,
+ * o padrão do banco), a tarefa diária do Claude pela porta Ficha
+ * (`leitor_0530`) ou a correção do Gestor (`gestor_17h10`, PC-037). O CHECK do
+ * banco fala este vocabulário (`vocabulario-banco-x-typescript`).
+ */
+export const ORIGENS_DA_FICHA = ["leitor_do_crm", "leitor_0530", "gestor_17h10"] as const;
+export type OrigemDaFicha = (typeof ORIGENS_DA_FICHA)[number];
+
 /** Uma linha de `crm_lead_ficha` como o código a usa. */
 export interface FichaGravada {
   lead_id: string;

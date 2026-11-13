@@ -16,6 +16,10 @@
  * voltar ao padrão ou desligar; desligado, o padrão não o religa sozinho. A bateria roda na
  * área do dono da plataforma (a aprovação vale para todos os escritórios,
  * decisão de 06/11): aqui o dono vê o atalho "Testar na bateria".
+ *
+ * PC-036: o dono da instalação pode pôr a empresa na leitura PELO CLAUDE — uma
+ * tarefa agendada da agência lê pela porta Ficha e o CRM não chama modelo. O
+ * cartão diz isso e mostra a última rodada do Claude; só o dono liga e desliga.
  */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -29,8 +33,9 @@ import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import type { EscolhaDoLeitor } from "@/lib/dados/leitor/config";
 import type { DadosDoLeitor, ModeloNoCartao } from "@/lib/dados/leitor/leitor-da-org";
+import type { RodadaDoClaudeNaTela } from "@/lib/dados/leitor/pelo-claude";
 
-type Dados = DadosDoLeitor & { podeEditar: boolean; ehDonoDaPlataforma: boolean };
+type Dados = DadosDoLeitor & { podeEditar: boolean; ehDonoDaPlataforma: boolean; rodadaDoClaude: RodadaDoClaudeNaTela | null };
 
 const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.model_id}`;
 
@@ -140,7 +145,9 @@ export function CartaoDoLeitor() {
               ? t("O Leitor segue o padrão da instalação.")
               : escolha === "propria"
                 ? t("Leitor da conversa ligado.")
-                : t("Salvo."),
+                : escolha === "claude"
+                  ? t("A leitura passa a ser feita pelo Claude.")
+                  : t("Salvo."),
         );
         await carregar();
       } catch (err) {
@@ -164,6 +171,8 @@ export function CartaoDoLeitor() {
       .replace("{quando}", quando);
   } else if (origem === "padrao") {
     ligadoDesde = t("A instalação ainda não tem um modelo padrão do Leitor. Escolha um modelo aprovado para ligar nesta empresa.");
+  } else if (origem === "claude") {
+    ligadoDesde = t("Lido pelo Claude, numa tarefa diária da agência, desde {quando}. O CRM não chama modelo para ler.").replace("{quando}", quando);
   } else if (origem === "desligado") {
     ligadoDesde = t("Desligado nesta empresa. O padrão da instalação não liga o Leitor de novo sozinho.");
   } else if (dados.config.ligado && dados.config.ligado_em) {
@@ -177,7 +186,23 @@ export function CartaoDoLeitor() {
         nomeDe(dados.config.modelo),
       )
     : null;
-  const estado = !dados.config.ligado ? "desligado" : dados.semChaveParaOModelo ? "sem_chave" : "ligado";
+  const estado =
+    origem === "claude" ? "pelo_claude" : !dados.config.ligado ? "desligado" : dados.semChaveParaOModelo ? "sem_chave" : "ligado";
+  const rodada = dados.rodadaDoClaude;
+  const ultimaRodada =
+    origem !== "claude"
+      ? null
+      : rodada
+        ? (rodada.terminada_em
+            ? t("Última rodada: {dia}, terminada às {hora}, com {n} fichas gravadas.").replace(
+                "{hora}",
+                new Date(rodada.terminada_em).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              )
+            : t("Última rodada: {dia}, em andamento.")
+          )
+            .replace("{dia}", new Date(`${rodada.dia}T12:00:00`).toLocaleDateString())
+            .replace("{n}", String(rodada.gravadas))
+        : t("O Claude ainda não fez nenhuma rodada nesta empresa.");
   const avisoDaBateria = dados.bateriaPequena
     ? dados.casosNaBateria
       ? t("A bateria ainda é pequena ({n} casos). A nota vale, mas siga validando antes de tratar o modelo como definitivo.").replace(
@@ -207,13 +232,24 @@ export function CartaoDoLeitor() {
             {t("Lê, uma vez por dia, a conversa dos leads que tiveram mensagem nova e preenche a ficha que os painéis de Dados usam.")}
           </p>
         </div>
-        <Badge variant={estado === "ligado" ? "default" : "outline"} data-testid="leitor-estado" data-origem={origem}>
-          {estado === "ligado" ? t("Ligado") : estado === "sem_chave" ? t("Sem chave") : t("Desligado")}
+        <Badge variant={estado === "ligado" || estado === "pelo_claude" ? "default" : "outline"} data-testid="leitor-estado" data-origem={origem}>
+          {estado === "ligado"
+            ? t("Ligado")
+            : estado === "pelo_claude"
+              ? t("Pelo Claude")
+              : estado === "sem_chave"
+                ? t("Sem chave")
+                : t("Desligado")}
         </Badge>
       </div>
       <p className="text-sm" data-testid="leitor-ligado-desde">
         {ligadoDesde}
       </p>
+      {ultimaRodada ? (
+        <p className="text-xs text-muted-foreground" data-testid="leitor-rodada-do-claude">
+          {ultimaRodada}
+        </p>
+      ) : null}
       {semChave ? (
         <p className="rounded-md border border-border bg-muted/40 p-2 text-xs" data-testid="leitor-sem-chave">
           {semChave}
@@ -321,10 +357,22 @@ export function CartaoDoLeitor() {
           </label>
           {semAprovado ? <p className="text-xs text-muted-foreground md:col-span-2">{semAprovado}</p> : null}
           <div className="flex flex-wrap gap-2 md:col-span-2">
-            <Button type="button" size="sm" disabled={salvando || !modelo} data-testid="leitor-ligar" onClick={() => salvar("propria")}>
-              {origem === "propria" && dados.config.ligado ? t("Salvar") : t("Usar este modelo nesta empresa")}
-            </Button>
-            {dados.padrao && origem !== "padrao" ? (
+            {origem !== "claude" || dados.ehDonoDaPlataforma ? (
+              <Button type="button" size="sm" disabled={salvando || !modelo} data-testid="leitor-ligar" onClick={() => salvar("propria")}>
+                {origem === "propria" && dados.config.ligado ? t("Salvar") : t("Usar este modelo nesta empresa")}
+              </Button>
+            ) : null}
+            {dados.ehDonoDaPlataforma && origem !== "claude" ? (
+              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-pelo-claude" onClick={() => salvar("claude")}>
+                {t("Ler pelo Claude (tarefa da agência)")}
+              </Button>
+            ) : null}
+            {dados.ehDonoDaPlataforma && origem === "claude" ? (
+              <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-desligar-claude" onClick={() => salvar("desligado")}>
+                {t("Parar a leitura pelo Claude")}
+              </Button>
+            ) : null}
+            {dados.padrao && origem !== "padrao" && (origem !== "claude" || dados.ehDonoDaPlataforma) ? (
               <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-seguir-padrao" onClick={() => salvar("padrao")}>
                 {t("Seguir o padrão da instalação")}
               </Button>

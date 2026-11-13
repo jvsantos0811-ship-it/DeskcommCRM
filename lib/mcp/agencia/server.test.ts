@@ -165,3 +165,65 @@ describe("ferramentas do funil de cada número — só na porta Admin", () => {
     expect(ESCRITAS_DA_PORTA_ADMIN.crm_set_channel_entry_funnel?.foto).toBeTypeOf("function");
   });
 });
+
+/**
+ * A PORTA FICHA (PC-036): o Leitor da conversa pelo Claude. Só as quatro
+ * ferramentas dele — nenhuma do CRM entra —, e nenhuma delas move, marca ou
+ * fala com ninguém. A leitura das fichas para o Gestor fica na porta Leitura.
+ */
+describe("ferramentasDaPorta('ficha') — o Leitor pelo Claude", () => {
+  const ficha = ferramentasDaPorta("ficha");
+  const nomes = ficha.map((t) => t.name).sort();
+
+  it("são exatamente as quatro do Leitor", () => {
+    expect(nomes).toEqual(
+      ["crm_gravar_ficha_do_lead", "crm_leitor_concluir_rodada", "crm_leitor_conversa", "crm_leitor_pendentes"].sort(),
+    );
+  });
+
+  it("nenhuma está em allTools, na porta Leitura ou na porta Admin", () => {
+    const deTodos = new Set(allTools.map((t) => t.name));
+    const leitura = new Set(ferramentasDaPorta("leitura").map((t) => t.name));
+    const admin = new Set(ferramentasDaPorta("admin").map((t) => t.name));
+    for (const nome of nomes) {
+      expect(deTodos.has(nome), nome).toBe(false);
+      expect(leitura.has(nome), nome).toBe(false);
+      expect(admin.has(nome), nome).toBe(false);
+    }
+  });
+
+  it("nenhuma ferramenta de envio, de etapa, de marcador ou de negócio do CRM entra", () => {
+    const doCrm = new Set(allTools.map((t) => t.name));
+    for (const t of ficha) expect(doCrm.has(t.name), t.name).toBe(false);
+    expect(nomes.some((n) => /send|move|tag|update_lead|stage|retomar|close/.test(n))).toBe(false);
+  });
+
+  it("o papel da porta alcança todas (nenhuma registrada e inalcançável)", () => {
+    for (const t of ficha) {
+      expect(ROLE_RANK[PAPEL_DA_PORTA.ficha] >= ROLE_RANK[t.requiresRole], t.name).toBe(true);
+    }
+  });
+
+  it("a auditoria da gravação guarda só os nomes dos campos da ficha, nunca o conteúdo", () => {
+    const gravar = ficha.find((t) => t.name === "crm_gravar_ficha_do_lead")!;
+    const redigido = gravar.redigirParaAuditoria!({
+      lead_id: "l-1",
+      ficha: { contato: "lead", provas: { interesse: "trecho da conversa" } },
+      gatilho: "chat_novo",
+    });
+    expect(redigido).toEqual({ lead_id: "l-1", ficha: { campos: ["contato", "provas"] }, gatilho: "chat_novo" });
+    expect(JSON.stringify(redigido)).not.toContain("trecho da conversa");
+  });
+});
+
+describe("crm_ler_fichas — só na porta Leitura (PC-036)", () => {
+  it("está na Leitura, é só leitura, e não está na Admin nem na Ficha nem em allTools", () => {
+    const leitura = ferramentasDaPorta("leitura").find((t) => t.name === "crm_ler_fichas");
+    expect(leitura).toBeDefined();
+    expect(leitura!.category).toBe("read");
+    expect(leitura!.requiresScope).toBe("mcp:read");
+    expect(ferramentasDaPorta("admin").some((t) => t.name === "crm_ler_fichas")).toBe(false);
+    expect(ferramentasDaPorta("ficha").some((t) => t.name === "crm_ler_fichas")).toBe(false);
+    expect(allTools.some((t) => t.name === "crm_ler_fichas")).toBe(false);
+  });
+});

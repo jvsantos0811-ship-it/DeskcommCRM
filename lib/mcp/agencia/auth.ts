@@ -5,7 +5,8 @@
  * revogada, expirada, teto de tentativas), esta porta exige, A CADA CHAMADA:
  *
  *   1. o escopo da porta (`agencia:leitura` só abre a Leitura; `agencia:admin`
- *      só abre a Admin) — chave de uma porta nunca abre a outra;
+ *      só abre a Admin; `agencia:ficha` só abre a Ficha) — chave de uma porta
+ *      nunca abre a outra;
  *   2. a origem dentro de `api_tokens.ips_permitidos` (falha fechada);
  *   3. quem criou a chave ainda ser platform admin `full` ATIVO — tirar o grant
  *      de alguém desliga na hora as chaves que ele criou.
@@ -34,6 +35,8 @@ export const PAPEL_DA_PORTA: Record<PortaDaAgencia, Role> = {
   leitura: "agent",
   // Admin: configuração da org (etapas, regras, webhooks pedem `manager`).
   admin: "manager",
+  // Ficha (PC-036): lê conversa e grava a ficha — o mínimo que as ferramentas dela pedem.
+  ficha: "agent",
 };
 
 export async function validarChaveDaAgencia(

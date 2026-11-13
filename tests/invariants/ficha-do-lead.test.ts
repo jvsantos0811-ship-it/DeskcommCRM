@@ -215,3 +215,40 @@ describe("Ficha do lead no banco (migration 9022)", () => {
     expect(String(rows[0]!.column_default)).toContain("{}");
   });
 });
+
+describe("Leitor pelo Claude no banco (migration 9033, PC-036)", () => {
+  it("8. a ficha nasce com origem leitor_do_crm; origem fora do vocabulário é recusada", async () => {
+    const { rows } = await pool.query(`select origem from crm_lead_ficha where lead_id = $1`, [s[ORG]!.outroLead]);
+    expect(rows[0]).toEqual({ origem: "leitor_do_crm" });
+    await expect(
+      pool.query(`update crm_lead_ficha set origem = 'chute' where lead_id = $1`, [s[ORG]!.outroLead]),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("9. a leitura nova guarda no histórico a ORIGEM da anterior", async () => {
+    const lead = s[OUTRA]!.lead;
+    await pool.query(
+      `update crm_lead_ficha set origem = 'leitor_0530', modelo = 'claude-sonnet-5-5 (tarefa)', lida_em = '2026-11-14T08:30:00Z'
+        where lead_id = $1`,
+      [lead],
+    );
+    await pool.query(`update crm_lead_ficha set origem = 'gestor_17h10', lida_em = '2026-11-14T20:10:00Z' where lead_id = $1`, [
+      lead,
+    ]);
+    const { rows } = await pool.query(
+      `select origem from crm_lead_ficha_historico where lead_id = $1 order by lida_em`,
+      [lead],
+    );
+    expect(rows.map((r) => r.origem)).toEqual(["leitor_do_crm", "leitor_0530"]);
+  });
+
+  it("10. uma rodada do Claude por organização e dia", async () => {
+    await pool.query(`insert into leitor_rodadas (organization_id, dia, origem) values ($1, '2026-11-14', 'claude')`, [ORG]);
+    await expect(
+      pool.query(`insert into leitor_rodadas (organization_id, dia, origem) values ($1, '2026-11-14', 'claude')`, [ORG]),
+    ).rejects.toMatchObject({ code: "23505" });
+    // A diária do mesmo dia não disputa a vaga da rodada do Claude.
+    await pool.query(`insert into leitor_rodadas (organization_id, dia) values ($1, '2026-11-14')`, [ORG]);
+    await pool.query(`insert into leitor_rodadas (organization_id, dia, origem) values ($1, '2026-11-14', 'claude')`, [OUTRA]);
+  });
+});

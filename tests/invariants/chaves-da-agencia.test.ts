@@ -186,3 +186,37 @@ describe("9014 — chave comum segue como era", () => {
     expect(rows[0]).toEqual({ anon: false, auth: false });
   });
 });
+
+describe("9033 — a porta Ficha (PC-036) nasce com a mesma cerca", () => {
+  it("o dono cria a chave da Ficha com o nome fixo gestor-ficha", async () => {
+    await revogarTudo();
+    await expect(inserir({ scopes: ["agencia:ficha"], nome: "gestor-ficha" })).resolves.toBeTruthy();
+  });
+
+  it("nome trocado entre as portas NÃO cria", async () => {
+    await revogarTudo();
+    await expect(inserir({ scopes: ["agencia:ficha"], nome: "gestor-leitura" })).rejects.toThrow(/nome fixo/);
+    await expect(inserir({ scopes: ["agencia:leitura"], nome: "gestor-ficha" })).rejects.toThrow(/nome fixo/);
+  });
+
+  it("o admin de um escritório NÃO cria a chave da Ficha; sem IPs também não", async () => {
+    await revogarTudo();
+    await expect(inserir({ criadaPor: ADMIN_DA_ORG, scopes: ["agencia:ficha"], nome: "gestor-ficha" })).rejects.toThrow(
+      /dono da instalação/,
+    );
+    await expect(inserir({ scopes: ["agencia:ficha"], nome: "gestor-ficha", ips: null })).rejects.toThrow(/IPs permitidos/);
+  });
+
+  it("uma chave VIVA da Ficha; ela não disputa a vaga das outras portas", async () => {
+    await revogarTudo();
+    await inserir({ scopes: ["agencia:ficha"], nome: "gestor-ficha" });
+    await expect(inserir({ scopes: ["agencia:ficha"], nome: "gestor-ficha" })).rejects.toMatchObject({ code: "23505" });
+    await expect(inserir({})).resolves.toBeTruthy();
+    await expect(inserir({ scopes: ["agencia:admin"], nome: "operador-admin" })).resolves.toBeTruthy();
+  });
+
+  it("a Ficha junto com outro escopo NÃO cria", async () => {
+    await revogarTudo();
+    await expect(inserir({ scopes: ["agencia:ficha", "mcp:read"], nome: "gestor-ficha" })).rejects.toThrow(/exatamente um escopo/);
+  });
+});
