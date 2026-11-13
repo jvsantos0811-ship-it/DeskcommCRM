@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   aplicarBlocoNaDescricao,
   atualizarResumoDoCard,
+  ehDadoDeDocumento,
   FIM_DO_BLOCO,
   lerLinhasDoModelo,
   montarBloco,
   normalizarPerguntasDoResumo,
   quandoDoResumo,
+  rotuloDeDocumento,
   sanearLinhaDoResumo,
   TETO_DO_BLOCO,
 } from './resumo-do-card';
@@ -102,6 +104,193 @@ describe('o que o modelo devolve', () => {
       'Data do parto',
     ]);
     expect(normalizarPerguntasDoResumo(Array.from({ length: 30 }, (_, i) => `P${i}`))).toHaveLength(15);
+  });
+});
+
+/**
+ * PC-038: o filtro largo demais apagava fato que qualifica. Nome de benefício
+ * não é saúde, a data do parto não é documento, saúde tem três valores
+ * honestos (e guarda a data), e o rótulo sem o parêntese final ainda casa.
+ * Textos inventados; nenhum dado de lead real.
+ */
+describe('PC-038 — nome de benefício do INSS não é dado de saúde', () => {
+  it('⭐ "Benefício negado: auxílio-doença" fica com o nome do benefício', () => {
+    expect(sanearLinhaDoResumo('Benefício negado', 'auxílio-doença')).toBe('Benefício negado: auxílio-doença');
+  });
+
+  it('a lista fechada: auxílio por incapacidade, aposentadoria por invalidez, BPC da pessoa com deficiência', () => {
+    expect(sanearLinhaDoResumo('Benefício que busca', 'auxílio por incapacidade temporária')).toBe(
+      'Benefício que busca: auxílio por incapacidade temporária',
+    );
+    expect(sanearLinhaDoResumo('Benefício que busca', 'aposentadoria por invalidez')).toBe(
+      'Benefício que busca: aposentadoria por invalidez',
+    );
+    expect(sanearLinhaDoResumo('Recebe benefício hoje', 'Aposentadoria por incapacidade permanente')).toBe(
+      'Recebe benefício hoje: Aposentadoria por incapacidade permanente',
+    );
+    expect(sanearLinhaDoResumo('Assunto (benefício ou área)', 'BPC da pessoa com deficiência')).toBe(
+      'Assunto (benefício ou área): BPC da pessoa com deficiência',
+    );
+    expect(sanearLinhaDoResumo('Auxílio do INSS antes', 'sim, auxilio doenca em 2022')).toBe(
+      'Auxílio do INSS antes: sim, auxilio doenca em 2022',
+    );
+  });
+
+  it('⭐ diagnóstico, CID e remédio ao lado do nome do benefício continuam saindo', () => {
+    expect(sanearLinhaDoResumo('Benefício negado', 'auxílio-doença por depressão')).toBe('Benefício negado: informado');
+    expect(sanearLinhaDoResumo('Benefício que busca', 'auxílio-doença, CID M54')).toBe('Benefício que busca: informado');
+    expect(sanearLinhaDoResumo('Benefício negado', 'aposentadoria por invalidez, tomo sertralina')).toBe(
+      'Benefício negado: informado',
+    );
+    // Outra doença que não é nome de benefício segue sendo saúde.
+    expect(sanearLinhaDoResumo('Benefício negado', 'por causa da doença')).toBe('Benefício negado: informado');
+  });
+});
+
+describe('PC-038 — data de nascimento: da pessoa sai, do bebê fica', () => {
+  const AGORA = new Date('2026-11-12T15:00:00Z');
+
+  it('⭐ "Data do parto ou adoção: nasceu em 10/03/2026" mantém a data', () => {
+    expect(sanearLinhaDoResumo('Data do parto ou adoção', 'nasceu em 10/03/2026', [], AGORA)).toBe(
+      'Data do parto ou adoção: nasceu em 10/03/2026',
+    );
+  });
+
+  it('rótulo de parto, bebê, filho ou adoção mantém "já nasceu" e a data', () => {
+    expect(sanearLinhaDoResumo('Grávida ou já teve o bebê', 'já nasceu', [], AGORA)).toBe('Grávida ou já teve o bebê: já nasceu');
+    expect(sanearLinhaDoResumo('Outro filho em 5 anos', 'sim, nasceu em 2023', [], AGORA)).toBe(
+      'Outro filho em 5 anos: sim, nasceu em 2023',
+    );
+    expect(sanearLinhaDoResumo('Data de nascimento do bebê', '02/09/2026', [], AGORA)).toBe(
+      'Data de nascimento do bebê: 02/09/2026',
+    );
+  });
+
+  it('⭐ "Data de nascimento: 10/03/1990" continua fora; CPF, RG, CEP e endereço também', () => {
+    expect(sanearLinhaDoResumo('Data de nascimento', '10/03/1990', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('CPF', '529.982.247-25', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('RG', 'MG-12.345.678', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Documento', 'meu RG é 12.345.678-9', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Onde mora', 'CEP 30140-071', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Endereço', 'Rua das Acácias, 45', [], AGORA)).toBeNull();
+    // Nem o rótulo de parto deixa passar documento.
+    expect(sanearLinhaDoResumo('Data do parto ou adoção', 'nasceu dia 10/03, meu cpf 529.982.247-25', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Data do parto ou adoção', 'nasceu dia 10/03, moro na rua B', [], AGORA)).toBeNull();
+  });
+
+  it('⭐ "nasci em 12/03/1960" (1ª pessoa) sai em qualquer rótulo — e idade respondida com data antiga também', () => {
+    expect(sanearLinhaDoResumo('Idade de quem pede (anos)', 'nasci em 12/03/1960', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Data do parto ou adoção', 'eu nasci em 1990, o bebê em março', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '12/03/1960', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '64 anos', [], AGORA)).toBe('Idade de quem pede (anos): 64 anos');
+  });
+
+  it('fora do rótulo de parto: "nasceu" com ano de até hoje − 14 é a pessoa (sai); com ano recente é o bebê (fica)', () => {
+    expect(sanearLinhaDoResumo('Quem fala', 'a filha, a mãe nasceu em 15/04/1955', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Idoso ou deficiência', 'idoso, nascido em março de 1950', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Quem fala', 'a mãe; o bebê nasceu em 10/03/2026', [], AGORA)).toBe(
+      'Quem fala: a mãe; o bebê nasceu em 10/03/2026',
+    );
+    // O corte é hoje − 14: 2012 sai, 2013 fica (com "agora" em 2026).
+    expect(ehDadoDeDocumento('Situação', 'nasceu em 2012', AGORA)).toBe(true);
+    expect(ehDadoDeDocumento('Situação', 'nasceu em 2013', AGORA)).toBe(false);
+  });
+
+  it('data antiga sem fala de nascimento ou idade fica ("Data do acidente: 15/06/2009")', () => {
+    expect(sanearLinhaDoResumo('Data do acidente', '15/06/2009', [], AGORA)).toBe('Data do acidente: 15/06/2009');
+    expect(sanearLinhaDoResumo('Última contribuição', 'março de 2008', [], AGORA)).toBe('Última contribuição: março de 2008');
+  });
+
+  it('o tema (registro e campo do funil) segue a mesma regra antes de ir ao modelo', () => {
+    expect(rotuloDeDocumento('data de nascimento')).toBe(true);
+    expect(rotuloDeDocumento('data_nascimento Data de nascimento')).toBe(true);
+    expect(rotuloDeDocumento('nascimento do bebê')).toBe(false);
+    expect(rotuloDeDocumento('data_nascimento_bebe Data de nascimento do bebê')).toBe(false);
+    expect(rotuloDeDocumento('ano em que nasci')).toBe(true);
+    expect(rotuloDeDocumento('cpf do bebê')).toBe(true);
+  });
+});
+
+describe('PC-038 — saúde em três valores honestos, com a data quando há', () => {
+  it('⭐ "Prazo ou data marcada: perícia dia 20/11" → "sim · 20/11"', () => {
+    expect(sanearLinhaDoResumo('Prazo ou data marcada', 'perícia dia 20/11')).toBe('Prazo ou data marcada: sim · 20/11');
+  });
+
+  it('a data sai sem o nome de doença em volta', () => {
+    expect(sanearLinhaDoResumo('Tem laudo', 'laudo de março')).toBe('Tem laudo: sim · março');
+    expect(sanearLinhaDoResumo('Prazo ou data marcada', 'perícia por causa da hérnia dia 20/11/2026')).toBe(
+      'Prazo ou data marcada: sim · 20/11/2026',
+    );
+    expect(sanearLinhaDoResumo('Afastado mais de 60 dias', 'sim, afastada desde 10 de agosto, fratura no braço')).toBe(
+      'Afastado mais de 60 dias: sim · 10 de agosto',
+    );
+  });
+
+  it('⭐ "não consigo…" afirma a limitação; "não sei" é dúvida; "não tenho" é não', () => {
+    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não consigo pegar peso')).toBe('Sequela (sim/não): sim');
+    expect(sanearLinhaDoResumo('Tem laudo', 'não sei')).toBe('Tem laudo: não sabe');
+    expect(sanearLinhaDoResumo('Tem laudo', 'não tenho')).toBe('Tem laudo: não');
+  });
+
+  it('mais formas: "não posso", "acho que", "nunca", "não lembro"', () => {
+    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não posso mais trabalhar em pé')).toBe('Sequela (sim/não): sim');
+    expect(sanearLinhaDoResumo('Tem laudo', 'acho que sim')).toBe('Tem laudo: não sabe');
+    expect(sanearLinhaDoResumo('Tem laudo', 'acho que não')).toBe('Tem laudo: não sabe');
+    expect(sanearLinhaDoResumo('Afastado mais de 60 dias', 'nunca')).toBe('Afastado mais de 60 dias: não');
+    expect(sanearLinhaDoResumo('Tem laudo', 'não lembro')).toBe('Tem laudo: não sabe');
+    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não, fiquei bem')).toBe('Sequela (sim/não): não');
+  });
+
+  it('⭐ "fratura", "depressão", CID e remédio continuam virando sim/não/informado', () => {
+    expect(sanearLinhaDoResumo('Acidente (sim/não)', 'sim, fratura na perna')).toBe('Acidente (sim/não): sim');
+    expect(sanearLinhaDoResumo('Tem laudo', 'sim, de depressão, CID F32')).toBe('Tem laudo: sim');
+    expect(sanearLinhaDoResumo('Gastos com saúde', 'dipirona e insulina todo mês')).toBe('Gastos com saúde: informado');
+    expect(sanearLinhaDoResumo('Deficiência ou doença há 2 anos', 'não, a fratura foi esse ano')).toBe(
+      'Deficiência ou doença há 2 anos: não',
+    );
+    for (const l of [
+      sanearLinhaDoResumo('Já teve alta', 'ainda não, tomo fluoxetina 20mg'),
+      sanearLinhaDoResumo('O que aconteceu', 'fratura exposta, CID S82'),
+    ]) {
+      expect(l).not.toMatch(/fratura|fluoxetina|20mg|S82|CID/i);
+    }
+  });
+});
+
+describe('PC-038 — o rótulo sem o parêntese final ainda casa', () => {
+  it('⭐ {"pergunta": "Sequela"} casa com "Sequela (sim/não)"', () => {
+    const texto = JSON.stringify({ linhas: [{ pergunta: 'Sequela', resposta: 'sim' }] });
+    expect(lerLinhasDoModelo(texto, ['Sequela (sim/não)'])).toEqual([{ pergunta: 'Sequela (sim/não)', resposta: 'sim' }]);
+  });
+
+  it('vale nos dois sentidos e com parêntese diferente', () => {
+    const texto = JSON.stringify({
+      linhas: [
+        { pergunta: 'Idade de quem pede', resposta: '64 anos' },
+        { pergunta: 'Assunto (área)', resposta: 'BPC' },
+      ],
+    });
+    expect(lerLinhasDoModelo(texto, ['Assunto (benefício ou área)', 'Idade de quem pede (anos)'])).toEqual([
+      { pergunta: 'Assunto (benefício ou área)', resposta: 'BPC' },
+      { pergunta: 'Idade de quem pede (anos)', resposta: '64 anos' },
+    ]);
+  });
+
+  it('⭐ se casar com dois rótulos, não casa nenhum', () => {
+    const texto = JSON.stringify({ linhas: [{ pergunta: 'Sequela', resposta: 'sim' }] });
+    expect(lerLinhasDoModelo(texto, ['Sequela (sim/não)', 'Sequela (desde quando)'])).toEqual([]);
+  });
+
+  it('o rótulo idêntico vence o curto', () => {
+    const texto = JSON.stringify({
+      linhas: [
+        { pergunta: 'Sequela', resposta: 'resposta do curto' },
+        { pergunta: 'Sequela (sim/não)', resposta: 'resposta do idêntico' },
+      ],
+    });
+    expect(lerLinhasDoModelo(texto, ['Sequela (sim/não)'])).toEqual([
+      { pergunta: 'Sequela (sim/não)', resposta: 'resposta do idêntico' },
+    ]);
   });
 });
 

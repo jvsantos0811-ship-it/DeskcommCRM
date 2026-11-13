@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chaveDoTema,
+  dataNaResposta,
   ehDeSaude,
   lerRegistroDoFechamento,
   mesclarRegistro,
@@ -9,8 +10,10 @@ import {
   promessaDaEquipe,
   REGISTRO_INSTRUCTION,
   renderRegistro,
+  respostaDeSaude,
   sanearItem,
   sanearTexto,
+  simOuNao,
   statusEfetivo,
   TETO_DO_BLOCO,
   type ItemDoRegistro,
@@ -249,5 +252,80 @@ describe('PC-019 + PC-018 — a trava de repetição consulta o registro', () =>
   it('pergunta nova passa', async () => {
     const reg = aplicar([], { perguntas: [], respostas: [{ tema: 'cidade', resposta: 'Contagem', recusou: false }], licencas: [], promessas_cumpridas: [] }, [], ctx(AS_10H02));
     expect(await perguntaJaRespondidaNoRegistro('Qual o seu nome completo?', perguntasRespondidas(reg), dice)).toBeNull();
+  });
+});
+
+describe('PC-038 — o registro guarda o nome do benefício, a data e a dúvida', () => {
+  it('⭐ tema "benefício" e resposta "auxílio-doença" grava "auxílio-doença"', () => {
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença' }).resposta).toBe('auxílio-doença');
+    expect(sanearItem({ tema: 'auxílio-doença negado', pergunta: null, resposta: 'sim, em maio' })).toMatchObject({
+      tema: 'auxílio-doença negado',
+      resposta: 'sim, em maio',
+    });
+    expect(ehDeSaude('aposentadoria por invalidez')).toBe(false);
+    expect(ehDeSaude('auxílio por incapacidade permanente')).toBe(false);
+  });
+
+  it('diagnóstico ao lado do nome do benefício continua saindo', () => {
+    expect(sanearItem({ tema: 'benefício', pergunta: null, resposta: 'auxílio-doença por hérnia de disco' }).resposta).toBe(
+      'informado',
+    );
+    expect(ehDeSaude('auxílio-doença por depressão')).toBe(true);
+    expect(ehDeSaude('incapacidade para o trabalho')).toBe(true);
+  });
+
+  it('saúde em três valores honestos, e a data quando há', () => {
+    expect(sanearItem({ tema: 'sequela', pergunta: null, resposta: 'não consigo pegar peso' })).toMatchObject({
+      tema: 'saúde',
+      resposta: 'sim',
+    });
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'não sei' }).resposta).toBe('não sabe');
+    expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta: 'não tenho' }).resposta).toBe('não');
+    expect(sanearItem({ tema: 'data da perícia', pergunta: null, resposta: 'perícia dia 20/11' }).resposta).toBe(
+      'sim · 20/11',
+    );
+  });
+
+  it('o valor gravado passa de novo pelo saneamento e sai igual (a mescla saneia tudo que muda)', () => {
+    for (const resposta of ['sim', 'não', 'não sabe', 'informado', 'sim · 20/11', 'sim · março', 'sim · dia 20']) {
+      expect(sanearItem({ tema: 'tem laudo', pergunta: null, resposta }).resposta).toBe(resposta);
+    }
+  });
+});
+
+describe('PC-038 — simOuNao e a data da resposta', () => {
+  it.each([
+    ['sim', 'sim'],
+    ['Sim, pode usar', 'sim'],
+    ['não', 'não'],
+    ['não tenho', 'não'],
+    ['nunca', 'não'],
+    ['nenhum', 'não'],
+    ['não consigo pegar peso', 'sim'],
+    ['não posso ficar em pé muito tempo', 'sim'],
+    ['não aguento mais a dor', 'sim'],
+    ['não sei', 'não sabe'],
+    ['n sei', 'não sabe'],
+    ['acho que sim', 'não sabe'],
+    ['não tenho certeza', 'não sabe'],
+    ['não lembro', 'não sabe'],
+    ['talvez', 'não sabe'],
+    ['não posso falar sobre isso', null],
+    ['perícia dia 20/11', null],
+  ])('%j → %j', (resposta, esperado) => {
+    expect(simOuNao(resposta)).toBe(esperado);
+  });
+
+  it('a data é só a data: numérica, por extenso ou "dia N"; nada de pressão, dose ou CID', () => {
+    expect(dataNaResposta('perícia dia 20/11')).toBe('20/11');
+    expect(dataNaResposta('marcada para 05/12/2026 às 14h')).toBe('05/12/2026');
+    expect(dataNaResposta('laudo de Março de 2026')).toBe('março de 2026');
+    expect(dataNaResposta('volta no dia 7')).toBe('dia 7');
+    expect(dataNaResposta('maior dor que já senti')).toBeNull();
+    expect(dataNaResposta('CID M54.5, 500mg')).toBeNull();
+    expect(dataNaResposta('45/13')).toBeNull();
+    expect(respostaDeSaude('não, a perícia foi cancelada dia 20/11')).toBe('não');
+    expect(respostaDeSaude('sim, laudo de março')).toBe('sim · março');
+    expect(respostaDeSaude('afastado com laudo de depressão')).toBe('informado');
   });
 });

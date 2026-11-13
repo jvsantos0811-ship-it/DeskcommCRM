@@ -3614,8 +3614,12 @@ direto, contra o banco; a prova em par pela tela pede a conta de teste). Fora da
 | J49.3 | Familiar falando ("sou a filha dela, Carla") | título "Carla" | **UNIT** (`normalizarNomeConfirmado`) — o nome que a IA passa é o de quem fala |
 | J49.4 | Passagem com cartão ("Nome confirmado: Carla") | título confere com o cartão | fiação no turno (`passar_para_agente` → `aplicarNomeConfirmado`); sem e2e (o CI não sobe o worker) |
 | J49.5 | 5 perguntas no agente, cliente respondeu 3 | bloco com 3 linhas, texto da equipe fora do bloco intacto, UMA chamada de IA | **UNIT** — `lib/agent-engine/agent/resumo-do-card.test.ts` |
-| J49.6 | Resposta com CPF, nome de doença ou CID | não aparece no bloco (documento some; saúde vira sim/não/informado) | **UNIT** (mesmo arquivo) |
+| J49.6 | Resposta com CPF, nome de doença ou CID | não aparece no bloco (documento some; saúde vira sim/não/não sabe/informado) | **UNIT** (mesmo arquivo) |
 | J49.7 | Agente sem "Perguntas do resumo" | nenhum bloco, nenhuma chamada de IA | **UNIT** (mesmo arquivo) |
+| J49.8 | "Benefício negado: auxílio-doença" (PC-038) | o nome do benefício fica, no bloco e no Registro da conversa; diagnóstico ao lado dele continua saindo | **UNIT** — `resumo-do-card.test.ts` e `registro-da-conversa.test.ts` |
+| J49.9 | "Data do parto ou adoção: nasceu em 10/03/2026" × "nasci em 12/03/1960" (PC-038) | a data do parto fica; a data de nascimento da pessoa sai em qualquer rótulo | **UNIT** — `resumo-do-card.test.ts` |
+| J49.10 | "Sequela: não consigo pegar peso", "Tem laudo: não sei", "perícia dia 20/11" (PC-038) | "sim", "não sabe", "sim · 20/11" — sem nome de doença | **UNIT** (os dois arquivos) |
+| J49.11 | O modelo devolve "Sequela" para "Sequela (sim/não)" (PC-038) | a linha casa; se casar com dois rótulos, não casa nenhum | **UNIT** — `resumo-do-card.test.ts` |
 
 Não provado pela tela nesta entrega: o Testar mostra `confirmar_nome` como proposta (não
 executa), e o bloco aparece no card só depois de um turno real com passagem, caso ou etapa

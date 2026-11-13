@@ -32,7 +32,10 @@
  *
  * Dado de saúde só como TEMA ("licença de saúde: sim"; "afastamento:
  * informado"), nunca diagnóstico, CID ou nome de remédio. A instrução pede, e o
- * código garante (`sanearItem`) antes de gravar.
+ * código garante (`sanearItem`) antes de gravar. A resposta de saúde tem três
+ * valores honestos — "sim", "não", "não sabe" — e guarda a data quando há uma
+ * ("perícia dia 20/11" → "sim · 20/11"). Nome de benefício do INSS (lista
+ * fechada em `NOMES_DE_BENEFICIO`) não é dado de saúde (PC-038).
  *
  * ## Promessas
  *
@@ -165,9 +168,33 @@ const DIAGNOSTICO = new RegExp(
   'i',
 );
 
-/** Temas de saúde genéricos: o tema pode ficar, a resposta vira só sim/não/informado. */
+/** Temas de saúde genéricos: o tema pode ficar, a resposta vira só sim/não/não sabe/informado. */
 const SAUDE_GENERICA =
   /(sa[uú]de|m[eé]dic|afast|licen[cç]a|atestado|laudo|per[ií]cia|tratament|doen[cç]a|diagn|exame|internad|hospital|incapac|consent)/i;
+
+/**
+ * NOME DE BENEFÍCIO DO INSS NÃO É DADO DE SAÚDE (PC-038). Lista FECHADA: só
+ * estes nomes saem do teste de saúde — "auxílio-doença" casava com "doença" e
+ * "Benefício negado: auxílio-doença" virava "informado", no card e no registro
+ * que a IA relê. O resto da frase continua sendo testado: "auxílio-doença por
+ * depressão" segue sendo saúde. "Aposentadoria por incapacidade permanente" é
+ * o nome atual da aposentadoria por invalidez (o mesmo benefício).
+ */
+const NOMES_DE_BENEFICIO = new RegExp(
+  [
+    'aux[ií]lio[\\s-]+doen[cç]a',
+    'aux[ií]lio[\\s-]+por[\\s-]+incapacidade(?:[\\s-]+(?:tempor[aá]ria|permanente))?',
+    'aposentadoria[\\s-]+por[\\s-]+incapacidade(?:[\\s-]+permanente)?',
+    'aposentadoria[\\s-]+por[\\s-]+invalidez',
+    '(?:bpc|loas)(?:[\\s/-]+loas)?[\\s-]+(?:(?:da|para|de)[\\s-]+pessoa[\\s-]+com[\\s-]+|por[\\s-]+|de[\\s-]+)?defici[eê]n(?:cia|te)',
+  ].join('|'),
+  'gi',
+);
+
+/** O texto sem os nomes de benefício da lista fechada (só para o teste de saúde). Puro. */
+function semNomeDeBeneficio(texto: string): string {
+  return texto.replace(NOMES_DE_BENEFICIO, ' ');
+}
 
 const CID_CODIGO = /\b(?:CID[\s:.-]*)?[A-TV-Z]\d{2}(?:\.\d{1,2})?\b/g;
 const CID_PALAVRA = /\bcid\b[\s:.-]*\S*/gi;
@@ -189,17 +216,81 @@ export function sanearTexto(texto: string): string {
     .trim();
 }
 
-/** "sim" / "não" quando a resposta começa assim; senão `null`. Puro. */
-export function simOuNao(resposta: string): string | null {
+/**
+ * Saúde em TRÊS valores honestos (PC-038). A primeira palavra não basta: "não
+ * consigo pegar peso" AFIRMA a limitação (sequela: sim) e "não sei" é dúvida,
+ * não negativa. A ordem importa: dúvida, recusa, limitação, negação, sim.
+ */
+const NAO_SABE =
+  /^(?:(?:nao|n) (?:sei|sabe|lembro|me lembro|tenho certeza|faco ideia)|sei la|nem sei|acho que|acho q|talvez)\b/;
+/** "não posso falar" é recusa de responder, não limitação: nem sim, nem não. */
+const RECUSA = /^(?:nao|n) (?:posso|pode|consigo|quero) (?:dizer|falar|informar|responder|contar|passar|explicar)\b/;
+const LIMITACAO = /^(?:nao|n) (?:consig|consegu|poss|pod|aguent)[a-z]*\b|^(?:nao|n) da mais\b/;
+const NAO = /^(?:nao|n|negativo|nem|prefiro nao|nunca|jamais|nenhum|nenhuma|nada)\b/;
+const SIM = /^(?:sim|s|pode|claro|autorizo|ok|tudo bem|aceito|concordo|positivo)\b/;
+
+/**
+ * "sim" / "não" / "não sabe" quando a resposta diz isso; senão `null`.
+ * "não consigo…"/"não posso…" → "sim" (afirmam a limitação); "não sei",
+ * "acho que" → "não sabe"; "não", "não tenho", "nunca" → "não". Puro.
+ */
+export function simOuNao(resposta: string): 'sim' | 'não' | 'não sabe' | null {
   const t = normalizarParaComparacao(resposta).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (/^(sim|s|pode|claro|autorizo|ok|tudo bem|aceito|concordo|positivo)\b/.test(t)) return 'sim';
-  if (/^(nao|n|negativo|nem|prefiro nao)\b/.test(t)) return 'não';
+  if (NAO_SABE.test(t)) return 'não sabe';
+  if (RECUSA.test(t)) return null;
+  if (LIMITACAO.test(t)) return 'sim';
+  if (NAO.test(t)) return 'não';
+  if (SIM.test(t)) return 'sim';
   return null;
 }
 
-/** O assunto é de saúde? (tema ou resposta) */
+const MESES = 'janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+const DATA_NUMERICA = /(?<![\d/])(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}))?(?![\d/])/g;
+const DATA_POR_EXTENSO = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:\\d{1,2}\\s+de\\s+)?(?:${MESES})(?:\\s+de\\s+\\d{4}|\\/\\d{4})?(?![\\p{L}\\p{N}])`,
+  'iu',
+);
+const DIA_N = /(?<![\p{L}\p{N}])dia\s+(\d{1,2})(?![\p{L}\p{N}/])/iu;
+
+/**
+ * A primeira data da resposta ("20/11", "20/11/2026", "março", "10 de março
+ * de 2026", "dia 20"), ou `null`. Só a data — nunca o texto em volta, que pode
+ * trazer nome de doença. Puro.
+ */
+export function dataNaResposta(resposta: string): string | null {
+  for (const m of resposta.matchAll(DATA_NUMERICA)) {
+    const dia = Number(m[1]);
+    const mes = Number(m[2]);
+    if (dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12) return m[0];
+  }
+  const extenso = DATA_POR_EXTENSO.exec(resposta);
+  if (extenso) return extenso[0].replace(/\s+/g, ' ').toLowerCase();
+  const dia = DIA_N.exec(resposta);
+  if (dia && Number(dia[1]) >= 1 && Number(dia[1]) <= 31) return `dia ${Number(dia[1])}`;
+  return null;
+}
+
+/**
+ * A resposta de saúde como pode ser gravada: "sim", "não", "não sabe", "sim ·
+ * <data>" quando ela traz uma data ("perícia dia 20/11" → "sim · 20/11") ou
+ * "informado". Nunca diagnóstico, CID ou remédio. Idempotente: o valor gravado
+ * passa por aqui de novo e sai igual. Puro.
+ */
+export function respostaDeSaude(resposta: string): string {
+  const valor = simOuNao(resposta);
+  if (valor === 'não' || valor === 'não sabe') return valor;
+  const data = dataNaResposta(resposta);
+  if (data) return `sim · ${data}`;
+  return valor ?? 'informado';
+}
+
+/** O assunto é de saúde? (tema ou resposta; nome de benefício da lista fechada não conta) */
 export function ehDeSaude(...textos: Array<string | null | undefined>): boolean {
-  return textos.some((t) => typeof t === 'string' && (DIAGNOSTICO.test(t) || SAUDE_GENERICA.test(t)));
+  return textos.some((t) => {
+    if (typeof t !== 'string') return false;
+    const s = semNomeDeBeneficio(t);
+    return DIAGNOSTICO.test(s) || SAUDE_GENERICA.test(s);
+  });
 }
 
 function cortar(texto: string, n: number): string {
@@ -209,14 +300,15 @@ function cortar(texto: string, n: number): string {
 
 /**
  * O item como pode ser gravado: tema sem diagnóstico; resposta de saúde só
- * "sim"/"não"/"informado"; nada de CID, telefone ou e-mail. Puro.
+ * "sim"/"não"/"não sabe"/"sim · <data>"/"informado" (`respostaDeSaude`); nada de
+ * CID, telefone ou e-mail. Nome de benefício ("auxílio-doença") não é saúde. Puro.
  */
 export function sanearItem<T extends Pick<ItemDoRegistro, 'tema' | 'pergunta' | 'resposta'>>(item: T): T {
   const temaBruto = item.tema;
   const tema = DIAGNOSTICO.test(temaBruto) ? 'saúde' : cortar(sanearTexto(temaBruto) || 'assunto', 80);
   let resposta = item.resposta;
   if (resposta !== null) {
-    if (ehDeSaude(temaBruto, resposta)) resposta = simOuNao(resposta) ?? 'informado';
+    if (ehDeSaude(temaBruto, resposta)) resposta = respostaDeSaude(resposta);
     else resposta = cortar(sanearTexto(resposta), 80) || null;
   }
   const pergunta = item.pergunta === null ? null : cortar(sanearTexto(item.pergunta), 240) || null;
