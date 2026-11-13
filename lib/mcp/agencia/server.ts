@@ -42,6 +42,7 @@ import { avisarDonoDaAlteracao, enviarAvisoAoDono, resumirAlteracao } from "./al
 import { PAPEL_DA_PORTA, type ChaveDaAgenciaValidada } from "./auth";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN } from "./ferramentas-do-numero";
+import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_LEITURA } from "./ferramentas-do-custo";
 import { NUNCA_NA_PORTA_ADMIN, aplicarMascara, regraDaPortaAdmin } from "./porta-admin";
 import type { PortaDaAgencia } from "./portas";
 
@@ -62,8 +63,13 @@ export function ferramentasDaPorta(
     ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN,
     ...FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN,
   ],
+  /** PC-035: o custo de IA por resposta só existe na porta Leitura (fora de `allTools`). */
+  exclusivasDaLeitura: readonly McpToolDefinition[] = FERRAMENTAS_EXCLUSIVAS_DA_PORTA_LEITURA,
 ): McpToolDefinition[] {
-  if (porta === "leitura") return ferramentas.filter((t) => t.category === "read");
+  if (porta === "leitura") {
+    // A régua é a mesma para as exclusivas: só categoria `read` entra nesta porta.
+    return [...ferramentas, ...exclusivasDaLeitura].filter((t) => t.category === "read");
+  }
   // Admin: lista fechada (`porta-admin.ts`) e, por cima, a lista do nunca. As
   // exclusivas (prompt do agente e funil de cada número) só existem aqui — não
   // estão em `allTools`.

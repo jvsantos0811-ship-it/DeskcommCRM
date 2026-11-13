@@ -59326,6 +59326,13 @@ comment on function public.fn_dados_qualidade_do_lead_org_inteira(uuid, uuid) is
 comment on function public.fn_dados_qualidade_do_lead_por_linha(uuid, uuid) is
   'Migration 9031: os fatos da nota de qualidade pelo corpo da 9019, SECURITY INVOKER, com a RLS de quem pergunta (atendente em "só os seus").';
 
+-- ---- o que cada passada de uma resposta da IA consumiu: llm_calls.passadas (migration 9032) ----
+-- Racional inteiro no cabeçalho da migration 9032.
+alter table public.llm_calls add column if not exists passadas jsonb;
+
+comment on column public.llm_calls.passadas is
+  'Migration 9032 (PC-035): o consumo de cada passada do laço de ferramentas desta chamada — lista de {n, entrada, cache_lido, cache_gravado, cache_gravado_5m, cache_gravado_1h, saida, ferramentas[], texto_descartado_chars}. Só números e nomes de ferramenta, nunca conteúdo. Nula nas chamadas sem laço. Esquema e leitura: lib/ai/usage/passadas.ts.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

@@ -29,6 +29,8 @@ import { contarPorDia } from "@/lib/messaging/media/nao-entendidas-por-dia";
 import { PREFIXO_AUDIO_NAO_ENTENDIDO, PREFIXO_MIDIA_NAO_ENTENDIDA } from "@/lib/messaging/media/nao-entendida";
 import { RepeticaoForm } from "./_repeticao-form";
 import { SemFonteForm } from "./_sem-fonte-form";
+import { AberturaEmDuasPartesForm } from "./_abertura-em-duas-partes-form";
+import { aberturaEmDuasPartesLigada } from "@/lib/agent-engine/agent/abertura/duas-partes";
 import { lerEstadoSemFonte } from "@/lib/agent-engine/guardrails/sem-fonte";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +110,7 @@ export default async function IaSettingsPage() {
         contagem={(contagem ?? []) as ContagemDaFraseNaTela[]}
         podeEditar={podeEditarFrases}
       />
+      <AberturaEmDuasPartesForm inicial={aberturaEmDuasPartesLigada(settings)} podeEditar={podeEditarFrases} />
       <MidiasNaoEntendidas
         linhas={naoEntendidasPorDia}
         textos={{

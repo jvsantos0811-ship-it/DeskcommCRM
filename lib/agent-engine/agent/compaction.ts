@@ -122,8 +122,20 @@ export function renderCompactedSummary(c: CompactionOutput): string {
 export function trimTranscriptToBudget(
   messages: LeadContextMessage[],
   maxTokens: number,
+  /**
+   * PC-035: com a abertura em duas partes, a cauda também anda em BLOCOS — a
+   * janela já chega alinhada em múltiplos do bloco (`inicioDaJanelaEmBlocos`), e
+   * cortar de uma em uma faria o começo do histórico mudar a cada turno, que é
+   * o que impede o cache de reaproveitá-lo. Ausente = o corte de sempre.
+   */
+  bloco?: number,
 ): LeadContextMessage[] {
   let tail = messages;
+  if (bloco !== undefined && bloco > 1) {
+    while (tail.length > bloco && countPayloadTokens(JSON.stringify(tail)) > maxTokens) {
+      tail = tail.slice(bloco);
+    }
+  }
   while (tail.length > 0 && countPayloadTokens(JSON.stringify(tail)) > maxTokens) {
     tail = tail.slice(1);
   }
@@ -240,6 +252,12 @@ export async function maybeCompact(
     previousSummary: string;
     knobs: CompactionKnobs & { llmOverride?: LlmResolveOverride };
     notesIndexMaxTokens: number;
+    /**
+     * PC-035: quantas mensagens a janela DE SEMPRE teria. Na janela em blocos o
+     * contexto pode ter até um bloco a menos, e medir o gatilho por ele faria a
+     * compactação disparar em outra hora. Ausente = o tamanho do contexto.
+     */
+    mensagensParaOGatilho?: number;
   },
   deps: {
     registry?: ProviderRegistry;
@@ -247,7 +265,7 @@ export async function maybeCompact(
     noteSink?: (note: { headline: string; body: string }) => void;
   },
 ): Promise<CompactionOutput | null> {
-  if (args.context.messages.length < args.knobs.triggerMessages) {
+  if ((args.mensagensParaOGatilho ?? args.context.messages.length) < args.knobs.triggerMessages) {
     return null;
   }
 

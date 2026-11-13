@@ -1316,6 +1316,7 @@ jobs:
         frases-proibidas.spec.ts
         midias-nao-entendidas.spec.ts
         sem-fonte.spec.ts
+        abertura-em-duas-partes.spec.ts
         funil-ajustes-do-joao.spec.ts
         valor-por-tipo-de-lead.spec.ts
         qualidade-do-lead.spec.ts
