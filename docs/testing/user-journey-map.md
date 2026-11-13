@@ -3618,7 +3618,7 @@ direto, contra o banco; a prova em par pela tela pede a conta de teste). Fora da
 | J49.7 | Agente sem "Perguntas do resumo" | nenhum bloco, nenhuma chamada de IA | **UNIT** (mesmo arquivo) |
 | J49.8 | "Benefício negado: auxílio-doença" (PC-038) | o nome do benefício fica, no bloco e no Registro da conversa; diagnóstico ao lado dele continua saindo | **UNIT** — `resumo-do-card.test.ts` e `registro-da-conversa.test.ts` |
 | J49.9 | "Data do parto ou adoção: nasceu em 10/03/2026" × "nasci em 12/03/1960" (PC-038) | a data do parto fica; a data de nascimento da pessoa sai em qualquer rótulo | **UNIT** — `resumo-do-card.test.ts` |
-| J49.10 | "Sequela: não consigo pegar peso", "Tem laudo: não sei", "perícia dia 20/11" (PC-038) | "sim", "não sabe", "sim · 20/11" — sem nome de doença | **UNIT** (os dois arquivos) |
+| J49.10 | "Sequela: não consigo pegar peso", "Tem laudo: não sei", "Prazo ou data marcada: perícia dia 20/11", "Tem laudo: ainda não, consulta dia 20/11", "Afastado mais de 60 dias: não consigo trabalhar desde março" (PC-038) | "sim", "não sabe", "sim · 20/11", "não", "informado · março" — sem nome de doença e sem "não" falso | **UNIT** (os dois arquivos) |
 | J49.11 | O modelo devolve "Sequela" para "Sequela (sim/não)" (PC-038) | a linha casa; se casar com dois rótulos, não casa nenhum | **UNIT** — `resumo-do-card.test.ts` |
 
 Não provado pela tela nesta entrega: o Testar mostra `confirmar_nome` como proposta (não

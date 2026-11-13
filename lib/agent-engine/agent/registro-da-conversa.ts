@@ -275,6 +275,13 @@ const SIM = /^(?:sim|s|pode|claro|autorizo|ok|tudo bem|aceito|concordo|positivo)
  */
 const ROTULO_DE_LIMITACAO =
   /\b(?:sequel|dificuldad|limitac|limitad)|\b(?:nao|sem) (?:consegue|conseguir|pode|poder|trabalha|trabalhar)\b/;
+/**
+ * Rótulo de capacidade AFIRMADA ("Consegue trabalhar", "Pode…", "Ainda
+ * trabalha"): ali "não consigo…" responde a pergunta e é "não".
+ */
+const ROTULO_DE_CAPACIDADE = /^(?:consegue|pode|ainda trabalha|trabalha)\b/;
+/** "não consegui/pude…" (uma vez, sem "mais"): em rótulo de limitação não diz sim nem não. */
+const PASSADO_DE_LIMITACAO = /^(?:nao|n) (?:consegui|conseguiu|pude)\b/;
 /** Rótulo que pergunta por data ou prazo: ali a data sozinha já é "sim · <data>". */
 const ROTULO_DE_DATA = /^(?:data|quando)\b|\bprazo\b|\bdata marcada\b/;
 
@@ -283,14 +290,25 @@ const ROTULO_DE_DATA = /^(?:data|quando)\b|\bprazo\b|\bdata marcada\b/;
  * "não sei", "acho que" → "não sabe"; "não", "não tenho", "ainda não",
  * "nunca" → "não". Em rótulo de limitação, "não consigo…"/"não posso…"/
  * "nunca mais consegui…" → "sim" (afirmam a limitação); fora dele, "nunca mais
- * consegui…" → `null` (informado). Puro.
+ * consegui…" → `null` (informado). Frase de limitação que não responde o
+ * rótulo ("Afastado mais de 60 dias: não consigo trabalhar desde março";
+ * "Sequela: não consegui voltar a trabalhar") → `null` (informado), nunca um
+ * "não" pela primeira palavra; só o rótulo de capacidade afirmada ("Consegue
+ * trabalhar", "Ainda trabalha") lê "não consigo" como "não". Puro.
  */
 export function simOuNao(resposta: string, rotulo = ''): 'sim' | 'não' | 'não sabe' | null {
   const t = semAcento(normalizarParaComparacao(resposta));
+  const r = semAcento(rotulo);
   if (NAO_SABE.test(t)) return 'não sabe';
   if (RECUSA.test(t)) return null;
-  if (ROTULO_DE_LIMITACAO.test(semAcento(rotulo)) && LIMITACAO.test(t)) return 'sim';
+  if (ROTULO_DE_LIMITACAO.test(r) && LIMITACAO.test(t)) return 'sim';
   if (NUNCA_MAIS_CAPACIDADE.test(t)) return null;
+  if (
+    !ROTULO_DE_CAPACIDADE.test(r) &&
+    (LIMITACAO.test(t) || (ROTULO_DE_LIMITACAO.test(r) && PASSADO_DE_LIMITACAO.test(t)))
+  ) {
+    return null;
+  }
   if (NAO.test(t)) return 'não';
   if (SIM.test(t)) return 'sim';
   return null;

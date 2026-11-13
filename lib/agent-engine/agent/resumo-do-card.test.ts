@@ -327,7 +327,8 @@ describe('PC-038 (revisão) — o nome do benefício só passa sozinho', () => {
 describe('PC-038 (revisão) — "não consigo" só é "sim" em rótulo de limitação', () => {
   it('⭐ "Tem laudo: não consegui o laudo" → "não"', () => {
     expect(sanearLinhaDoResumo('Tem laudo', 'não consegui o laudo')).toBe('Tem laudo: não');
-    expect(sanearLinhaDoResumo('Tem laudo', 'não consigo marcar o médico')).toBe('Tem laudo: não');
+    // Frase de limitação que não responde o rótulo não vira "não" pela primeira palavra.
+    expect(sanearLinhaDoResumo('Tem laudo', 'não consigo marcar o médico')).toBe('Tem laudo: informado');
   });
 
   it('rótulo de limitação afirma; rótulo de capacidade afirmada não inverte', () => {
@@ -341,8 +342,21 @@ describe('PC-038 (revisão) — "não consigo" só é "sim" em rótulo de limita
     expect(sanearLinhaDoResumo('Consegue trabalhar (sim/não)', 'não consigo, a coluna travou')).toBe(
       'Consegue trabalhar (sim/não): não',
     );
-    // Passado de uma vez não é limitação, nem no rótulo de limitação.
-    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não consegui fazer o exame')).toBe('Sequela (sim/não): não');
+    // Passado de uma vez ("não consegui…") não afirma nem nega: informado, nunca um "não" falso.
+    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não consegui fazer o exame')).toBe('Sequela (sim/não): informado');
+    expect(sanearLinhaDoResumo('Sequela (sim/não)', 'não consegui voltar a trabalhar')).toBe(
+      'Sequela (sim/não): informado',
+    );
+  });
+
+  it('⭐ (2ª revisão) limitação fora do rótulo não vira "não" falso', () => {
+    expect(sanearLinhaDoResumo('Afastado mais de 60 dias', 'não consigo trabalhar desde março')).toBe(
+      'Afastado mais de 60 dias: informado · março',
+    );
+    expect(sanearLinhaDoResumo('Deficiência ou doença há 2 anos', 'não consigo andar faz 5 anos')).toBe(
+      'Deficiência ou doença há 2 anos: informado',
+    );
+    expect(sanearLinhaDoResumo('Afastado mais de 60 dias', 'não, voltei a trabalhar')).toBe('Afastado mais de 60 dias: não');
   });
 
   it('⭐ "nunca mais consegui pegar peso": em rótulo de limitação é "sim"; fora dele, "informado"', () => {
@@ -382,6 +396,10 @@ describe('PC-038 (revisão) — rótulo de identidade ou idade: ano solto é nas
     expect(sanearLinhaDoResumo('Quem fala', 'a filha; a mãe nasceu em 55', [], AGORA)).toBeNull();
     expect(sanearLinhaDoResumo('Titular do benefício', 'o pai, que é de 48', [], AGORA)).toBeNull();
     expect(sanearLinhaDoResumo('Situação', 'a mãe nasceu em 55', [], AGORA)).toBeNull();
+    // 2ª revisão: ano de dois dígitos depois de separador de data ou de "ano".
+    expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '66 anos, 04/58', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Idade de quem pede (anos)', '15.04.55', [], AGORA)).toBeNull();
+    expect(sanearLinhaDoResumo('Quem fala', 'eu, ano 58', [], AGORA)).toBeNull();
   });
 
   it('⭐ "Quem fala: filha, pelo pai de 58 anos" continua passando', () => {

@@ -120,8 +120,11 @@ const DATA_COMPLETA = new RegExp(
 /** Número que é quantidade, não ano: "58 anos", "10 dias", "2000 reais", "05 de março". */
 const NAO_E_ANO = `(?![/\\d])(?!\\s*(?:anos?|dias?|mes|meses|semanas?|horas?|kg|quilos?|reais|%|de\\s+(?:${MESES_SEM_ACENTO})))`;
 const ANO_SOLTO = new RegExp(`\\b(19\\d{2}|20\\d{2})\\b${NAO_E_ANO}`, 'g');
-/** Ano de dois dígitos depois de "em"/"de": "nasceu em 55", "sou de 60". */
-const ANO_CURTO = new RegExp(`\\b(?:em|de)\\s+(\\d{2})\\b${NAO_E_ANO}`, 'g');
+/**
+ * Ano de dois dígitos depois de "em"/"de"/"ano" ou de separador de data:
+ * "nasceu em 55", "sou de 60", "ano 58", "04/58", "15.04.55".
+ */
+const ANO_CURTO = new RegExp(`(?:\\b(?:em|de|ano)\\s+|[./-])(\\d{2})\\b${NAO_E_ANO}`, 'g');
 
 /** Os anos que a resposta traz: só de datas completas, ou também soltos ("de 1960", "em 55"). Puro. */
 function anosNaResposta(resposta: string, anoAtual: number, soltos: boolean): number[] {
