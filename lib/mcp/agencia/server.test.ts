@@ -4,6 +4,7 @@ import { allTools } from "../tools";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN } from "./ferramentas-do-numero";
 import { ESCRITAS_DA_PORTA_ADMIN, LEITURAS_DA_PORTA_ADMIN, NUNCA_NA_PORTA_ADMIN } from "./porta-admin";
+import { PAPEL_DA_PORTA } from "./auth";
 import { ferramentasDaPorta } from "./server";
 
 /**
@@ -53,6 +54,17 @@ describe("ferramentasDaPorta('leitura')", () => {
 
   it("nenhuma ferramenta já tem um argumento organization_id (o servidor da agência o acrescenta)", () => {
     for (const t of leitura) expect(Object.keys(t.inputSchema), t.name).not.toContain("organization_id");
+  });
+
+  // O papel da porta é `agent` (PAPEL_DA_PORTA). Uma ferramenta registrada aqui
+  // pedindo mais que isso fica inalcançável: 403 no ensureRole, com a ferramenta
+  // aparecendo na lista. Foi o que aconteceu com crm_get_ai_cost_by_response, que
+  // nasceu pedindo `manager` — a mesma cerca já existia para a porta Admin.
+  it("o papel da porta alcança todas as ferramentas dela", () => {
+    const rank = { viewer: 1, agent: 2, ai_operator: 3, manager: 4, admin: 5 } as const;
+    for (const t of leitura) {
+      expect(rank[t.requiresRole] <= rank[PAPEL_DA_PORTA.leitura], t.name).toBe(true);
+    }
   });
 });
 
