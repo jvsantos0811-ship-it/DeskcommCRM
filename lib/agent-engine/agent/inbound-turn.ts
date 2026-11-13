@@ -2630,16 +2630,15 @@ async function executarTurnoDoAgente(
    * conversa. O ramo sem versão publicada segue com os knobs da instalação, que
    * é o único caso em que ela é a fonte legítima.
    */
-  const turnContextKnobs = {
-    ...(agentConfig !== null
+  const turnContextKnobs =
+    agentConfig !== null
       ? {
           historyLimit: agentConfig.historyMessageWindow,
           maxTokens: agentConfig.historyTokenWindow,
         }
-      : contextKnobs),
-    // PC-035: com a chave ligada, a janela anda em blocos (o limite é o mesmo).
-    ...(duasPartes ? { blocoDaJanela: BLOCO_DA_JANELA } : {}),
-  };
+      : contextKnobs;
+  // PC-035: com a chave ligada, a janela anda em blocos (os limites são os mesmos).
+  const knobsDaAbertura = duasPartes ? { ...turnContextKnobs, blocoDaJanela: BLOCO_DA_JANELA } : turnContextKnobs;
 
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
@@ -2721,7 +2720,7 @@ async function executarTurnoDoAgente(
         pool,
         deps.crmCfg,
         { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-        turnContextKnobs,
+        knobsDaAbertura,
       );
   if (!openingContext.ok) {
     // Sem contexto não há turno: transiente (CRM fora) OU permanente (lead
@@ -3648,7 +3647,7 @@ async function executarTurnoDoAgente(
                 pool,
                 deps.crmCfg,
                 { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-                turnContextKnobs,
+                knobsDaAbertura,
               );
           // Sem esta linha a projeção da abertura seria decorativa: bastaria o
           // modelo chamar esta ferramenta para receber o contexto CRU de volta,
