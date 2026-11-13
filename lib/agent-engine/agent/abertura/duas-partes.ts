@@ -183,8 +183,13 @@ export function buildOpeningEmDuasPartes(
     '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
     // PC-035, sem passada final: depois que a mensagem sai, o turno termina. O
     // que o modelo deixaria para "depois de enviar" não seria gravado.
-    'Chame send_message e as ferramentas de registro (nota, etapa, etiqueta, campo, caso, passagem) JUNTAS, na',
+    'Toda a sua resposta ao lead vai numa ÚNICA send_message: a mensagem enviada encerra o turno, e um',
+    'segundo send_message depois dela NÃO sai — o lead receberia meia resposta.',
+    'Chame send_message e as ferramentas de registro (save_lead_note, update_lead_state, etiqueta, campo,',
+    'caso, request_human_handoff) JUNTAS, na',
     'MESMA resposta: quando a mensagem é enviada, o turno termina e não há outra chance de registrar.',
+    'Vai passar para a equipe? Chame request_human_handoff na MESMA resposta do send_message: prometer na',
+    'mensagem e não chamar a ferramenta deixa o lead esperando sem ninguém avisado.',
     ...(entregue('update_lead_state')
       ? []
       : [

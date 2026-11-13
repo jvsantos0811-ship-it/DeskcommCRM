@@ -147,6 +147,17 @@ describe("buildOpeningEmDuasPartes", () => {
     expect(partes.volatil).toContain("## Mensagens do cliente desde a sua última resposta");
     expect(partes.volatil).toContain("JUNTAS, na");
   });
+
+  // PC-035, achado 1 da revisão independente de 12/11: a regra do encerramento
+  // cedo só protege o lead se a abertura pedir a resposta numa ÚNICA send_message
+  // e nomear request_human_handoff — "passagem" em prosa não é nome de ferramenta.
+  it("a abertura exige uma única send_message e nomeia request_human_handoff", () => {
+    const partes = buildOpeningEmDuasPartes(null, null, contexto([msg(2, "inbound")]), "");
+    expect(partes.volatil).toContain("ÚNICA send_message");
+    expect(partes.volatil).toContain("segundo send_message depois dela NÃO sai");
+    expect(partes.volatil).toContain("request_human_handoff na MESMA resposta do send_message");
+    expect(partes.volatil).toContain("update_lead_state");
+  });
 });
 
 describe("blocosDaAbertura", () => {
