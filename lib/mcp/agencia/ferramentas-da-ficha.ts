@@ -61,9 +61,10 @@ export const crmLeitorPendentes: McpToolDefinition<typeof pendentesShape> = {
     "anterior ao começo da leitura pelo Claude). Para cada um: lead_id, gatilho (devolva-o ao gravar), posição, " +
     "etapa, última fala do lead e se já tem ficha. Abre a rodada do dia. Só organização com a leitura pelo Claude.",
   inputSchema: pendentesShape,
-  category: "read",
+  // Escrita: abre a rodada do dia em `leitor_rodadas` (é ela que o retrato espera).
+  category: "write",
   requiresRole: "agent",
-  requiresScope: "mcp:read",
+  requiresScope: "mcp:write",
   handler: async (input, ctx) => pendentesPeloClaude(ctx.supabase, ctx.organizationId, { agora: new Date(), limite: input.limite }),
 };
 

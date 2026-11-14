@@ -1551,6 +1551,7 @@ export const DICIONARIO: Traducoes = {
   "Parar a leitura pelo Claude": { es: "Detener la lectura con Claude" },
   "Só o dono da instalação liga ou desliga a leitura pelo Claude.": { es: "Solo el dueño de la instalación activa o desactiva la lectura con Claude." },
   "Ficha (Leitor pelo Claude)": { es: "Ficha (Lector con Claude)" },
+  "Lidas pelo Claude": { es: "Leídas por Claude" },
   "Padrão retirado. As empresas que o seguiam pararam de ler.": { es: "Estándar retirado. Las empresas que lo seguían dejaron de leer." },
   "Padrão salvo. {n} empresas passaram a ler a partir de agora.": { es: "Estándar guardado. {n} empresas empezaron a leer a partir de ahora." },
   "Padrão salvo.": { es: "Estándar guardado." },

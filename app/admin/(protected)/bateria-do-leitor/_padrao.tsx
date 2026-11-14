@@ -81,6 +81,8 @@ export function PadraoDoLeitorNaBateria({ padrao, aoSalvar }: { padrao: PadraoNa
     { escolha: "padrao" as const, rotulo: t("Seguem o padrão") },
     { escolha: "propria" as const, rotulo: t("Modelo próprio") },
     { escolha: "desligado" as const, rotulo: t("Desligado") },
+    // PC-036: as lidas pelo Claude não seguem o padrão, e o padrão não as liga.
+    { escolha: "claude" as const, rotulo: t("Lidas pelo Claude") },
   ].map((g) => {
     const empresas = padrao.organizacoes.filter((o) => o.escolha === g.escolha);
     return {
