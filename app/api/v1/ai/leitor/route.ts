@@ -10,8 +10,9 @@
  *         organização ou, sem ela, a da instalação; a reserva segue a mesma régua;
  *       - `desligado`: o padrão nunca religa sozinho quem desligou;
  *       - `claude` (PC-036): quem lê é a tarefa agendada do Claude, pela porta
- *         Ficha da agência; o CRM não chama modelo. Só o dono da instalação
- *         escolhe (é ele quem tem a chave da porta), e só ele tira dela.
+ *         Ficha da agência; o CRM não chama modelo. Só o dono da instalação com
+ *         escrita (`fn_is_platform_admin_full`, o mesmo que cria a chave da porta)
+ *         escolhe, e só ele tira dela.
  *       Sem `escolha`, `ligado` vale como antes (true = própria, false =
  *       desligado); sem os dois, só os prefixos e o termo mudam. Grava
  *       `settings.leitor` (merge, sem apagar o alcance) e, na escolha própria, a
@@ -68,13 +69,19 @@ export async function GET(): Promise<Response> {
   if (!authz.ok) return authz.response;
   try {
     const db = await createClient();
-    const [{ data: dono }, padrao] = await Promise.all([db.rpc("fn_is_platform_admin"), lerPadraoDoLeitor(createAdminClient())]);
+    const [{ data: dono }, { data: donoComEscrita }, padrao] = await Promise.all([
+      db.rpc("fn_is_platform_admin"),
+      db.rpc("fn_is_platform_admin_full"),
+      lerPadraoDoLeitor(createAdminClient()),
+    ]);
     const dados = await dadosDoLeitor(db, authz.org.orgId, { padrao });
     return ok(
       {
         ...dados,
         podeEditar: roleAtLeast(authz.org.role, "admin"),
         ehDonoDaPlataforma: dono === true,
+        // PC-036: entrar e sair da leitura pelo Claude é do dono com escrita (o que cria a chave da porta Ficha).
+        podeEscolherOClaude: donoComEscrita === true,
         rodadaDoClaude: dados.config.origem === "claude" ? await ultimaRodadaDoClaude(db, authz.org.orgId) : null,
       },
       { requestId },
@@ -107,7 +114,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const mudouAEscolha = escolha !== antes.origem;
   // PC-036: entrar na leitura pelo Claude ou sair dela é do dono da instalação.
   if (mudouAEscolha && (escolha === "claude" || antes.origem === "claude")) {
-    const { data: dono } = await db.rpc("fn_is_platform_admin");
+    const { data: dono } = await db.rpc("fn_is_platform_admin_full");
     if (dono !== true) {
       return fail("forbidden", t(SO_O_DONO_E_O_CLAUDE), 403, { requestId, details: { codigo: "so_o_dono" } });
     }

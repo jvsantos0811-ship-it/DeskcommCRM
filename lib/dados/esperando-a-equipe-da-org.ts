@@ -33,7 +33,7 @@ import {
 } from "@/lib/dados/esperando-a-equipe";
 import { expedienteDaOrg } from "@/lib/dados/expediente";
 import { lerFicha } from "@/lib/dados/ficha";
-import { configDoLeitor, configEfetivaDoLeitor } from "@/lib/dados/leitor/config";
+import { configDoLeitor, configEfetivaDoLeitor, leitorPeloClaude } from "@/lib/dados/leitor/config";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { MOTIVO_ATENDIMENTO_MANUAL } from "@/lib/escalacao/atendimento-manual";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -133,7 +133,9 @@ export async function esperandoAEquipeDaOrg(
   const settings = (org as { settings: unknown } | null)?.settings ?? null;
   // "Ligado" é o da configuração EFETIVA: quem nunca mexeu segue o modelo padrão da instalação.
   const criadaEm = (org as { created_at?: string | null } | null)?.created_at ?? null;
-  if (!configEfetivaDoLeitor(configDoLeitor(settings), criadaEm, await lerPadraoDoLeitor(admin)).ligado) {
+  const efetiva = configEfetivaDoLeitor(configDoLeitor(settings), criadaEm, await lerPadraoDoLeitor(admin));
+  // PC-036: a organização lida pelo Claude tem ficha, embora o Leitor do CRM esteja desligado nela.
+  if (!efetiva.ligado && !leitorPeloClaude(efetiva)) {
     return { ligado: false, leads: [], falhas: 0 };
   }
   const expediente = expedienteDaOrg(settings, (org as { timezone: string | null } | null)?.timezone ?? null);

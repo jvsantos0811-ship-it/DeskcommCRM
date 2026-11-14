@@ -35,7 +35,12 @@ import type { EscolhaDoLeitor } from "@/lib/dados/leitor/config";
 import type { DadosDoLeitor, ModeloNoCartao } from "@/lib/dados/leitor/leitor-da-org";
 import type { RodadaDoClaudeNaTela } from "@/lib/dados/leitor/pelo-claude";
 
-type Dados = DadosDoLeitor & { podeEditar: boolean; ehDonoDaPlataforma: boolean; rodadaDoClaude: RodadaDoClaudeNaTela | null };
+type Dados = DadosDoLeitor & {
+  podeEditar: boolean;
+  ehDonoDaPlataforma: boolean;
+  podeEscolherOClaude: boolean;
+  rodadaDoClaude: RodadaDoClaudeNaTela | null;
+};
 
 const chave = (m: { provider: string; model_id: string }) => `${m.provider}/${m.model_id}`;
 
@@ -357,22 +362,22 @@ export function CartaoDoLeitor() {
           </label>
           {semAprovado ? <p className="text-xs text-muted-foreground md:col-span-2">{semAprovado}</p> : null}
           <div className="flex flex-wrap gap-2 md:col-span-2">
-            {origem !== "claude" || dados.ehDonoDaPlataforma ? (
+            {origem !== "claude" || dados.podeEscolherOClaude ? (
               <Button type="button" size="sm" disabled={salvando || !modelo} data-testid="leitor-ligar" onClick={() => salvar("propria")}>
                 {origem === "propria" && dados.config.ligado ? t("Salvar") : t("Usar este modelo nesta empresa")}
               </Button>
             ) : null}
-            {dados.ehDonoDaPlataforma && origem !== "claude" ? (
+            {dados.podeEscolherOClaude && origem !== "claude" ? (
               <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-pelo-claude" onClick={() => salvar("claude")}>
                 {t("Ler pelo Claude (tarefa da agência)")}
               </Button>
             ) : null}
-            {dados.ehDonoDaPlataforma && origem === "claude" ? (
+            {dados.podeEscolherOClaude && origem === "claude" ? (
               <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-desligar-claude" onClick={() => salvar("desligado")}>
                 {t("Parar a leitura pelo Claude")}
               </Button>
             ) : null}
-            {dados.padrao && origem !== "padrao" && (origem !== "claude" || dados.ehDonoDaPlataforma) ? (
+            {dados.padrao && origem !== "padrao" && (origem !== "claude" || dados.podeEscolherOClaude) ? (
               <Button type="button" size="sm" variant="outline" disabled={salvando} data-testid="leitor-seguir-padrao" onClick={() => salvar("padrao")}>
                 {t("Seguir o padrão da instalação")}
               </Button>

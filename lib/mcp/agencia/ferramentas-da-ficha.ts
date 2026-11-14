@@ -108,7 +108,7 @@ export const crmGravarFichaDoLead: McpToolDefinition<typeof gravarShape> = {
   description:
     "Grava a ficha de um lead (só a ficha: não move card, não muda etapa, não mexe em marcador nem fala com " +
     "ninguém). Valida pelo schema central e recusa com o campo errado; recusa leitura mais velha que a ficha " +
-    "atual. A ficha anterior vai para o histórico. Devolve a situação, a temperatura, a qualidade, a ação e os " +
+    "atual e gatilho que não confere com o lead (devolva o de crm_leitor_pendentes). A ficha anterior vai para o histórico. Devolve a situação, a temperatura, a qualidade, a ação e os " +
     "alertas da regra fixa, se abriu o aviso de lead que voltou, e `conversa_mudou` quando chegou mensagem depois " +
     "de `mensagens_ate` (a próxima seleção pega o lead de novo). Só organização com a leitura pelo Claude.",
   inputSchema: gravarShape,
@@ -134,8 +134,9 @@ export const crmLeitorConcluirRodada: McpToolDefinition<typeof concluirShape> = 
   name: "crm_leitor_concluir_rodada",
   description:
     "Fecha a rodada do dia do Leitor pelo Claude nesta organização: conta no banco as fichas gravadas desde o " +
-    "começo da rodada, guarda os erros e, se o retrato do dia do painel Dados ainda não existe, gera. Chame uma " +
-    "vez no fim. Só organização com a leitura pelo Claude.",
+    "começo da rodada e guarda os erros (só o código, nunca dado de lead). O retrato do dia do painel Dados, que " +
+    "esperava a rodada aberta, sai na passada seguinte do cron. Chame uma vez no fim. Só organização com a " +
+    "leitura pelo Claude.",
   inputSchema: concluirShape,
   category: "write",
   requiresRole: "agent",
@@ -295,7 +296,9 @@ export const crmLerFichas: McpToolDefinition<typeof lerFichasShape> = {
             .eq("organization_id", ctx.organizationId)
             .in("lead_id", ids)
             .order("substituida_em", { ascending: false })
-            .limit(ids.length * 5)
+            // Só a mais recente de cada lead importa, mas um lead com muito histórico não pode
+            // esconder a dos outros: teto largo, e a primeira de cada lead é pega abaixo.
+            .limit(5_000)
         : Promise.resolve({ data: [], error: null }),
       ids.length
         ? ctx.supabase

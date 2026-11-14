@@ -40,6 +40,9 @@ import { cronDoLeitor, retratoEsperaOLeitor } from "./rodadas";
 type Linha = Record<string, unknown>;
 type Tabelas = Record<string, Linha[]>;
 
+/** Os valores que chegaram a `.lte(...)`: o filtro das mensagens tem de receber o texto original. */
+const filtrosLte: Array<{ tabela: string; col: string; v: string }> = [];
+
 /** Um supabase-js de mentira, só com o que o Leitor usa. */
 function bancoEmMemoria(t: Tabelas) {
   let seq = 0;
@@ -117,7 +120,7 @@ function bancoEmMemoria(t: Tabelas) {
       eq: (col: string, v: unknown) => (filtros.push((l) => valor(l, col) === v), b),
       in: (col: string, vs: unknown[]) => (filtros.push((l) => vs.includes(l[col])), b),
       gte: (col: string, v: string) => (filtros.push((l) => String(l[col] ?? "") >= v), b),
-      lte: (col: string, v: string) => (filtros.push((l) => String(l[col] ?? "") <= v), b),
+      lte: (col: string, v: string) => (filtrosLte.push({ tabela, col, v }), filtros.push((l) => Date.parse(String(l[col] ?? "")) <= Date.parse(v) || String(l[col] ?? "") <= v), b),
       gt: (col: string, v: string) => (filtros.push((l) => l[col] != null && String(l[col]) > v), b),
       lt: (col: string, v: string) => (filtros.push((l) => l[col] != null && String(l[col]) < v), b),
       is: (col: string, v: unknown) => (filtros.push((l) => (l[col] ?? null) === v), b),
@@ -286,6 +289,7 @@ async function recusa(p: Promise<unknown>): Promise<string> {
 beforeEach(() => {
   gerarRetrato.mockClear();
   audit.mockClear();
+  filtrosLte.length = 0;
 });
 
 describe("a escolha `claude` na configuração", () => {
@@ -461,6 +465,45 @@ describe("crm_gravar_ficha_do_lead", () => {
     expect(await recusa(gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA }))).toBe("leitor_nao_e_pelo_claude");
     expect(t.crm_lead_ficha).toHaveLength(0);
   });
+
+  it("hora com microssegundos: a última mensagem lida entra (o texto vai ao banco como veio)", async () => {
+    const t = cenario();
+    const MICRO = "2026-11-05T12:00:00.530979+00:00";
+    t.messages![0]!.created_at = MICRO;
+    t.conversations![0]!.last_message_at = MICRO;
+    t.conversations![0]!.last_inbound_at = MICRO;
+    const material = await materialDaLeitura(db(t), ORG, "l-novo");
+    expect(material.mensagens_ate).toBe(MICRO);
+    filtrosLte.length = 0;
+    const r = await gravarFichaPeloClaude(db(t), ORG, gravar({ mensagens_ate: material.mensagens_ate }), { agora: AGORA });
+    // O filtro recebeu o texto original, sem o corte para milissegundos de `Date`.
+    expect(filtrosLte.filter((f) => f.tabela === "messages").map((f) => f.v)).toEqual([MICRO]);
+    expect(r).toMatchObject({ mensagens_ate: MICRO, conversa_mudou: false });
+    expect(t.crm_lead_ficha![0]).toMatchObject({ mensagens_ate: MICRO });
+  });
+
+  it("gatilho que não confere com o lead é recusado (nada de aviso falso de lead que voltou)", async () => {
+    const t = cenario();
+    expect(await recusa(gravarFichaPeloClaude(db(t), ORG, gravar({ gatilho: "lead_voltou" }), { agora: AGORA }))).toBe(
+      "gatilho_nao_confere",
+    );
+    expect(
+      await recusa(
+        gravarFichaPeloClaude(db(t), ORG, gravar({ lead_id: "l-voltou", mensagens_ate: "2026-11-05T13:00:00.000Z" }), { agora: AGORA }),
+      ),
+    ).toBe("gatilho_nao_confere");
+    expect(t.crm_lead_ficha).toHaveLength(0);
+    expect(t.agent_inbox_items).toHaveLength(0);
+  });
+
+  it("a correção do Gestor no lead que voltou grava a ficha, mas não reabre o aviso", async () => {
+    const t = cenario();
+    const g = gravar({ lead_id: "l-voltou", gatilho: "lead_voltou", origem: "gestor_17h10", mensagens_ate: "2026-11-05T13:00:00.000Z" });
+    const r = await gravarFichaPeloClaude(db(t), ORG, g, { agora: AGORA });
+    expect(r.aviso_lead_voltou).toBe(false);
+    expect(t.agent_inbox_items).toHaveLength(0);
+    expect(t.crm_lead_ficha![0]).toMatchObject({ origem: "gestor_17h10" });
+  });
 });
 
 describe("crm_leitor_concluir_rodada e o retrato", () => {
@@ -472,10 +515,11 @@ describe("crm_leitor_concluir_rodada e o retrato", () => {
     expect(await retratoEsperaOLeitor(db(t), org, AGORA, null)).toBe(true);
     await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA });
     const r = await concluirRodadaPeloClaude(db(t), ORG, { lidos: 2, erros: 1, ultimo_erro: "ficha_invalida" }, { agora: AGORA });
-    expect(r).toMatchObject({ dia: "2026-11-06", gravadas: 1, lidos_informados: 2, erros: 1, retrato_gerado: true });
+    expect(r).toMatchObject({ dia: "2026-11-06", gravadas: 1, lidos_informados: 2, erros: 1 });
     expect(t.leitor_rodadas!.find((x) => x.origem === "claude")).toMatchObject({ lidos: 1, falhas: 1, ultimo_erro: "ficha_invalida" });
     expect(await retratoEsperaOLeitor(db(t), org, AGORA, null)).toBe(false);
-    expect(gerarRetrato).toHaveBeenCalledWith(expect.anything(), ORG, "cron", expect.objectContaining({ soSeFaltar: true }));
+    // O retrato não sai daqui (antes das 06:00 ele sairia cortado): é o cron dele que gera.
+    expect(gerarRetrato).not.toHaveBeenCalled();
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "leitor.rodada", metadata: expect.objectContaining({ origem: "claude" }) }));
   });
 });

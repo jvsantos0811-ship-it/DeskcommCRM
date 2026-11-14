@@ -16,7 +16,8 @@
  *                                `gravarFicha` (o gatilho do banco guarda a
  *                                anterior no histórico), calcula a regra fixa e
  *                                abre o aviso `lead_voltou` quando a regra manda;
- *   4. `concluirRodadaPeloClaude` — fecha a rodada do dia (`origem = 'claude'`).
+ *   4. `concluirRodadaPeloClaude` — fecha a rodada do dia (`origem = 'claude'`);
+ *                                o cron do retrato, que a esperava, gera o do dia.
  *
  * Não move card, não muda etapa, não mexe em marcador ou campo, não fala com
  * ninguém (decisão do João de 12/11). Toda função recusa organização que não
@@ -26,10 +27,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
-import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg } from "@/lib/dados/alcance-do-leitor";
+import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg, type PosicaoNoAlcance } from "@/lib/dados/alcance-do-leitor";
 import { expedienteDaOrg } from "@/lib/dados/expediente";
 import { fichaDoLeitorSchema, GATILHOS, lerFicha, type FichaDoLeitor, type Gatilho, type OrigemDaFicha } from "@/lib/dados/ficha";
-import { gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
 import { classificarFicha, type AcaoDaFicha, type AlertaDaFicha } from "@/lib/dados/regra-da-ficha";
 import { diaNoFuso } from "@/lib/dados/retrato";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -70,6 +70,7 @@ export type CodigoDaRecusa =
   | "sem_mensagens"
   | "ficha_invalida"
   | "mensagens_ate_invalida"
+  | "gatilho_nao_confere"
   | "leitura_mais_velha_que_a_atual";
 
 /** Recusa com código: a porta devolve o código e a mensagem, sem dado do lead. */
@@ -143,8 +144,14 @@ async function leadDaLeitura(admin: SupabaseClient, orgId: string, leadId: strin
   return { lead, contactId: lead.contact_id };
 }
 
-/** Os negócios com potencial do contato (o aviso `lead_voltou` e o "duplicado" olham). */
-async function abertosDoContato(admin: SupabaseClient, org: OrgDoLeitor, contactId: string): Promise<LeadRow[]> {
+interface NegociosDoContato {
+  /** Os negócios com potencial do contato (o aviso `lead_voltou` e o "duplicado" olham). */
+  abertos: LeadRow[];
+  /** Onde cada negócio do contato está no alcance do Leitor, pelo id. */
+  posicao: Map<string, PosicaoNoAlcance>;
+}
+
+async function negociosDoContato(admin: SupabaseClient, org: OrgDoLeitor, contactId: string): Promise<NegociosDoContato> {
   const alcance = alcanceDaOrg(org.settings);
   const [funisR, leadsR] = await Promise.all([
     admin.from("crm_pipelines").select("id, is_archived, is_client_pipeline").eq("organization_id", org.id),
@@ -153,9 +160,12 @@ async function abertosDoContato(admin: SupabaseClient, org: OrgDoLeitor, contact
   if (funisR.error) throw new Error(`funis: ${funisR.error.message}`);
   if (leadsR.error) throw new Error(`negocios: ${leadsR.error.message}`);
   const lidos = funisLidos(alcance, (funisR.data ?? []) as FunilDaOrg[]);
-  return ((leadsR.data ?? []) as unknown as LeadRow[]).filter(
-    (l) => l.etapa && posicaoNoAlcance({ pipeline_id: l.pipeline_id, tags: l.tags, etapa: l.etapa }, lidos, alcance) === "com_potencial",
-  );
+  const posicao = new Map<string, PosicaoNoAlcance>();
+  for (const l of (leadsR.data ?? []) as unknown as LeadRow[]) {
+    posicao.set(l.id, l.etapa ? posicaoNoAlcance({ pipeline_id: l.pipeline_id, tags: l.tags, etapa: l.etapa }, lidos, alcance) : "fora");
+  }
+  const abertos = ((leadsR.data ?? []) as unknown as LeadRow[]).filter((l) => posicao.get(l.id) === "com_potencial");
+  return { abertos, posicao };
 }
 
 function ultimaEntradaDas(mensagens: Array<{ direction: string; created_at: string }>): Date | null {
@@ -270,9 +280,9 @@ export async function materialDaLeitura(admin: SupabaseClient, orgId: string, le
   const mensagens = await mensagensDoContato(admin, orgId, contactId);
   if (mensagens.length === 0) throw new RecusaDoLeitorPeloClaude("sem_mensagens", "This contact has no messages to read.");
   const expediente = expedienteDaOrg(org.settings, org.timezone);
-  const [variaveis, abertos, fichaR] = await Promise.all([
+  const [variaveis, negocios, fichaR] = await Promise.all([
     variaveisDoPromptDaOrg(admin, org, config),
-    abertosDoContato(admin, org, contactId),
+    negociosDoContato(admin, org, contactId),
     admin
       .from("crm_lead_ficha")
       .select("ficha, lida_em, mensagens_ate, modelo, origem")
@@ -283,7 +293,7 @@ export async function materialDaLeitura(admin: SupabaseClient, orgId: string, le
   if (fichaR.error) throw new Error(`ficha: ${fichaR.error.message}`);
   const anterior = fichaR.data as { ficha: unknown; lida_em: string; mensagens_ate: string | null; modelo: string; origem?: string | null } | null;
   const ultimaEntrada = ultimaEntradaDas(mensagens);
-  const banco = fatosDoBanco(lead, abertos, mensagens, ultimaEntrada);
+  const banco = fatosDoBanco(lead, negocios.abertos, mensagens, ultimaEntrada);
   return {
     lead_id: lead.id,
     versao_prompt: VERSAO_DO_PROMPT,
@@ -376,14 +386,28 @@ export async function gravarFichaPeloClaude(
     );
   }
 
-  // As mensagens até onde a leitura foi: `atendido_por` e `mensagens_ate` da ficha saem delas.
-  const mensagens = await mensagensDoContato(admin, orgId, contactId, ate);
+  // O gatilho que a tarefa devolve é conferido aqui: `lead_voltou` só para o lead
+  // perdido (ou com marcador que desqualifica) que escreveu de novo, e o lead
+  // nessa posição só com ele. Senão a ficha guardaria um gatilho falso e o aviso
+  // "Um lead perdido voltou" abriria para quem nunca saiu do funil.
+  const negocios = await negociosDoContato(admin, org, contactId);
+  const posicao = negocios.posicao.get(lead.id) ?? "fora";
+  if ((entrada.gatilho === "lead_voltou") !== (posicao === "pode_voltar")) {
+    throw new RecusaDoLeitorPeloClaude(
+      "gatilho_nao_confere",
+      `The trigger "${entrada.gatilho}" does not match this lead (${posicao}). Send the gatilho crm_leitor_pendentes returned.`,
+    );
+  }
+
+  // As mensagens até onde a leitura foi: `atendido_por` e `mensagens_ate` da ficha
+  // saem delas. O texto vai ao banco como veio (microssegundos), nunca por `Date`.
+  const mensagens = await mensagensDoContato(admin, orgId, contactId, entrada.mensagens_ate);
   if (mensagens.length === 0) throw new RecusaDoLeitorPeloClaude("sem_mensagens", "No messages up to mensagens_ate.");
   const agentes = await agentesQueAtenderam(admin, orgId, contactId);
   await gravarFicha(admin, orgId, lead, contactId, ficha, entrada.modelo, entrada.gatilho, mensagens, agentes, entrada.origem);
 
-  const [abertos, convR] = await Promise.all([
-    abertosDoContato(admin, org, contactId),
+  const abertos = negocios.abertos;
+  const [convR] = await Promise.all([
     admin
       .from("conversations")
       .select("last_message_at")
@@ -398,8 +422,9 @@ export async function gravarFichaPeloClaude(
   const banco = fatosDoBanco(lead, abertos, mensagens, ultimaEntrada);
   const c = classificarFicha({ ficha, banco }, opcoes.agora);
 
+  // O aviso é da leitura diária (como no Leitor do CRM); a correção do Gestor não o reabre.
   let aviso = false;
-  if (entrada.gatilho === "lead_voltou") {
+  if (entrada.gatilho === "lead_voltou" && entrada.origem === "leitor_0530") {
     const fuso = expedienteDaOrg(org.settings, org.timezone).timezone;
     const idioma = normalizarIdioma(org.locale);
     aviso = await avisarSeOLeadVoltou(admin, orgId, { lead, ultimaEntrada }, ficha, mensagens, abertos, {
@@ -435,7 +460,6 @@ export interface ResultadoDaConclusao {
   gravadas: number;
   lidos_informados: number;
   erros: number;
-  retrato_gerado: boolean;
 }
 
 export async function concluirRodadaPeloClaude(
@@ -485,18 +509,9 @@ export async function concluirRodadaPeloClaude(
     ...(opcoes.requestId ? { requestId: opcoes.requestId } : {}),
   });
 
-  // O retrato vem depois do Leitor, como no cron: só se o do dia ainda não existe.
-  const g = await gerarRetratoDaOrg(admin, orgId, "cron", { soSeFaltar: true, agora: opcoes.agora });
-  if (g.gravado) {
-    await audit({
-      organizationId: orgId,
-      action: "dados.retrato_gerado",
-      resourceType: "crm_dados_retrato",
-      metadata: { origem: "cron", dia: g.dia, leads: g.leads, apagados: g.apagados, depois_do_leitor: true, leitor: ORIGEM_DA_RODADA_DO_CLAUDE },
-      ...(opcoes.requestId ? { requestId: opcoes.requestId } : {}),
-    });
-  }
-
+  // O retrato NÃO é gerado aqui: a tarefa termina antes das 06:00 e o retrato do
+  // dia sairia cortado. O cron do retrato (de hora em hora) espera a rodada aberta
+  // (`retratoEsperaOLeitor`) e gera assim que ela fecha.
   return {
     dia,
     iniciada_em: rodada.iniciada_em,
@@ -504,7 +519,6 @@ export async function concluirRodadaPeloClaude(
     gravadas,
     lidos_informados: entrada.lidos,
     erros: entrada.erros,
-    retrato_gerado: g.gravado,
   };
 }
 

@@ -367,12 +367,17 @@ async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: Retu
   return montarPromptDoLeitor(await variaveisDoPromptDaOrg(admin, org, config));
 }
 
-/** As mensagens do contato (todas as conversas sem grupo), da mais antiga à mais nova; `ate` congela. */
+/**
+ * As mensagens do contato (todas as conversas sem grupo), da mais antiga à mais
+ * nova; `ate` congela. Como texto, `ate` vai ao banco SEM passar por `Date`: o
+ * `created_at` tem microssegundos, e `Date` corta para milissegundos — o filtro
+ * deixaria de fora justamente a última mensagem lida (revisão do PC-036).
+ */
 export async function mensagensDoContato(
   admin: SupabaseClient,
   orgId: string,
   contactId: string,
-  ate: Date | null = null,
+  ate: Date | string | null = null,
 ): Promise<MensagemRow[]> {
   const { data: convs, error: cErr } = await admin
     .from("conversations")
@@ -388,7 +393,7 @@ export async function mensagensDoContato(
     .select("direction, sent_via, type, body, media_derived_text, status, created_at, sent_by_user_id")
     .eq("organization_id", orgId)
     .in("conversation_id", ids)
-    .lte("created_at", (ate ?? new Date("9999-12-31T00:00:00Z")).toISOString())
+    .lte("created_at", typeof ate === "string" ? ate : (ate ?? new Date("9999-12-31T00:00:00Z")).toISOString())
     .order("created_at", { ascending: false })
     .limit(MENSAGENS_LIDAS);
   if (mErr) throw new Error(`mensagens: ${mErr.message}`);
@@ -421,10 +426,11 @@ export async function gravarFicha(
   mensagens: MensagemRow[],
   agentes: string[],
   /**
-   * Quem leu (migration 9033). O Leitor do CRM não manda: vale o padrão do banco
-   * (`leitor_do_crm`), e a gravação dele não depende de a migration estar aplicada.
+   * Quem leu (migration 9033). Sempre gravada: a organização que sai da leitura
+   * pelo Claude volta ao Leitor do CRM, e a ficha relida por ele não pode seguir
+   * marcada como da tarefa ou do Gestor (a precedência do PC-037 lê este campo).
    */
-  origem?: Exclude<OrigemDaFicha, "leitor_do_crm">,
+  origem: OrigemDaFicha = "leitor_do_crm",
 ): Promise<void> {
   const ate = mensagens.length > 0 ? mensagens[mensagens.length - 1]!.created_at : null;
   const { error } = await admin.from("crm_lead_ficha").upsert(
@@ -439,7 +445,7 @@ export async function gravarFicha(
       gatilho,
       lida_em: new Date().toISOString(),
       mensagens_ate: ate,
-      ...(origem ? { origem } : {}),
+      origem,
     },
     { onConflict: "organization_id,lead_id" },
   );
