@@ -30,10 +30,18 @@ import { logger } from "@/lib/logger";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
-import { configDoLeitor, configEfetivaDoLeitor, leitorPodeRodar, type ConfigEfetivaDoLeitor, type PadraoDoLeitor } from "./config";
+import { configDoLeitor, configEfetivaDoLeitor, leitorPeloClaude, leitorPodeRodar, type ConfigEfetivaDoLeitor, type PadraoDoLeitor } from "./config";
 import type { Leitor } from "./ler-lead";
 import { lerPadraoDoLeitor } from "./padrao";
 import { passadaDoLeitor, type OrgDoLeitor, type ResultadoDaPassada } from "./rodada";
+
+/**
+ * As origens de uma rodada em `leitor_rodadas` (o CHECK do banco fala este
+ * vocabulário): a diária das 06:00, a do "Atualizar agora" e a do Claude
+ * (PC-036, migration 9033), aberta e fechada pela porta Ficha.
+ */
+export const ORIGENS_DA_RODADA = ["diaria", "manual", "claude"] as const;
+export type OrigemDaRodada = (typeof ORIGENS_DA_RODADA)[number];
 
 /** O cron tem 120 s no agendador; a passada não começa leitura nova depois disto. */
 export const ORCAMENTO_DO_CRON_MS = 90_000;
@@ -285,7 +293,9 @@ export async function retratoEsperaOLeitor(
   agora: Date,
   padrao: PadraoDoLeitor | null,
 ): Promise<boolean> {
-  if (!leitorPodeRodar(configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao)).pode) return false;
+  const efetiva = configEfetivaDoLeitor(configDoLeitor(org.settings), org.created_at, padrao);
+  if (leitorPeloClaude(efetiva)) return retratoEsperaOClaude(admin, org, agora);
+  if (!leitorPodeRodar(efetiva).pode) return false;
   const fuso = fusoUtilizavel(org.timezone);
   const dia = diaNoFuso(agora, fuso);
   const { data, error } = await admin
@@ -298,6 +308,31 @@ export async function retratoEsperaOLeitor(
   if (error) return false;
   const rodada = data as { iniciada_em: string; terminada_em: string | null } | null;
   if (!rodada) return horaNoFuso(agora, fuso) < HORA_DO_RETRATO + HORAS_QUE_O_RETRATO_ESPERA;
+  if (rodada.terminada_em) return false;
+  return agora.getTime() - Date.parse(rodada.iniciada_em) < HORAS_QUE_O_RETRATO_ESPERA * HORA_MS;
+}
+
+/**
+ * PC-036: lida pelo Claude, o retrato espera só a rodada do Claude que JÁ
+ * ABRIU hoje (a tarefa chamou `crm_leitor_pendentes`) e ainda não fechou, até
+ * `HORAS_QUE_O_RETRATO_ESPERA`. Rodada que nem abriu não segura o retrato: a
+ * tarefa roda fora do CRM, e o painel não fica sem número porque ela faltou.
+ */
+async function retratoEsperaOClaude(
+  admin: SupabaseClient,
+  org: Pick<OrgDoLeitor, "id" | "timezone">,
+  agora: Date,
+): Promise<boolean> {
+  const dia = diaNoFuso(agora, fusoUtilizavel(org.timezone));
+  const { data, error } = await admin
+    .from("leitor_rodadas")
+    .select("iniciada_em, terminada_em")
+    .eq("organization_id", org.id)
+    .eq("origem", "claude")
+    .eq("dia", dia)
+    .maybeSingle();
+  if (error || !data) return false;
+  const rodada = data as { iniciada_em: string; terminada_em: string | null };
   if (rodada.terminada_em) return false;
   return agora.getTime() - Date.parse(rodada.iniciada_em) < HORAS_QUE_O_RETRATO_ESPERA * HORA_MS;
 }

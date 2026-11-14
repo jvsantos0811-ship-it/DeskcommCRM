@@ -31,7 +31,7 @@ import { IPS_DE_SAIDA_DA_ANTHROPIC, PORTAS_DA_AGENCIA } from "@/lib/mcp/agencia/
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const corpoSchema = z.object({
-  porta: z.enum(["leitura", "admin"]),
+  porta: z.enum(["leitura", "admin", "ficha"]),
   organization_id: z.string().uuid(),
   ips: z.array(z.string().max(64)).max(20).optional(),
 });

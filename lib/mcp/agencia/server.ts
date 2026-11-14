@@ -19,7 +19,8 @@
  * recebe as de categoria `read` (nenhuma de escrita é sequer registrada); a
  * Admin recebe a lista fechada de `porta-admin.ts`, com máscara na saída, foto
  * de antes e depois na auditoria e aviso ao dono a cada alteração em empresa
- * cliente.
+ * cliente; a Ficha (PC-036) recebe SÓ as quatro do Leitor pelo Claude
+ * (`ferramentas-da-ficha.ts`) — nenhuma ferramenta do CRM entra nela.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -42,6 +43,7 @@ import { avisarDonoDaAlteracao, enviarAvisoAoDono, resumirAlteracao } from "./al
 import { PAPEL_DA_PORTA, type ChaveDaAgenciaValidada } from "./auth";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN } from "./ferramentas-do-agente";
 import { FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN } from "./ferramentas-do-numero";
+import { crmLerFichas, FERRAMENTAS_DA_PORTA_FICHA } from "./ferramentas-da-ficha";
 import { FERRAMENTAS_EXCLUSIVAS_DA_PORTA_LEITURA } from "./ferramentas-do-custo";
 import { NUNCA_NA_PORTA_ADMIN, aplicarMascara, regraDaPortaAdmin } from "./porta-admin";
 import type { PortaDaAgencia } from "./portas";
@@ -63,9 +65,18 @@ export function ferramentasDaPorta(
     ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_ADMIN,
     ...FERRAMENTAS_DO_NUMERO_NA_PORTA_ADMIN,
   ],
-  /** PC-035: o custo de IA por resposta só existe na porta Leitura (fora de `allTools`). */
-  exclusivasDaLeitura: readonly McpToolDefinition[] = FERRAMENTAS_EXCLUSIVAS_DA_PORTA_LEITURA,
+  /**
+   * PC-035: o custo de IA por resposta só existe na porta Leitura (fora de `allTools`).
+   * PC-036: as fichas do Leitor também (a conferência das 17h10).
+   */
+  exclusivasDaLeitura: readonly McpToolDefinition[] = [
+    ...FERRAMENTAS_EXCLUSIVAS_DA_PORTA_LEITURA,
+    crmLerFichas as unknown as McpToolDefinition,
+  ],
+  /** PC-036: a porta Ficha só tem as do Leitor pelo Claude (fora de `allTools`). */
+  daFicha: readonly McpToolDefinition[] = FERRAMENTAS_DA_PORTA_FICHA,
 ): McpToolDefinition[] {
+  if (porta === "ficha") return [...daFicha];
   if (porta === "leitura") {
     // A régua é a mesma para as exclusivas: só categoria `read` entra nesta porta.
     return [...ferramentas, ...exclusivasDaLeitura].filter((t) => t.category === "read");
@@ -115,6 +126,7 @@ export function createServidorDaAgencia(
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   const supabase = createAdminClient();
   const papel = PAPEL_DA_PORTA[chave.porta];
+  // A Ficha grava (só a ficha): leitura e escrita, com a lista fechada de ferramentas dela.
   const escoposDaChamada = chave.porta === "leitura" ? ["mcp:read"] : ["mcp:read", "mcp:write"];
 
   function authDaOrganizacao(organizationId: string): McpAuthResult {

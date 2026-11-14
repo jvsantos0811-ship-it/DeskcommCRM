@@ -33,6 +33,7 @@ function portaDoEscopo(scopes: unknown): PortaDaAgencia | null {
   if (!Array.isArray(scopes)) return null;
   if (scopes.includes(PORTAS_DA_AGENCIA.leitura.escopo)) return "leitura";
   if (scopes.includes(PORTAS_DA_AGENCIA.admin.escopo)) return "admin";
+  if (scopes.includes(PORTAS_DA_AGENCIA.ficha.escopo)) return "ficha";
   return null;
 }
 
@@ -56,7 +57,11 @@ export async function listarChavesDaAgencia(db: SupabaseClient): Promise<ChaveDa
   const { data, error } = await db
     .from("api_tokens")
     .select(COLUNAS_DA_CHAVE)
-    .or(`scopes.cs.["${PORTAS_DA_AGENCIA.leitura.escopo}"],scopes.cs.["${PORTAS_DA_AGENCIA.admin.escopo}"]`)
+    .or(
+      Object.values(PORTAS_DA_AGENCIA)
+        .map((p) => `scopes.cs.["${p.escopo}"]`)
+        .join(","),
+    )
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw new Error(error.message);

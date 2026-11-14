@@ -18,7 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg, type PosicaoNoAlcance } from "@/lib/dados/alcance-do-leitor";
 import { expedienteDaOrg } from "@/lib/dados/expediente";
-import type { AtendidoPor, FatosDoBanco, FichaDoLeitor, Gatilho } from "@/lib/dados/ficha";
+import type { AtendidoPor, FatosDoBanco, FichaDoLeitor, Gatilho, OrigemDaFicha } from "@/lib/dados/ficha";
 import { classificarFicha, FORA_DA_VENDA } from "@/lib/dados/regra-da-ficha";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -81,7 +81,8 @@ interface ConversaRow {
   last_inbound_at: string | null;
   last_outbound_at: string | null;
 }
-interface LeadRow {
+/** O negócio como o Leitor o usa (também pela porta Ficha, PC-036). */
+export interface LeadRow {
   id: string;
   contact_id: string | null;
   pipeline_id: string;
@@ -89,7 +90,7 @@ interface LeadRow {
   created_at: string;
   etapa: { name: string; is_won: boolean; is_lost: boolean; is_archived: boolean } | null;
 }
-interface MensagemRow extends MensagemParaOLeitor {
+export interface MensagemRow extends MensagemParaOLeitor {
   sent_by_user_id: string | null;
 }
 
@@ -147,87 +148,9 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
   const { agora } = deps;
   const orgId = org.id;
   const expediente = expedienteDaOrg(org.settings, org.timezone);
-  const alcance = alcanceDaOrg(org.settings);
   const ehInterno = deps.ehInterno ?? ehContatoDoNumeroInterno;
 
-  const { data: funisData, error: funisErr } = await admin
-    .from("crm_pipelines")
-    .select("id, is_archived, is_client_pipeline")
-    .eq("organization_id", orgId);
-  if (funisErr) throw new Error(`funis: ${funisErr.message}`);
-  const funis = (funisData ?? []) as FunilDaOrg[];
-  const lidos = funisLidos(alcance, funis);
-  if (lidos.size === 0) return r;
-
-  // 1. Conversas mexidas desde o marco (o Leitor ligado, no máximo 14 dias atrás).
-  const desde = new Date(Math.max(pode.ligadoEm.getTime(), agora.getTime() - JANELA_DE_BUSCA_DIAS * DIA_MS));
-  const { data: convData, error: convErr } = await admin
-    .from("conversations")
-    .select("id, contact_id, created_at, last_inbound_at, last_outbound_at")
-    .eq("organization_id", orgId)
-    .eq("is_group", false)
-    .gte("last_message_at", desde.toISOString())
-    .order("last_message_at", { ascending: false })
-    .limit(CONVERSAS_POR_PASSADA);
-  if (convErr) throw new Error(`conversas: ${convErr.message}`);
-  const porContato = new Map<string, { criadaEm: Date | null; ultimaEntrada: Date | null; ultimaSaida: Date | null }>();
-  for (const c of (convData ?? []) as ConversaRow[]) {
-    if (!c.contact_id) continue;
-    const a = porContato.get(c.contact_id) ?? { criadaEm: null, ultimaEntrada: null, ultimaSaida: null };
-    porContato.set(c.contact_id, {
-      criadaEm: maior(a.criadaEm, data(c.created_at)),
-      ultimaEntrada: maior(a.ultimaEntrada, data(c.last_inbound_at)),
-      ultimaSaida: maior(a.ultimaSaida, data(c.last_outbound_at)),
-    });
-  }
-  if (porContato.size === 0) return r;
-
-  // 2. Contatos bloqueados ficam de fora; os negócios desses contatos e as fichas.
-  const contatos = [...porContato.keys()];
-  const bloqueado = new Set<string>();
-  const leads: LeadRow[] = [];
-  for (const lote of emLotes(contatos)) {
-    const { data: cs, error: cErr } = await admin.from("contacts").select("id, is_blocked").eq("organization_id", orgId).in("id", lote);
-    if (cErr) throw new Error(`contatos: ${cErr.message}`);
-    for (const c of (cs ?? []) as Array<{ id: string; is_blocked: boolean | null }>) if (c.is_blocked) bloqueado.add(c.id);
-    const { data: ls, error: lErr } = await admin
-      .from("crm_leads")
-      .select("id, contact_id, pipeline_id, tags, created_at, etapa:crm_stages!crm_leads_stage_id_fkey(name, is_won, is_lost, is_archived)")
-      .eq("organization_id", orgId)
-      .in("contact_id", lote);
-    if (lErr) throw new Error(`negocios: ${lErr.message}`);
-    leads.push(...((ls ?? []) as unknown as LeadRow[]));
-  }
-  const fichaAnterior = new Map<string, Date | null>();
-  for (const lote of emLotes(leads.map((l) => l.id))) {
-    const { data: fs, error: fErr } = await admin
-      .from("crm_lead_ficha")
-      .select("lead_id, mensagens_ate")
-      .eq("organization_id", orgId)
-      .in("lead_id", lote);
-    if (fErr) throw new Error(`fichas: ${fErr.message}`);
-    for (const f of (fs ?? []) as Array<{ lead_id: string; mensagens_ate: string | null }>) fichaAnterior.set(f.lead_id, data(f.mensagens_ate));
-  }
-
-  // 3. Quem pede leitura, do mais recente para o mais antigo.
-  const abertosPorContato = new Map<string, LeadRow[]>();
-  const aLer: Array<{ lead: LeadRow; posicao: PosicaoNoAlcance; gatilho: Gatilho; ultimaEntrada: Date | null }> = [];
-  for (const l of leads) {
-    if (!l.contact_id || !l.etapa || bloqueado.has(l.contact_id)) continue;
-    const posicao = posicaoNoAlcance({ pipeline_id: l.pipeline_id, tags: l.tags, etapa: l.etapa }, lidos, alcance);
-    if (posicao === "com_potencial") abertosPorContato.set(l.contact_id, [...(abertosPorContato.get(l.contact_id) ?? []), l]);
-    const conversa = porContato.get(l.contact_id)!;
-    const d = decidirLeitura(
-      {
-        posicao,
-        leituraAnterior: fichaAnterior.has(l.id) ? { mensagensAte: fichaAnterior.get(l.id) ?? null } : null,
-        conversa,
-      },
-      { ligadoEm: pode.ligadoEm, expediente },
-    );
-    if (d.ler) aLer.push({ lead: l, posicao, gatilho: d.gatilho, ultimaEntrada: conversa.ultimaEntrada });
-  }
-  aLer.sort((a, b) => (b.ultimaEntrada?.getTime() ?? 0) - (a.ultimaEntrada?.getTime() ?? 0));
+  const { aLer, abertosPorContato } = await selecionarParaLeitura(admin, org, { agora, ligadoEm: pode.ligadoEm });
   r.candidatos = aLer.length;
   if (aLer.length === 0) return r;
 
@@ -268,20 +191,16 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
       await gravarFicha(admin, orgId, item.lead, contato, leitura.ficha, leitura.modelo, item.gatilho, mensagens, agentes);
       r.lidos += 1;
 
-      if (item.gatilho === "lead_voltou") {
-        const banco = fatosDoBanco(item.lead, abertosPorContato.get(contato) ?? [], mensagens, item.ultimaEntrada);
-        const c = classificarFicha({ ficha: leitura.ficha, banco }, agora);
-        // PM-027 §3, exceção 1 (caso LV1): o contato já tem OUTRO card com
-        // potencial aberto — novo ou antigo —, então o lead já está no funil por
-        // ele. A ficha é gravada, mas o aviso não abre.
-        const outroCardAberto = (abertosPorContato.get(contato) ?? []).some((o) => o.id !== item.lead.id);
-        if (
-          !outroCardAberto &&
-          !FORA_DA_VENDA.has(c.situacao) &&
-          (await abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, expediente.timezone, idioma, t))
-        ) {
-          r.avisos += 1;
-        }
+      if (
+        item.gatilho === "lead_voltou" &&
+        (await avisarSeOLeadVoltou(admin, orgId, item, leitura.ficha, mensagens, abertosPorContato.get(contato) ?? [], {
+          agora,
+          fuso: expediente.timezone,
+          idioma,
+          t,
+        }))
+      ) {
+        r.avisos += 1;
       }
     } catch (err) {
       r.falhas += 1;
@@ -291,6 +210,124 @@ export async function passadaDoLeitor(admin: SupabaseClient, org: OrgDoLeitor, d
   }
   r.restantes = r.parou ? aLer.length - r.lidos : Math.max(0, aLer.length - feitas);
   return r;
+}
+
+// ─── quem pede leitura (a mesma seleção para o cron e para a porta Ficha) ──
+
+/** Um lead que pede leitura agora, com o porquê. */
+export interface PedidoDeLeitura {
+  lead: LeadRow;
+  posicao: PosicaoNoAlcance;
+  gatilho: Gatilho;
+  ultimaEntrada: Date | null;
+}
+
+export interface SelecaoDoLeitor {
+  /** Do mais recente para o mais antigo (última fala do lead). */
+  aLer: PedidoDeLeitura[];
+  /** Os negócios com potencial de cada contato (o aviso `lead_voltou` olha). */
+  abertosPorContato: Map<string, LeadRow[]>;
+  /** A `mensagens_ate` da ficha atual de cada lead que já tem ficha. */
+  fichaAnterior: Map<string, Date | null>;
+}
+
+/**
+ * Quem o Leitor leria agora nesta organização (PM-027 §3): conversas mexidas
+ * desde o marco (no máximo `JANELA_DE_BUSCA_DIAS`), contato bloqueado de fora,
+ * e a decisão de `decidirLeitura` para cada negócio. Não lê conversa nem chama
+ * modelo. A passada do cron e a porta Ficha (PC-036) usam ESTA função: o Claude
+ * lê exatamente quem o Leitor do CRM leria.
+ */
+export async function selecionarParaLeitura(
+  admin: SupabaseClient,
+  org: OrgDoLeitor,
+  ctx: { agora: Date; ligadoEm: Date },
+): Promise<SelecaoDoLeitor> {
+  const { agora } = ctx;
+  const orgId = org.id;
+  const expediente = expedienteDaOrg(org.settings, org.timezone);
+  const alcance = alcanceDaOrg(org.settings);
+  const vazio: SelecaoDoLeitor = { aLer: [], abertosPorContato: new Map(), fichaAnterior: new Map() };
+
+  const { data: funisData, error: funisErr } = await admin
+    .from("crm_pipelines")
+    .select("id, is_archived, is_client_pipeline")
+    .eq("organization_id", orgId);
+  if (funisErr) throw new Error(`funis: ${funisErr.message}`);
+  const funis = (funisData ?? []) as FunilDaOrg[];
+  const lidos = funisLidos(alcance, funis);
+  if (lidos.size === 0) return vazio;
+
+  // 1. Conversas mexidas desde o marco (o Leitor ligado, no máximo 14 dias atrás).
+  const desde = new Date(Math.max(ctx.ligadoEm.getTime(), agora.getTime() - JANELA_DE_BUSCA_DIAS * DIA_MS));
+  const { data: convData, error: convErr } = await admin
+    .from("conversations")
+    .select("id, contact_id, created_at, last_inbound_at, last_outbound_at")
+    .eq("organization_id", orgId)
+    .eq("is_group", false)
+    .gte("last_message_at", desde.toISOString())
+    .order("last_message_at", { ascending: false })
+    .limit(CONVERSAS_POR_PASSADA);
+  if (convErr) throw new Error(`conversas: ${convErr.message}`);
+  const porContato = new Map<string, { criadaEm: Date | null; ultimaEntrada: Date | null; ultimaSaida: Date | null }>();
+  for (const c of (convData ?? []) as ConversaRow[]) {
+    if (!c.contact_id) continue;
+    const a = porContato.get(c.contact_id) ?? { criadaEm: null, ultimaEntrada: null, ultimaSaida: null };
+    porContato.set(c.contact_id, {
+      criadaEm: maior(a.criadaEm, data(c.created_at)),
+      ultimaEntrada: maior(a.ultimaEntrada, data(c.last_inbound_at)),
+      ultimaSaida: maior(a.ultimaSaida, data(c.last_outbound_at)),
+    });
+  }
+  if (porContato.size === 0) return vazio;
+
+  // 2. Contatos bloqueados ficam de fora; os negócios desses contatos e as fichas.
+  const contatos = [...porContato.keys()];
+  const bloqueado = new Set<string>();
+  const leads: LeadRow[] = [];
+  for (const lote of emLotes(contatos)) {
+    const { data: cs, error: cErr } = await admin.from("contacts").select("id, is_blocked").eq("organization_id", orgId).in("id", lote);
+    if (cErr) throw new Error(`contatos: ${cErr.message}`);
+    for (const c of (cs ?? []) as Array<{ id: string; is_blocked: boolean | null }>) if (c.is_blocked) bloqueado.add(c.id);
+    const { data: ls, error: lErr } = await admin
+      .from("crm_leads")
+      .select("id, contact_id, pipeline_id, tags, created_at, etapa:crm_stages!crm_leads_stage_id_fkey(name, is_won, is_lost, is_archived)")
+      .eq("organization_id", orgId)
+      .in("contact_id", lote);
+    if (lErr) throw new Error(`negocios: ${lErr.message}`);
+    leads.push(...((ls ?? []) as unknown as LeadRow[]));
+  }
+  const fichaAnterior = new Map<string, Date | null>();
+  for (const lote of emLotes(leads.map((l) => l.id))) {
+    const { data: fs, error: fErr } = await admin
+      .from("crm_lead_ficha")
+      .select("lead_id, mensagens_ate")
+      .eq("organization_id", orgId)
+      .in("lead_id", lote);
+    if (fErr) throw new Error(`fichas: ${fErr.message}`);
+    for (const f of (fs ?? []) as Array<{ lead_id: string; mensagens_ate: string | null }>) fichaAnterior.set(f.lead_id, data(f.mensagens_ate));
+  }
+
+  // 3. Quem pede leitura, do mais recente para o mais antigo.
+  const abertosPorContato = new Map<string, LeadRow[]>();
+  const aLer: PedidoDeLeitura[] = [];
+  for (const l of leads) {
+    if (!l.contact_id || !l.etapa || bloqueado.has(l.contact_id)) continue;
+    const posicao = posicaoNoAlcance({ pipeline_id: l.pipeline_id, tags: l.tags, etapa: l.etapa }, lidos, alcance);
+    if (posicao === "com_potencial") abertosPorContato.set(l.contact_id, [...(abertosPorContato.get(l.contact_id) ?? []), l]);
+    const conversa = porContato.get(l.contact_id)!;
+    const d = decidirLeitura(
+      {
+        posicao,
+        leituraAnterior: fichaAnterior.has(l.id) ? { mensagensAte: fichaAnterior.get(l.id) ?? null } : null,
+        conversa,
+      },
+      { ligadoEm: ctx.ligadoEm, expediente },
+    );
+    if (d.ler) aLer.push({ lead: l, posicao, gatilho: d.gatilho, ultimaEntrada: conversa.ultimaEntrada });
+  }
+  aLer.sort((a, b) => (b.ultimaEntrada?.getTime() ?? 0) - (a.ultimaEntrada?.getTime() ?? 0));
+  return { aLer, abertosPorContato, fichaAnterior };
 }
 
 // ─── leituras e gravações ───────────────────────────────────────────────────
@@ -330,12 +367,17 @@ async function promptDaOrg(admin: SupabaseClient, org: OrgDoLeitor, config: Retu
   return montarPromptDoLeitor(await variaveisDoPromptDaOrg(admin, org, config));
 }
 
-/** As mensagens do contato (todas as conversas sem grupo), da mais antiga à mais nova; `ate` congela. */
+/**
+ * As mensagens do contato (todas as conversas sem grupo), da mais antiga à mais
+ * nova; `ate` congela. Como texto, `ate` vai ao banco SEM passar por `Date`: o
+ * `created_at` tem microssegundos, e `Date` corta para milissegundos — o filtro
+ * deixaria de fora justamente a última mensagem lida (revisão do PC-036).
+ */
 export async function mensagensDoContato(
   admin: SupabaseClient,
   orgId: string,
   contactId: string,
-  ate: Date | null = null,
+  ate: Date | string | null = null,
 ): Promise<MensagemRow[]> {
   const { data: convs, error: cErr } = await admin
     .from("conversations")
@@ -351,14 +393,14 @@ export async function mensagensDoContato(
     .select("direction, sent_via, type, body, media_derived_text, status, created_at, sent_by_user_id")
     .eq("organization_id", orgId)
     .in("conversation_id", ids)
-    .lte("created_at", (ate ?? new Date("9999-12-31T00:00:00Z")).toISOString())
+    .lte("created_at", typeof ate === "string" ? ate : (ate ?? new Date("9999-12-31T00:00:00Z")).toISOString())
     .order("created_at", { ascending: false })
     .limit(MENSAGENS_LIDAS);
   if (mErr) throw new Error(`mensagens: ${mErr.message}`);
   return ((ms ?? []) as MensagemRow[]).reverse();
 }
 
-async function agentesQueAtenderam(admin: SupabaseClient, orgId: string, contactId: string): Promise<string[]> {
+export async function agentesQueAtenderam(admin: SupabaseClient, orgId: string, contactId: string): Promise<string[]> {
   const { data: chamadas } = await admin
     .from("llm_calls")
     .select("agent_id")
@@ -373,16 +415,22 @@ async function agentesQueAtenderam(admin: SupabaseClient, orgId: string, contact
   return ((agentes ?? []) as Array<{ name: string | null }>).map((a) => a.name ?? "").filter(Boolean);
 }
 
-async function gravarFicha(
+export async function gravarFicha(
   admin: SupabaseClient,
   orgId: string,
-  lead: LeadRow,
+  lead: Pick<LeadRow, "id">,
   contactId: string,
   ficha: FichaDoLeitor,
   modelo: string,
   gatilho: Gatilho,
   mensagens: MensagemRow[],
   agentes: string[],
+  /**
+   * Quem leu (migration 9033). Sempre gravada: a organização que sai da leitura
+   * pelo Claude volta ao Leitor do CRM, e a ficha relida por ele não pode seguir
+   * marcada como da tarefa ou do Gestor (a precedência do PC-037 lê este campo).
+   */
+  origem: OrigemDaFicha = "leitor_do_crm",
 ): Promise<void> {
   const ate = mensagens.length > 0 ? mensagens[mensagens.length - 1]!.created_at : null;
   const { error } = await admin.from("crm_lead_ficha").upsert(
@@ -397,17 +445,40 @@ async function gravarFicha(
       gatilho,
       lida_em: new Date().toISOString(),
       mensagens_ate: ate,
+      origem,
     },
     { onConflict: "organization_id,lead_id" },
   );
   if (error) throw new Error(`ficha: ${error.message}`);
 }
 
-/** Abre o aviso "Um lead perdido voltou a escrever". Já aberto (23505) não é erro. */
-async function abrirAvisoLeadVoltou(
+/**
+ * O lead que voltou (gatilho `lead_voltou`) com potencial abre o aviso na
+ * Central. PM-027 §3, exceção 1 (caso LV1): se o contato já tem OUTRO card com
+ * potencial aberto — novo ou antigo —, o lead já está no funil por ele: a ficha
+ * é gravada, mas o aviso não abre. Devolve se abriu.
+ */
+export async function avisarSeOLeadVoltou(
   admin: SupabaseClient,
   orgId: string,
-  lead: LeadRow,
+  item: Pick<PedidoDeLeitura, "lead" | "ultimaEntrada">,
+  ficha: FichaDoLeitor,
+  mensagens: MensagemParaOLeitor[],
+  abertosDoContato: LeadRow[],
+  ctx: { agora: Date; fuso: string; idioma: string; t: (s: string) => string },
+): Promise<boolean> {
+  const banco = fatosDoBanco(item.lead, abertosDoContato, mensagens, item.ultimaEntrada);
+  const c = classificarFicha({ ficha, banco }, ctx.agora);
+  const outroCardAberto = abertosDoContato.some((o) => o.id !== item.lead.id);
+  if (outroCardAberto || FORA_DA_VENDA.has(c.situacao)) return false;
+  return abrirAvisoLeadVoltou(admin, orgId, item.lead, item.ultimaEntrada, ctx.fuso, ctx.idioma, ctx.t);
+}
+
+/** Abre o aviso "Um lead perdido voltou a escrever". Já aberto (23505) não é erro. */
+export async function abrirAvisoLeadVoltou(
+  admin: SupabaseClient,
+  orgId: string,
+  lead: Pick<LeadRow, "id" | "etapa">,
   quando: Date | null,
   fuso: string,
   idioma: string,

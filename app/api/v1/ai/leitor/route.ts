@@ -3,12 +3,16 @@
  *       (PM-027 §8): a configuração que vale agora (a da organização, ou o
  *       modelo padrão da instalação para quem o segue), os modelos com preço,
  *       custo estimado por mês, nota na bateria e de onde vem a chave (gerente+).
- * PATCH /api/v1/ai/leitor — a escolha da organização (admin), uma de três:
+ * PATCH /api/v1/ai/leitor — a escolha da organização (admin), uma de quatro:
  *       - `padrao`: segue o modelo padrão da instalação (o valor de quem nunca
  *         mexeu — decisão do dono, 06/11: o Leitor liga sozinho em toda empresa);
  *       - `propria`: outro modelo APROVADO na bateria, com chave para ele — a da
  *         organização ou, sem ela, a da instalação; a reserva segue a mesma régua;
- *       - `desligado`: o padrão nunca religa sozinho quem desligou.
+ *       - `desligado`: o padrão nunca religa sozinho quem desligou;
+ *       - `claude` (PC-036): quem lê é a tarefa agendada do Claude, pela porta
+ *         Ficha da agência; o CRM não chama modelo. Só o dono da instalação com
+ *         escrita (`fn_is_platform_admin_full`, o mesmo que cria a chave da porta)
+ *         escolhe, e só ele tira dela.
  *       Sem `escolha`, `ligado` vale como antes (true = própria, false =
  *       desligado); sem os dois, só os prefixos e o termo mudam. Grava
  *       `settings.leitor` (merge, sem apagar o alcance) e, na escolha própria, a
@@ -32,6 +36,7 @@ import { CHAVE_DO_ALCANCE } from "@/lib/dados/alcance-do-leitor";
 import { configDoLeitor, configEfetivaDoLeitor, ESCOLHAS_DO_LEITOR, type EscolhaDoLeitor } from "@/lib/dados/leitor/config";
 import { conferirEscolha, dadosDoLeitor, type RecusaDoLeitor } from "@/lib/dados/leitor/leitor-da-org";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
+import { ultimaRodadaDoClaude } from "@/lib/dados/leitor/pelo-claude";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -56,6 +61,7 @@ const MENSAGEM: Record<RecusaDoLeitor, string> = {
   reserva_nao_aprovada: "O modelo de reserva também precisa ter acertado 100% da bateria.",
 };
 const SEM_PADRAO = "A instalação ainda não tem um modelo padrão do Leitor. Escolha um modelo aprovado para esta empresa.";
+const SO_O_DONO_E_O_CLAUDE = "Só o dono da instalação liga ou desliga a leitura pelo Claude.";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -63,12 +69,20 @@ export async function GET(): Promise<Response> {
   if (!authz.ok) return authz.response;
   try {
     const db = await createClient();
-    const [{ data: dono }, padrao] = await Promise.all([db.rpc("fn_is_platform_admin"), lerPadraoDoLeitor(createAdminClient())]);
+    const [{ data: dono }, { data: donoComEscrita }, padrao] = await Promise.all([
+      db.rpc("fn_is_platform_admin"),
+      db.rpc("fn_is_platform_admin_full"),
+      lerPadraoDoLeitor(createAdminClient()),
+    ]);
+    const dados = await dadosDoLeitor(db, authz.org.orgId, { padrao });
     return ok(
       {
-        ...(await dadosDoLeitor(db, authz.org.orgId, { padrao })),
+        ...dados,
         podeEditar: roleAtLeast(authz.org.role, "admin"),
         ehDonoDaPlataforma: dono === true,
+        // PC-036: entrar e sair da leitura pelo Claude é do dono com escrita (o que cria a chave da porta Ficha).
+        podeEscolherOClaude: donoComEscrita === true,
+        rodadaDoClaude: dados.config.origem === "claude" ? await ultimaRodadaDoClaude(db, authz.org.orgId) : null,
       },
       { requestId },
     );
@@ -98,6 +112,13 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const escolha: EscolhaDoLeitor =
     pedido.escolha ?? (pedido.ligado === undefined ? antes.origem : pedido.ligado ? "propria" : "desligado");
   const mudouAEscolha = escolha !== antes.origem;
+  // PC-036: entrar na leitura pelo Claude ou sair dela é do dono da instalação.
+  if (mudouAEscolha && (escolha === "claude" || antes.origem === "claude")) {
+    const { data: dono } = await db.rpc("fn_is_platform_admin_full");
+    if (dono !== true) {
+      return fail("forbidden", t(SO_O_DONO_E_O_CLAUDE), 403, { requestId, details: { codigo: "so_o_dono" } });
+    }
+  }
   const modeloEscolhido = pedido.modelo === undefined ? dados.escolhaPropria.modelo : pedido.modelo;
   const reserva = pedido.reserva === undefined ? dados.escolhaPropria.reserva : pedido.reserva;
   if (escolha === "propria") {

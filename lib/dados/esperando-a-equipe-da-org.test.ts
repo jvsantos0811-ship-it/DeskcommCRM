@@ -239,6 +239,15 @@ describe("esperandoAEquipeDaOrg", () => {
     expect(r).toEqual({ ligado: false, leads: [], falhas: 0 });
   });
 
+  it("lida pelo Claude (PC-036), a organização tem o painel, embora o Leitor do CRM esteja desligado nela", async () => {
+    const comCRM = await esperandoAEquipeDaOrg(bancoEmMemoria(cenario()) as never, ORG, AGORA);
+    const t = cenario(false);
+    t.organizations![0]!.settings = { leitor: { escolha: "claude", ligado: false, ligado_em: "2026-10-01T12:00:00.000Z" } };
+    const r = await esperandoAEquipeDaOrg(bancoEmMemoria(t) as never, ORG, AGORA);
+    expect(r.ligado).toBe(true);
+    expect(r.leads.map((l) => l.lead_id)).toEqual(comCRM.leads.map((l) => l.lead_id));
+  });
+
   it("quem nunca mexeu no Leitor e segue o modelo padrão da instalação também tem o painel", async () => {
     const t = cenario(false);
     t.organizations![0]!.settings = {};

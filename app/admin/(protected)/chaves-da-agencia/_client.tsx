@@ -121,6 +121,7 @@ export function ChavesDaAgenciaClient() {
             >
               <option value="leitura">{t("Leitura (Gestor Comercial)")}</option>
               <option value="admin">{t("Admin (Operador)")}</option>
+              <option value="ficha">{t("Ficha (Leitor pelo Claude)")}</option>
             </select>
           </div>
           <div className="space-y-1">

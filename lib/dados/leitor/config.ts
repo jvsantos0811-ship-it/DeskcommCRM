@@ -8,13 +8,19 @@
  * bloqueiam").
  *
  * A ESCOLHA DA ORGANIZAÇÃO (decisão do dono, 06/11: o Leitor liga sozinho em
- * toda empresa, nas atuais e nas novas) é uma de três, e é ela que distingue o
+ * toda empresa, nas atuais e nas novas) é uma de quatro, e é ela que distingue o
  * "nunca mexeu" do "desligou de propósito":
  *   - `padrao`    — segue o modelo padrão da INSTALAÇÃO (`padrao.ts`), escolhido
  *                   pelo dono da plataforma entre os aprovados na bateria. É o
  *                   valor de quem nunca mexeu. Sem padrão gravado, não lê.
  *   - `propria`   — o admin da empresa escolheu outro modelo aprovado no cartão.
  *   - `desligado` — o admin desligou; o padrão NUNCA o religa sozinho.
+ *   - `claude`    — PC-036: quem lê é uma tarefa agendada do Claude, de fora, pela
+ *                   porta Ficha da agência (`lib/mcp/agencia/ferramentas-da-ficha.ts`).
+ *                   O cron do Leitor NUNCA chama modelo nesta organização: a
+ *                   configuração efetiva sai DESLIGADA para ele, e só
+ *                   `leitorPeloClaude` sabe do marco. Só o dono da instalação
+ *                   escolhe (é ele quem tem a chave da porta Ficha).
  * Quem lê a configuração para RODAR usa `configEfetivaDoLeitor`, nunca o
  * `configDoLeitor` cru: só a efetiva sabe do padrão da instalação.
  *
@@ -32,7 +38,7 @@ const modeloSchema = z.object({
 });
 export type ModeloDoLeitor = z.infer<typeof modeloSchema>;
 
-export const ESCOLHAS_DO_LEITOR = ["padrao", "propria", "desligado"] as const;
+export const ESCOLHAS_DO_LEITOR = ["padrao", "propria", "desligado", "claude"] as const;
 export type EscolhaDoLeitor = (typeof ESCOLHAS_DO_LEITOR)[number];
 
 export const configDoLeitorSchema = z.object({
@@ -136,6 +142,9 @@ export function configEfetivaDoLeitor(
 ): ConfigEfetivaDoLeitor {
   const origem = escolhaDaOrg(c);
   if (origem === "propria") return { ...c, origem };
+  // Pelo Claude: desligado para o cron (zero chamada de modelo pelo CRM); o marco
+  // fica, porque é dele que a seleção da porta Ficha parte (sem carga inicial).
+  if (origem === "claude") return { ...c, origem, ligado: false, modelo: null, reserva: null };
   // Desligado guarda o último modelo próprio (o cartão o oferece de novo); sem padrão, não há modelo.
   if (origem === "desligado") return { ...c, origem, ligado: false, ligado_em: null };
   if (!padrao) return { ...c, origem, ligado: false, ligado_em: null, modelo: null, reserva: null };
@@ -156,4 +165,13 @@ export function leitorPodeRodar(
   if (!c.ligado || !c.ligado_em) return { pode: false, porque: "desligado" };
   if (!c.modelo) return { pode: false, porque: "sem_modelo" };
   return { pode: true, ligadoEm: new Date(c.ligado_em), modelo: c.modelo };
+}
+
+/**
+ * PC-036: esta organização é lida pelo Claude? Devolve o marco (nada antes dele
+ * é lido — sem carga inicial, como no Leitor do CRM) ou `null`.
+ */
+export function leitorPeloClaude(c: Pick<ConfigEfetivaDoLeitor, "origem" | "ligado_em">): { ligadoEm: Date } | null {
+  if (c.origem !== "claude" || !c.ligado_em || Number.isNaN(Date.parse(c.ligado_em))) return null;
+  return { ligadoEm: new Date(c.ligado_em) };
 }
