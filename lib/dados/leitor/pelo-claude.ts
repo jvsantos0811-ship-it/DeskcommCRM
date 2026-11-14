@@ -30,6 +30,7 @@ import { audit } from "@/lib/audit";
 import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg, type PosicaoNoAlcance } from "@/lib/dados/alcance-do-leitor";
 import { expedienteDaOrg } from "@/lib/dados/expediente";
 import { fichaDoLeitorSchema, GATILHOS, lerFicha, type FichaDoLeitor, type Gatilho, type OrigemDaFicha } from "@/lib/dados/ficha";
+import { lerLinhasDoRetrato } from "@/lib/dados/gerar-retrato";
 import { classificarFicha, type AcaoDaFicha, type AlertaDaFicha } from "@/lib/dados/regra-da-ficha";
 import { diaNoFuso } from "@/lib/dados/retrato";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -197,6 +198,8 @@ export interface ResultadoDosPendentes {
   leads: PendenteDoClaude[];
   /** Pedem leitura e não vieram nesta chamada (teto). Peça de novo depois de gravar. */
   restantes: number;
+  /** A leitura única da base aberta (abertos do painel sem ficha), não a seleção do dia. */
+  base_aberta?: true;
 }
 
 /**
@@ -207,9 +210,16 @@ export interface ResultadoDosPendentes {
 export async function pendentesPeloClaude(
   admin: SupabaseClient,
   orgId: string,
-  opcoes: { agora: Date; limite?: number; ehInterno?: (db: SupabaseClient, orgId: string, contactId: string) => Promise<boolean> },
+  opcoes: {
+    agora: Date;
+    limite?: number;
+    /** A leitura única da base aberta (Regra v2 + PC-037: o painel pela ficha sem "sem leitura" em massa). */
+    baseAberta?: boolean;
+    ehInterno?: (db: SupabaseClient, orgId: string, contactId: string) => Promise<boolean>;
+  },
 ): Promise<ResultadoDosPendentes> {
   const { org, ligadoEm } = await orgPeloClaude(admin, orgId);
+  if (opcoes.baseAberta) return baseAbertaPeloClaude(admin, org, ligadoEm, opcoes);
   const dia = diaNoFuso(opcoes.agora, fusoUtilizavel(org.timezone));
   const { error: eIns } = await admin.from("leitor_rodadas").insert({ organization_id: orgId, dia, origem: ORIGEM_DA_RODADA_DO_CLAUDE });
   if (eIns && eIns.code !== "23505") throw new Error(`abrir a rodada: ${eIns.message}`);
@@ -243,6 +253,125 @@ export async function pendentesPeloClaude(
     leads,
     restantes: Math.max(0, aLer.length - internos - leads.length),
   };
+}
+
+/**
+ * A LEITURA ÚNICA DA BASE ABERTA — o painel pela ficha (Regra v2 + PC-037) com
+ * 95% de leitura desde o primeiro dia (pedido do João, 14/11).
+ *
+ * A seleção diária não faz carga inicial (PM-027 §3, GT4: ligar numa base de 500
+ * leads parados lê zero). Aqui é o contrário, e só quando a tarefa pede
+ * (`base_aberta`): os leads ABERTOS do universo do painel (`fn_dados_leads_do_retrato`
+ * — sem base importada, cadastro manual nem card de teste) que ainda não têm
+ * ficha, com potencial no alcance do Leitor, contato que pode ser lido e que já
+ * escreveu pelo menos uma vez. Quem já tem ficha nunca volta por aqui: a mesma
+ * chamada, repetida, só devolve quem falta. Não lê conversa nem chama modelo.
+ */
+async function baseAbertaPeloClaude(
+  admin: SupabaseClient,
+  org: OrgDoLeitor,
+  ligadoEm: Date,
+  opcoes: {
+    agora: Date;
+    limite?: number;
+    ehInterno?: (db: SupabaseClient, orgId: string, contactId: string) => Promise<boolean>;
+  },
+): Promise<ResultadoDosPendentes> {
+  const orgId = org.id;
+  const dia = diaNoFuso(opcoes.agora, fusoUtilizavel(org.timezone));
+  const { error: eIns } = await admin.from("leitor_rodadas").insert({ organization_id: orgId, dia, origem: ORIGEM_DA_RODADA_DO_CLAUDE });
+  if (eIns && eIns.code !== "23505") throw new Error(`abrir a rodada: ${eIns.message}`);
+
+  const abertos = (await lerLinhasDoRetrato(admin, orgId)).filter((l) => l.status === "open").map((l) => l.lead_id);
+  const comFicha = new Set<string>();
+  for (const lote of emLotes(abertos)) {
+    const { data, error } = await admin.from("crm_lead_ficha").select("lead_id").eq("organization_id", orgId).in("lead_id", lote);
+    if (error) throw new Error(`fichas: ${error.message}`);
+    for (const f of (data ?? []) as Array<{ lead_id: string }>) comFicha.add(f.lead_id);
+  }
+  const semFicha = abertos.filter((id) => !comFicha.has(id));
+
+  const alcance = alcanceDaOrg(org.settings);
+  const { data: funisData, error: funisErr } = await admin.from("crm_pipelines").select("id, is_archived, is_client_pipeline").eq("organization_id", orgId);
+  if (funisErr) throw new Error(`funis: ${funisErr.message}`);
+  const lidos = funisLidos(alcance, (funisData ?? []) as FunilDaOrg[]);
+
+  const leads: LeadRow[] = [];
+  for (const lote of emLotes(semFicha)) {
+    const { data, error } = await admin.from("crm_leads").select(LEAD_COLUNAS).eq("organization_id", orgId).in("id", lote);
+    if (error) throw new Error(`negocios: ${error.message}`);
+    for (const l of (data ?? []) as unknown as LeadRow[]) {
+      if (!l.contact_id || !l.etapa) continue;
+      if (posicaoNoAlcance({ pipeline_id: l.pipeline_id, tags: l.tags, etapa: l.etapa }, lidos, alcance) !== "com_potencial") continue;
+      leads.push(l);
+    }
+  }
+
+  const contatos = [...new Set(leads.map((l) => l.contact_id!))];
+  const foraDaLeitura = new Set<string>();
+  const ultimaEntrada = new Map<string, Date>();
+  for (const lote of emLotes(contatos)) {
+    const [cs, convs] = await Promise.all([
+      admin.from("contacts").select("id, is_blocked, is_anonymized").eq("organization_id", orgId).in("id", lote),
+      admin
+        .from("conversations")
+        .select("contact_id, last_inbound_at")
+        .eq("organization_id", orgId)
+        .eq("is_group", false)
+        .in("contact_id", lote)
+        .not("last_inbound_at", "is", null),
+    ]);
+    if (cs.error) throw new Error(`contatos: ${cs.error.message}`);
+    if (convs.error) throw new Error(`conversas: ${convs.error.message}`);
+    for (const c of (cs.data ?? []) as Array<{ id: string; is_blocked: boolean | null; is_anonymized: boolean | null }>) {
+      if (c.is_blocked || c.is_anonymized) foraDaLeitura.add(c.id);
+    }
+    for (const c of (convs.data ?? []) as Array<{ contact_id: string | null; last_inbound_at: string | null }>) {
+      if (!c.contact_id || !c.last_inbound_at) continue;
+      const d = new Date(c.last_inbound_at);
+      const a = ultimaEntrada.get(c.contact_id);
+      if (!a || d > a) ultimaEntrada.set(c.contact_id, d);
+    }
+  }
+
+  const ehInterno = opcoes.ehInterno ?? ehContatoDoNumeroInterno;
+  const candidatos = leads
+    .filter((l) => !foraDaLeitura.has(l.contact_id!) && ultimaEntrada.has(l.contact_id!))
+    .sort((a, b) => ultimaEntrada.get(b.contact_id!)!.getTime() - ultimaEntrada.get(a.contact_id!)!.getTime());
+  const limite = Math.max(1, Math.min(opcoes.limite ?? PENDENTES_POR_CHAMADA, PENDENTES_POR_CHAMADA));
+  const saida: PendenteDoClaude[] = [];
+  let internos = 0;
+  for (const l of candidatos) {
+    if (saida.length >= limite) break;
+    if (await ehInterno(admin, orgId, l.contact_id!)) {
+      internos += 1;
+      continue;
+    }
+    saida.push({
+      lead_id: l.id,
+      gatilho: "mensagem_do_lead",
+      posicao: "com_potencial",
+      etapa: l.etapa?.name ?? null,
+      ultima_fala_do_lead: ultimaEntrada.get(l.contact_id!)!.toISOString(),
+      ja_tem_ficha: false,
+      mensagens_ate_da_ficha: null,
+    });
+  }
+  return {
+    dia,
+    lido_desde: ligadoEm.toISOString(),
+    total: candidatos.length - internos,
+    leads: saida,
+    restantes: Math.max(0, candidatos.length - internos - saida.length),
+    base_aberta: true,
+  };
+}
+
+/** Lotes para `.in(...)`: a URL do PostgREST tem limite. */
+function emLotes<T>(xs: T[], n = 150): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
 }
 
 // ─── 2. o material da leitura ───────────────────────────────────────────────
@@ -331,6 +460,30 @@ export const entradaDaGravacaoSchema = z.object({
 });
 export type EntradaDaGravacao = z.infer<typeof entradaDaGravacaoSchema>;
 
+/**
+ * PC-037 §2 — a ficha corrigida pelo Gestor fica. A leitura diária (`leitor_0530`)
+ * só a substitui quando viu mensagem DEPOIS da que a correção viu. Puro.
+ */
+export function manterACorrecaoDoGestor(
+  origemDaLeitura: OrigemDaLeituraPeloClaude,
+  origemAtual: string | null,
+  mensagensAteDaCorrecao: string | null,
+  mensagensAteDaLeitura: Date,
+): boolean {
+  if (origemDaLeitura !== "leitor_0530" || origemAtual !== "gestor_17h10" || !mensagensAteDaCorrecao) return false;
+  const corrigidaAte = Date.parse(mensagensAteDaCorrecao);
+  return Number.isFinite(corrigidaAte) && mensagensAteDaLeitura.getTime() <= corrigidaAte;
+}
+
+/** A leitura diária achou a ficha corrigida pelo Gestor e nada novo depois dela: não grava. */
+export interface FichaMantida {
+  gravada: false;
+  mantida: "corrigida_pelo_gestor";
+  lead_id: string;
+  /** Até onde a correção do Gestor leu. */
+  mensagens_ate: string;
+}
+
 export interface ResultadoDaGravacao {
   gravada: true;
   lead_id: string;
@@ -359,7 +512,7 @@ export async function gravarFichaPeloClaude(
   orgId: string,
   entrada: EntradaDaGravacao,
   opcoes: { agora: Date },
-): Promise<ResultadoDaGravacao> {
+): Promise<ResultadoDaGravacao | FichaMantida> {
   const { org } = await orgPeloClaude(admin, orgId);
   const lida = fichaDoLeitorSchema.safeParse(entrada.ficha);
   if (!lida.success) throw new RecusaDoLeitorPeloClaude("ficha_invalida", errosDaFicha(lida.error));
@@ -373,17 +526,23 @@ export async function gravarFichaPeloClaude(
 
   const { data: atualR, error: eAtual } = await admin
     .from("crm_lead_ficha")
-    .select("mensagens_ate")
+    .select("mensagens_ate, origem")
     .eq("organization_id", orgId)
     .eq("lead_id", lead.id)
     .maybeSingle();
   if (eAtual) throw new Error(`ficha atual: ${eAtual.message}`);
-  const atualAte = (atualR as { mensagens_ate: string | null } | null)?.mensagens_ate ?? null;
+  const atual = atualR as { mensagens_ate: string | null; origem?: string | null } | null;
+  const atualAte = atual?.mensagens_ate ?? null;
   if (atualAte && Date.parse(atualAte) > ate.getTime()) {
     throw new RecusaDoLeitorPeloClaude(
       "leitura_mais_velha_que_a_atual",
       `The current ficha already read messages up to ${atualAte}. Read the conversation again (crm_leitor_conversa).`,
     );
+  }
+  // PC-037 §2: a leitura diária não passa por cima da correção do Gestor, a não
+  // ser que tenha chegado mensagem depois dela (a leitura nova vai além).
+  if (manterACorrecaoDoGestor(entrada.origem, atual?.origem ?? null, atualAte, ate)) {
+    return { gravada: false, mantida: "corrigida_pelo_gestor", lead_id: lead.id, mensagens_ate: atualAte! };
   }
 
   // O gatilho que a tarefa devolve é conferido aqui: `lead_voltou` só para o lead

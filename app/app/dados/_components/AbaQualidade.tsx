@@ -7,6 +7,7 @@ import { estiloDoNivel } from "@/components/kanban/SeloDaNota";
 import { NIVEIS, NOTA_MINIMA_DO_NIVEL, TEMPERATURAS, type Nivel, type Temperatura } from "@/lib/dados/qualidade";
 import { linkDoFunil, variacao, variacaoEmPontos } from "@/lib/dados/retrato";
 import type { LeadNaTela, RespostaDaQualidade } from "@/lib/dados/resposta";
+import { REGUA_PELA_FICHA } from "@/lib/dados/retrato-pela-ficha";
 import { cn } from "@/lib/utils";
 
 import {
@@ -25,11 +26,18 @@ import {
   TabelaDeLeads,
   Variacao,
 } from "./pecas";
+import { AbaQualidadePelaFicha } from "./AbaQualidadePelaFicha";
 
 type Selecao = { tipo: "nivel"; valor: Nivel } | { tipo: "temperatura"; valor: Temperatura };
 
 /** Aba "Qualidade do lead" (v3 §4). */
 export function AbaQualidade({ dados }: { dados: RespostaDaQualidade }) {
+  // Régua v2 (Regra v2 §3, PC-037): o painel pela ficha tem a tela própria.
+  if (dados.resumo?.versao_regra === REGUA_PELA_FICHA) return <AbaQualidadePelaFicha dados={dados} />;
+  return <AbaQualidadePorMensagens dados={dados} />;
+}
+
+function AbaQualidadePorMensagens({ dados }: { dados: RespostaDaQualidade }) {
   const t = useT();
   const r = dados.resumo!;
   const pid = dados.pipeline_id;
@@ -212,7 +220,7 @@ export function AbaQualidade({ dados }: { dados: RespostaDaQualidade }) {
             pipelineId={pid}
             vazio={t("Nenhum lead aberto neste grupo.")}
             colunas={[
-              { titulo: t("Nota"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} /> },
+              { titulo: t("Nota"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} status={l.status} ficha={l.ficha} /> },
               { titulo: t("Lead"), celula: (l) => <span className="whitespace-nowrap font-semibold">{nomeDoLead(l, t)}</span> },
               { titulo: interesse, celula: (l) => <span className="whitespace-nowrap">{l.interesse ?? t("Não identificado")}</span> },
               { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },

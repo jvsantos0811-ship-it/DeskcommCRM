@@ -20,6 +20,9 @@
  *       (senão a leitura rodaria o modelo antigo e pararia por "modelo
  *       diferente"). Ligar marca `ligado_em`: nada anterior é lido (sem carga
  *       inicial, §3).
+ *       `painel_pela_ficha` (Regra v2 + PC-037): o painel de Dados passa a contar
+ *       pela ficha (régua v2) — desligado por padrão, só liga com o Leitor lendo.
+ *       Ligar ou desligar refaz o retrato do dia na hora (origem `ficha`).
  */
 import { requireSupportWrite } from "@/lib/impersonate/support";
 
@@ -34,10 +37,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { CHAVE_DO_ALCANCE } from "@/lib/dados/alcance-do-leitor";
 import { configDoLeitor, configEfetivaDoLeitor, ESCOLHAS_DO_LEITOR, type EscolhaDoLeitor } from "@/lib/dados/leitor/config";
+import { refazerRetratoDoDia } from "@/lib/dados/gerar-retrato";
 import { conferirEscolha, dadosDoLeitor, type RecusaDoLeitor } from "@/lib/dados/leitor/leitor-da-org";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { ultimaRodadaDoClaude } from "@/lib/dados/leitor/pelo-claude";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -51,7 +56,10 @@ const corpoSchema = z.strictObject({
   reserva: modelo.nullable().optional(),
   prefixos_de_anuncio: z.array(z.string().trim().min(1).max(20)).max(20).optional(),
   termo_do_contrato: z.string().trim().min(1).max(40).optional(),
+  painel_pela_ficha: z.boolean().optional(),
 });
+
+const SEM_LEITURA_PARA_O_PAINEL = "Ligue o Leitor da conversa antes: sem leitura, o painel pela ficha mostraria todos como sem leitura.";
 
 const MENSAGEM: Record<RecusaDoLeitor, string> = {
   sem_modelo: "Escolha um modelo e rode a bateria para ligar o Leitor.",
@@ -128,6 +136,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (escolha === "padrao" && mudouAEscolha && !padrao) {
     return fail("validation_failed", t(SEM_PADRAO), 422, { requestId, details: { codigo: "sem_padrao" } });
   }
+  const painelPelaFicha = pedido.painel_pela_ficha ?? antes.painel_pela_ficha;
+  if (pedido.painel_pela_ficha === true && escolha === "desligado") {
+    return fail("validation_failed", t(SEM_LEITURA_PARA_O_PAINEL), 422, { requestId, details: { codigo: "sem_leitura" } });
+  }
 
   const { data: orgRow, error: eOrg } = await admin.from("organizations").select("settings, created_at").eq("id", orgId).maybeSingle();
   if (eOrg) return fail("internal_error", eOrg.message, 500, { requestId });
@@ -146,6 +158,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     reserva: reserva ?? null,
     prefixos_de_anuncio: pedido.prefixos_de_anuncio ?? antes.prefixos_de_anuncio,
     termo_do_contrato: pedido.termo_do_contrato ?? antes.termo_do_contrato,
+    painel_pela_ficha: painelPelaFicha,
   };
   const { error: eUpd } = await admin
     .from("organizations")
@@ -198,15 +211,39 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     resourceId: orgId,
     requestId,
     metadata: {
-      antes: { escolha: antes.origem, ligado: antes.ligado, ligado_em: antes.ligado_em, modelo: antes.modelo, reserva: antes.reserva },
+      antes: {
+        escolha: antes.origem,
+        ligado: antes.ligado,
+        ligado_em: antes.ligado_em,
+        modelo: antes.modelo,
+        reserva: antes.reserva,
+        painel_pela_ficha: antes.painel_pela_ficha,
+      },
       depois: {
         escolha: novaEfetiva.origem,
         ligado: novaEfetiva.ligado,
         ligado_em: novaEfetiva.ligado_em,
         modelo: novaEfetiva.modelo,
         reserva: novaEfetiva.reserva,
+        painel_pela_ficha: novaEfetiva.painel_pela_ficha,
       },
     },
   });
-  return ok({ config: novaEfetiva }, { requestId });
+
+  // A régua do painel mudou: o retrato do dia é refeito na hora (depois das 06:00
+  // e fora do lote de 5 minutos). Falhar aqui não desfaz a configuração; o cron
+  // de hora em hora refaz o retrato que ficou na régua velha (`retratoPrecisaRefazer`).
+  let painelRefeito = false;
+  if (antes.painel_pela_ficha !== painelPelaFicha || (painelPelaFicha && mudouAEscolha)) {
+    const r = await refazerRetratoDoDia(admin, orgId, {
+      falhou: (e) =>
+        logger.warn("[leitor] a régua do painel mudou e o retrato não foi refeito; o cron refaz", {
+          requestId,
+          organization_id: orgId,
+          message: e instanceof Error ? e.message : String(e),
+        }),
+    });
+    painelRefeito = r?.gravado === true;
+  }
+  return ok({ config: novaEfetiva, painel_refeito: painelRefeito }, { requestId });
 }

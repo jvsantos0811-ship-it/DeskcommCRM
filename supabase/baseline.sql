@@ -57632,11 +57632,21 @@ create table if not exists public.crm_dados_retrato (
   constraint crm_dados_retrato_org_dia_unique unique (organization_id, dia)
 );
 
+-- Bloco ÚNICO desta constraint (tests/unit/baseline-constraint-reconstruida.test.ts),
+-- com o vocabulário final: a migration 9034 acrescentou `ficha`. O drop só roda
+-- no clone que ainda tem a versão sem `ficha`; toda linha antiga cabe na nova.
 do $$
 begin
+  if exists (
+    select 1 from pg_constraint
+     where conname = 'crm_dados_retrato_origem_check'
+       and pg_get_constraintdef(oid) not like '%ficha%'
+  ) then
+    alter table public.crm_dados_retrato drop constraint crm_dados_retrato_origem_check;
+  end if;
   if not exists (select 1 from pg_constraint where conname = 'crm_dados_retrato_origem_check') then
     alter table public.crm_dados_retrato
-      add constraint crm_dados_retrato_origem_check check (origem in ('cron', 'manual', 'catalogo'));
+      add constraint crm_dados_retrato_origem_check check (origem in ('cron', 'manual', 'catalogo', 'ficha'));
   end if;
 end $$;
 
@@ -59480,6 +59490,120 @@ create unique index if not exists uq_api_tokens_chave_da_agencia_viva
   on public.api_tokens (name)
   where revoked_at is null
     and scopes ?| array['agencia:leitura', 'agencia:admin', 'agencia:ficha'];
+
+-- ---- retrato pela ficha: a origem `ficha` e o lote de 5 minutos (migration 9034) ----
+-- Racional inteiro no cabeçalho da migration 9034 (Regra v2 §3 e PC-037 §3).
+-- A origem `ficha` na constraint `crm_dados_retrato_origem_check` já está no
+-- bloco único dela (migration 9020, mais acima): uma constraint, um bloco.
+
+create or replace function public.fn_dados_gravar_retrato(
+  p_org uuid,
+  p_origem text,
+  p_versao_regra integer,
+  p_resumo jsonb,
+  p_leads jsonb,
+  p_por_dia jsonb,
+  p_funil jsonb,
+  p_por_etapa jsonb,
+  p_motivos jsonb,
+  p_so_se_faltar boolean default false,
+  p_agora timestamptz default now()
+) returns table (
+  retrato_dia date,
+  retrato_gerado_em timestamptz,
+  gravado boolean,
+  motivo text,
+  proximo_em timestamptz,
+  apagados integer
+)
+  language plpgsql volatile security invoker
+  set search_path = public, pg_temp
+as $fn$
+declare
+  v_fuso text;
+  v_dia date;
+  v_ultimo timestamptz;
+  v_existente timestamptz;
+  v_apagados integer := 0;
+  v_intervalo interval;
+begin
+  if p_org is null then
+    raise exception 'organização obrigatória' using errcode = '22023';
+  end if;
+  if p_origem is null or p_origem not in ('cron', 'manual', 'catalogo', 'ficha') then
+    raise exception 'origem inválida: %', p_origem using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('crm_dados_retrato:' || p_org::text, 0));
+
+  v_fuso := public.fn_dados_fuso_da_org(p_org);
+  v_dia := (p_agora at time zone v_fuso)::date;
+
+  select r.gerado_em into v_existente
+    from public.crm_dados_retrato r
+   where r.organization_id = p_org and r.dia = v_dia;
+
+  if p_so_se_faltar and v_existente is not null then
+    return query select v_dia, v_existente, false, 'ja_existe'::text, null::timestamptz, 0;
+    return;
+  end if;
+
+  -- "Atualizar agora": 30 minutos. Recálculo pela ficha (PC-037 §3): 5 minutos.
+  if p_origem in ('manual', 'ficha') then
+    v_intervalo := case when p_origem = 'manual' then interval '30 minutes' else interval '5 minutes' end;
+    select max(r.gerado_em) into v_ultimo
+      from public.crm_dados_retrato r
+     where r.organization_id = p_org;
+    if v_ultimo is not null and v_ultimo > p_agora - v_intervalo then
+      return query select v_dia, v_ultimo, false, 'recente'::text, v_ultimo + v_intervalo, 0;
+      return;
+    end if;
+  end if;
+
+  insert into public.crm_dados_retrato as r
+    (organization_id, dia, gerado_em, origem, versao_regra, fuso,
+     resumo, leads, por_dia, funil, por_etapa, motivos)
+  values
+    (p_org, v_dia, p_agora, p_origem, p_versao_regra, v_fuso,
+     coalesce(p_resumo, '{}'::jsonb), coalesce(p_leads, '[]'::jsonb),
+     coalesce(p_por_dia, '[]'::jsonb), coalesce(p_funil, '[]'::jsonb),
+     coalesce(p_por_etapa, '[]'::jsonb), coalesce(p_motivos, '[]'::jsonb))
+  on conflict (organization_id, dia) do update
+     set gerado_em = excluded.gerado_em,
+         origem = excluded.origem,
+         versao_regra = excluded.versao_regra,
+         fuso = excluded.fuso,
+         resumo = excluded.resumo,
+         leads = excluded.leads,
+         por_dia = excluded.por_dia,
+         funil = excluded.funil,
+         por_etapa = excluded.por_etapa,
+         motivos = excluded.motivos;
+
+  delete from public.crm_dados_retrato r
+   where r.organization_id = p_org
+     and r.dia < v_dia - 90;
+  get diagnostics v_apagados = row_count;
+
+  update public.crm_dados_retrato r
+     set leads = '[]'::jsonb
+   where r.organization_id = p_org
+     and r.dia < v_dia - 7
+     and r.leads <> '[]'::jsonb;
+
+  return query select v_dia, p_agora, true, 'gravado'::text, p_agora + interval '30 minutes', v_apagados;
+end;
+$fn$;
+
+comment on function public.fn_dados_gravar_retrato(uuid, text, integer, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb, boolean, timestamptz) is
+  'v3 §8 (migration 9020) + PC-037 (9034): grava o retrato do dia (no fuso da organização) por upsert; recusa o "Atualizar agora" com menos de 30 min do último e o recálculo pela ficha com menos de 5; apaga os de mais de 90 dias. Só service_role.';
+
+revoke all on function public.fn_dados_gravar_retrato(uuid, text, integer, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb, boolean, timestamptz) from public;
+revoke execute on function public.fn_dados_gravar_retrato(uuid, text, integer, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb, boolean, timestamptz) from anon, authenticated;
+grant execute on function public.fn_dados_gravar_retrato(uuid, text, integer, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb, boolean, timestamptz) to service_role;
+
+notify pgrst, 'reload schema';
+
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

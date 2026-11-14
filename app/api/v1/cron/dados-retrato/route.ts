@@ -17,6 +17,12 @@
  *    terminar (PM-027 §3: o retrato vem depois do Leitor). Quem gera o retrato,
  *    nesse caso, é o próprio fim da rodada (`lib/dados/leitor/rodadas.ts`); esta
  *    rota só o gera se a rodada passar de 3 horas aberta (`retratoEsperaOLeitor`).
+ *  - PC-037 §3: na organização com o painel pela ficha, a ficha gravada refaz o
+ *    retrato na hora, em lote de 5 minutos. A que caiu dentro do lote (ex.: a
+ *    correção do Gestor logo depois de outra) é refeita aqui, de hora em hora,
+ *    quando há ficha mais nova que o retrato de hoje ou quando o retrato está
+ *    numa régua que a chave não pede mais (`retratoPrecisaRefazer`). Entra toda
+ *    organização em que a chave já foi tocada (ligada ou desligada).
  */
 import { randomUUID } from "node:crypto";
 
@@ -25,13 +31,20 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
-import { ErroDoRetrato, gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import {
+  ErroDoRetrato,
+  gerarRetratoDaOrg,
+  refazerRetratoDoDia,
+  reguaEsperada,
+  retratoPrecisaRefazer,
+} from "@/lib/dados/gerar-retrato";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { retratoEsperaOLeitor } from "@/lib/dados/leitor/rodadas";
-import { HORA_DO_RETRATO } from "@/lib/dados/retrato";
+import { diaNoFuso, HORA_DO_RETRATO } from "@/lib/dados/retrato";
 import { logger } from "@/lib/logger";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +123,48 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok({ organizacoes: alvo.length, gerados, falhas, esperando_o_leitor: esperando }, { requestId });
+  // PC-037 §3: o fim do lote do painel pela ficha (e da troca da chave).
+  let refeitosPelaFicha = 0;
+  const { data: pelaFicha, error: ePelaFicha } = await admin
+    .from("organizations")
+    .select("id, timezone, settings")
+    .not("settings->leitor->>painel_pela_ficha", "is", null);
+  if (ePelaFicha) {
+    logger.error("[dados-retrato] não consegui listar as organizações do painel pela ficha", { requestId, message: ePelaFicha.message });
+  }
+  for (const org of ((pelaFicha ?? []) as Array<{ id: string; timezone: string | null; settings: unknown }>).filter(
+    (o) => !paradas.has(o.id),
+  )) {
+    try {
+      const dia = diaNoFuso(agora, fusoUtilizavel(org.timezone));
+      if (!(await retratoPrecisaRefazer(admin, org.id, dia, reguaEsperada(org.settings)))) continue;
+      let falhou: unknown = null;
+      const r = await refazerRetratoDoDia(admin, org.id, { agora, falhou: (e) => (falhou = e) });
+      if (falhou !== null) throw falhou;
+      if (r?.gravado) {
+        refeitosPelaFicha += 1;
+        await audit({
+          organizationId: org.id,
+          action: "dados.retrato_gerado",
+          resourceType: "crm_dados_retrato",
+          metadata: { origem: "ficha", dia: r.dia, leads: r.leads, apagados: r.apagados },
+          requestId,
+        });
+      }
+    } catch (e) {
+      falhas += 1;
+      logger.error("[dados-retrato] o painel pela ficha falhou numa organização; sigo para as outras", {
+        requestId,
+        organization_id: org.id,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  return ok(
+    { organizacoes: alvo.length, gerados, falhas, esperando_o_leitor: esperando, refeitos_pela_ficha: refeitosPelaFicha },
+    { requestId },
+  );
 }
 
 export const GET = handle;

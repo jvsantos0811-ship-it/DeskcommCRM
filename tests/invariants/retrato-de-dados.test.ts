@@ -3,6 +3,7 @@ import pg from "pg";
 
 import { calcularQualidade, sinaisDaLinha, type LinhaDaQualidade } from "@/lib/dados/qualidade";
 import { leadDoRetrato, MINUTOS_ENTRE_ATUALIZACOES, DIAS_GUARDADOS, type LinhaDoRetrato } from "@/lib/dados/retrato";
+import { MINUTOS_ENTRE_RECALCULOS_PELA_FICHA } from "@/lib/dados/gerar-retrato";
 
 /**
  * v3 §8 (migration 9020) — O RETRATO DIÁRIO DE DADOS, contra o Postgres do baseline.
@@ -378,6 +379,24 @@ describe("9020 — upsert, intervalo de 30 minutos e limpeza", () => {
     const rs = await retratos(LIMPEZA);
     expect(rs.map((r) => r.dia)).toEqual(["2026-08-07", "2026-10-28", "2026-10-29", "2026-11-05"]);
     expect(rs.map((r) => (r.leads as unknown[]).length)).toEqual([0, 0, 1, 1]);
+  });
+
+  it(`9034 — recálculo pela ficha: recusado antes de ${MINUTOS_ENTRE_RECALCULOS_PELA_FICHA} min do último retrato, aceito depois`, async () => {
+    await pool.query(`delete from crm_dados_retrato where organization_id = $1`, [LIMPEZA]);
+    const base = Date.parse("2026-11-06T10:00:00Z");
+    expect((await gravar(LIMPEZA, "cron", new Date(base).toISOString(), true)).gravado).toBe(true);
+    const quase = new Date(base + (MINUTOS_ENTRE_RECALCULOS_PELA_FICHA - 1) * 60_000).toISOString();
+    const r1 = await gravar(LIMPEZA, "ficha", quase);
+    expect(r1).toMatchObject({ gravado: false, motivo: "recente" });
+    expect(new Date(r1.proximo_em!).toISOString()).toBe(new Date(base + MINUTOS_ENTRE_RECALCULOS_PELA_FICHA * 60_000).toISOString());
+    const passou = new Date(base + (MINUTOS_ENTRE_RECALCULOS_PELA_FICHA + 1) * 60_000).toISOString();
+    const r2 = await gravar(LIMPEZA, "ficha", passou);
+    expect(r2).toMatchObject({ gravado: true, motivo: "gravado" });
+    const rs = await retratos(LIMPEZA);
+    expect(rs).toHaveLength(1);
+    expect(rs[0]!.origem).toBe("ficha");
+    // O "Atualizar agora" segue com os 30 minutos dele, contados do último retrato (o da ficha).
+    expect(await gravar(LIMPEZA, "manual", new Date(Date.parse(passou) + 60_000).toISOString())).toMatchObject({ motivo: "recente" });
   });
 
   it("origem fora do vocabulário é recusada", async () => {

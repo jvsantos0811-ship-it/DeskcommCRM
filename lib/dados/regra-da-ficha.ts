@@ -159,7 +159,11 @@ export function acaoDaFicha(e: EntradaDaRegra, s: SituacaoDaFicha, t: Temperatur
   if (s === "Sem caso" || s === "Sem requisito" || s === "Recusou" || s === "Já atendido por outro") {
     return { tipo: "orientar_e_encerrar" };
   }
-  if (s === "Aguardando evento" && f.aguardando) return { tipo: "chamar_depois", evento: textoDoAguardando(f.aguardando) };
+  if (s === "Aguardando evento" && f.aguardando) {
+    // 06/11 (caso B14/EQ2): se o escritório deve resposta, responder vem antes de esperar o evento.
+    if (f.proximo_passo_com === "escritorio") return { tipo: "equipe_responder_hoje" };
+    return { tipo: "chamar_depois", evento: textoDoAguardando(f.aguardando) };
+  }
   if (t === "Quente") return { tipo: "ligar_hoje" };
   if (f.proximo_passo_com === "escritorio") return { tipo: "equipe_responder_hoje" };
   if (t === "Morno") {

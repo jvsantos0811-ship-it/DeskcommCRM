@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { linkDoFunil, valorEsperado, variacao } from "@/lib/dados/retrato";
 import type { RespostaDaQualidade } from "@/lib/dados/resposta";
+import { REGUA_PELA_FICHA } from "@/lib/dados/retrato-pela-ficha";
 
 import {
   CartaoDeNumero,
@@ -104,7 +105,10 @@ export function AbaDinheiro({ dados }: { dados: RespostaDaQualidade }) {
           rotulo={t("Esfriou")}
           valor={brl(r.esfriou_cents)}
           onClick={() => setLista(lista === "esfriou" ? null : "esfriou")}
-          complemento={t("{n} leads conversaram 3 vezes ou mais e estão frios").replace("{n}", String(r.esfriou_leads))}
+          complemento={(r.versao_regra === REGUA_PELA_FICHA
+            ? t("{n} leads contaram o caso e estão frios")
+            : t("{n} leads conversaram 3 vezes ou mais e estão frios")
+          ).replace("{n}", String(r.esfriou_leads))}
         />
       </section>
 
@@ -120,7 +124,7 @@ export function AbaDinheiro({ dados }: { dados: RespostaDaQualidade }) {
             vazio={t("Nenhum lead neste grupo.")}
             colunas={[
               { titulo: t("Lead"), celula: (l) => <span className="whitespace-nowrap font-semibold">{nomeDoLead(l, t)}</span> },
-              { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} /> },
+              { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} status={l.status} ficha={l.ficha} /> },
               { titulo: t("Situação"), celula: (l) => <span className="text-xs">{l.situacoes.map((s) => rotuloDaSituacao(s, t)).join(" · ") || t("Esfriou")}</span> },
               { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },
               { titulo: t("Valor do caso"), direita: true, celula: (l) => brl(l.valor_cents) },
@@ -206,7 +210,7 @@ export function AbaDinheiro({ dados }: { dados: RespostaDaQualidade }) {
           vazio={t("Nenhum lead aberto com valor ainda.")}
           colunas={[
             { titulo: t("Lead"), celula: (l) => <span className="whitespace-nowrap font-semibold">{nomeDoLead(l, t)}</span> },
-            { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} /> },
+            { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} status={l.status} ficha={l.ficha} /> },
             { titulo: interesse, celula: (l) => <span className="whitespace-nowrap">{l.interesse ?? t("Não identificado")}</span> },
             { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },
             { titulo: t("Valor do caso"), direita: true, celula: (l) => brl(l.valor_cents) },

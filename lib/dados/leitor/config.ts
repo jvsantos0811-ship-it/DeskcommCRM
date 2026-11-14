@@ -52,6 +52,12 @@ export const configDoLeitorSchema = z.object({
   reserva: modeloSchema.nullable().default(null),
   prefixos_de_anuncio: z.array(z.string().trim().min(1).max(20)).max(20).default([]),
   termo_do_contrato: z.string().trim().min(1).max(40).default("contrato"),
+  /**
+   * Regra v2 + PC-037: o painel de Dados conta pela FICHA (situação, temperatura,
+   * qualidade e ação da regra fixa) em vez de contar mensagens. Desligado por
+   * padrão; só vale com o Leitor lendo (`painelPelaFicha`).
+   */
+  painel_pela_ficha: z.boolean().default(false),
 });
 export type ConfigDoLeitor = z.infer<typeof configDoLeitorSchema>;
 
@@ -63,6 +69,7 @@ export const CONFIG_PADRAO: ConfigDoLeitor = {
   reserva: null,
   prefixos_de_anuncio: [],
   termo_do_contrato: "contrato",
+  painel_pela_ficha: false,
 };
 
 /** Lê a configuração do `settings` da organização. Nunca lança: inválida vira desligada. */
@@ -79,8 +86,19 @@ export function configDoLeitor(settings: unknown): ConfigDoLeitor {
     reserva: b.reserva,
     prefixos_de_anuncio: b.prefixos_de_anuncio,
     termo_do_contrato: b.termo_do_contrato,
+    painel_pela_ficha: b.painel_pela_ficha,
   });
   return r.success ? r.data : CONFIG_PADRAO;
+}
+
+/**
+ * O painel de Dados desta organização conta pela ficha (régua v2)? Só quando o
+ * dono ligou a chave E o Leitor não está desligado: sem leitura, a régua v2
+ * mostraria todo mundo "sem leitura".
+ */
+export function painelPelaFicha(settings: unknown): boolean {
+  const c = configDoLeitor(settings);
+  return c.painel_pela_ficha && escolhaDaOrg(c) !== "desligado";
 }
 
 // ─── o padrão da instalação e a configuração efetiva ───────────────────────

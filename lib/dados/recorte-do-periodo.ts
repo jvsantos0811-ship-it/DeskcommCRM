@@ -36,6 +36,8 @@ export function recortarPeloPeriodo(
       moeda: c.resumo.moeda,
       tipos: c.resumo.tipos ?? [],
       etapas,
+      // A régua do retrato inteiro: o recorte vazio de um retrato pela ficha segue pela ficha.
+      regua: c.resumo.versao_regra,
     },
     diasDoPeriodo(p).slice(-DIAS_NO_GRAFICO_DO_PERIODO),
   );

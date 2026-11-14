@@ -105,6 +105,21 @@ describe("casos novos do Gestor que a regra decide sozinha", () => {
     expect(textoDaAcao(r.acao, semTraducao)).toBe("Chamar depois: avaliação · 12/11 10h");
   });
 
+  it("B14/EQ2 (06/11): aguardando evento e o escritório deve resposta → responder hoje vem antes de esperar", () => {
+    const e: EntradaDaRegra = {
+      ...base,
+      ficha: {
+        ...base.ficha,
+        interesse: "Implante",
+        aguardando: { evento: "avaliação", data: "12/11 10h" },
+        proximo_passo_com: "escritorio",
+      },
+    };
+    const r = classificarFicha(e, AGORA);
+    expect([r.situacao, r.temperatura]).toEqual(["Aguardando evento", "Agendado"]);
+    expect(textoDaAcao(r.acao, semTraducao)).toBe("Escritório responder hoje");
+  });
+
   it("sem funil de clientes na organização, a ação não inventa nome", () => {
     const e: EntradaDaRegra = { ...base, ficha: { ...base.ficha, contato: "cliente" } };
     expect(textoDaAcao(classificarFicha(e, AGORA).acao, semTraducao)).toBe("Mover para o funil de clientes");

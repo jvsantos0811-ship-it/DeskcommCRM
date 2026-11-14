@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { finalDoTelefone, linkDoFunil, type FiltroDoPainel } from "@/lib/dados/retrato";
+import { chaveForaDaNota, type FichaNoRetrato } from "@/lib/dados/retrato-pela-ficha";
 import type { LeadNaTela } from "@/lib/dados/resposta";
 import type { Nivel, Situacao, Temperatura } from "@/lib/dados/qualidade";
 import { estiloDoNivel, rotuloDaParcela } from "@/components/kanban/SeloDaNota";
@@ -217,14 +218,43 @@ export function NumeroNoFunil({
   );
 }
 
-export function SeloDoNivel({ nivel, nota }: { nivel: Nivel | null; nota: number }) {
+/** O rótulo das chaves da régua v2 para o lead aberto sem nível de venda. */
+export function rotuloForaDaNota(k: string, t: T): string | null {
+  if (k === "sem_leitura") return t("Sem leitura");
+  if (k === "agendado") return t("Agendado");
+  if (k === "fora_do_funil") return t("Fora do funil de venda");
+  return null;
+}
+
+/**
+ * O selo do nível. Régua v2 (`ficha` presente, objeto ou nulo): sem a nota antiga,
+ * e o aberto sem nível aparece como "Sem leitura", "Agendado" ou "Fora do funil de
+ * venda" — nunca como "Fechado".
+ */
+export function SeloDoNivel({
+  nivel,
+  nota,
+  status,
+  ficha,
+}: {
+  nivel: Nivel | null;
+  nota: number;
+  status?: "open" | "won" | "lost";
+  ficha?: FichaNoRetrato | null;
+}) {
   const t = useT();
   if (!nivel) {
-    return <span className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-text-muted">{t("Fechado")}</span>;
+    const chave = status ? chaveForaDaNota({ status, ficha }) : null;
+    const rotulo = chave ? rotuloForaDaNota(chave, t) : null;
+    return (
+      <span className="inline-flex whitespace-nowrap rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-text-muted">
+        {rotulo ?? (ficha !== undefined && status === "lost" ? t("Desqualificado") : t("Fechado"))}
+      </span>
+    );
   }
   return (
     <span className="inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold" style={estiloDoNivel(nivel)}>
-      {nivel} · {nota}
+      {ficha === undefined ? `${nivel} · ${nota}` : nivel}
     </span>
   );
 }

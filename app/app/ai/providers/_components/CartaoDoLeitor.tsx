@@ -20,6 +20,10 @@
  * PC-036: o dono da instalação pode pôr a empresa na leitura PELO CLAUDE — uma
  * tarefa agendada da agência lê pela porta Ficha e o CRM não chama modelo. O
  * cartão diz isso e mostra a última rodada do Claude; só o dono liga e desliga.
+ *
+ * Regra v2 + PC-037: o admin liga o "painel de Dados pela ficha" (régua v2) —
+ * Situação, Temperatura, Qualidade e Ação saem da ficha, não da contagem de
+ * mensagens. Desligado por padrão; só liga com o Leitor lendo.
  */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -127,6 +131,21 @@ export function CartaoDoLeitor() {
     const m = porChave.get(k);
     return m ? { provider: m.provider, model_id: m.model_id } : null;
   };
+
+  /** Liga ou desliga o painel de Dados pela ficha (régua v2). */
+  function salvarPainel(ligar: boolean) {
+    startTransition(async () => {
+      try {
+        await apiClient.patch<{ data: unknown }>("/api/v1/ai/leitor", { painel_pela_ficha: ligar });
+        toast.success(
+          ligar ? t("O painel de Dados passa a contar pela ficha.") : t("O painel de Dados volta a contar mensagens."),
+        );
+        await carregar();
+      } catch (err) {
+        toast.error(err instanceof Error ? t(err.message) : t("Não consegui salvar."));
+      }
+    });
+  }
 
   /** `escolha` ausente = só os prefixos e o termo mudam. */
   function salvar(escolha: EscolhaDoLeitor | null) {
@@ -255,6 +274,26 @@ export function CartaoDoLeitor() {
           {ultimaRodada}
         </p>
       ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2" data-testid="leitor-painel-pela-ficha">
+        <p className="text-xs">
+          <span className="font-semibold">{t("Painel de Dados:")}</span>{" "}
+          {dados.config.painel_pela_ficha && origem !== "desligado"
+            ? t("conta pela ficha (régua v2: situação, temperatura, qualidade e ação da leitura da conversa).")
+            : t("conta mensagens (régua v1).")}
+        </p>
+        {dados.podeEditar && origem !== "desligado" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={salvando}
+            data-testid="leitor-painel-pela-ficha-alternar"
+            onClick={() => salvarPainel(!dados.config.painel_pela_ficha)}
+          >
+            {dados.config.painel_pela_ficha ? t("Voltar a contar mensagens") : t("Contar pela ficha")}
+          </Button>
+        ) : null}
+      </div>
       {semChave ? (
         <p className="rounded-md border border-border bg-muted/40 p-2 text-xs" data-testid="leitor-sem-chave">
           {semChave}
