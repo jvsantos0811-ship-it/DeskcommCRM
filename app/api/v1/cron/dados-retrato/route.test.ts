@@ -23,11 +23,21 @@ const esperaOLeitor = vi.fn(async (..._a: unknown[]) => false);
 vi.mock("@/lib/dados/leitor/rodadas", () => ({ retratoEsperaOLeitor: (...a: unknown[]) => esperaOLeitor(...a) }));
 vi.mock("@/lib/dados/gerar-retrato", async (importOriginal) => {
   const real = await importOriginal<typeof GerarRetrato>();
-  return { ...real, gerarRetratoDaOrg: vi.fn() };
+  return {
+    ...real,
+    gerarRetratoDaOrg: vi.fn(),
+    fichaMaisNovaQueORetrato: vi.fn(async () => false),
+    refazerRetratoPelaFicha: vi.fn(),
+  };
 });
 
 import { audit } from "@/lib/audit";
-import { ErroDoRetrato, gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import {
+  ErroDoRetrato,
+  fichaMaisNovaQueORetrato,
+  gerarRetratoDaOrg,
+  refazerRetratoPelaFicha,
+} from "@/lib/dados/gerar-retrato";
 import { HORA_DO_RETRATO } from "@/lib/dados/retrato";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -37,7 +47,10 @@ const B = "22222222-2222-4222-8222-222222222222";
 const PARADA = "33333333-3333-4333-8333-333333333333";
 
 let pedidoAoBanco: Record<string, unknown> | null = null;
-function admin(lista: Array<{ organization_id: string; dia: string }>) {
+function admin(
+  lista: Array<{ organization_id: string; dia: string }>,
+  pelaFicha: Array<{ id: string; timezone: string | null }> = [],
+) {
   return {
     rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
       pedidoAoBanco = { fn, ...args };
@@ -46,6 +59,8 @@ function admin(lista: Array<{ organization_id: string; dia: string }>) {
     from: () => ({
       select: () => ({
         in: async (_col: string, ids: string[]) => ({ data: ids.map((id) => ({ id, settings: {}, timezone: null })), error: null }),
+        // PC-037 §3: as organizações com `leitor.painel_pela_ficha` ligado.
+        eq: async (_col: string, _v: string) => ({ data: pelaFicha, error: null }),
       }),
     }),
   };
@@ -141,5 +156,29 @@ describe("cron dados-retrato", () => {
     const corpo = (await (await GET(pedido())).json()) as { data: Record<string, number> };
     expect(vi.mocked(gerarRetratoDaOrg).mock.calls.map((c) => c[1])).toEqual([B]);
     expect(corpo.data).toMatchObject({ gerados: 1, esperando_o_leitor: 1 });
+  });
+
+  it("PC-037: refaz pela ficha só a organização com ficha mais nova que o retrato, pula a parada, e audita com origem ficha", async () => {
+    vi.mocked(idsDeOrgsParadas).mockResolvedValueOnce([PARADA]);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [],
+        [
+          { id: A, timezone: "America/Sao_Paulo" },
+          { id: B, timezone: null },
+          { id: PARADA, timezone: null },
+        ],
+      ) as never,
+    );
+    vi.mocked(fichaMaisNovaQueORetrato).mockImplementation(async (_db, org) => org === A);
+    vi.mocked(refazerRetratoPelaFicha).mockResolvedValueOnce(gravado(true));
+    const { GET } = await import("./route");
+    const corpo = (await (await GET(pedido())).json()) as { data: Record<string, number> };
+    expect(vi.mocked(fichaMaisNovaQueORetrato).mock.calls.map((c) => c[1])).toEqual([A, B]);
+    expect(vi.mocked(refazerRetratoPelaFicha).mock.calls.map((c) => c[1])).toEqual([A]);
+    expect(corpo.data).toMatchObject({ refeitos_pela_ficha: 1 });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: A, action: "dados.retrato_gerado", metadata: expect.objectContaining({ origem: "ficha" }) }),
+    );
   });
 });
