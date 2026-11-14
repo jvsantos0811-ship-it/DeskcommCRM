@@ -19,12 +19,12 @@ import { NIVEIS, type Nivel } from "@/lib/dados/qualidade";
 import {
   FORA_DA_VENDA,
   SITUACOES_DA_FICHA,
-  textoDaAcao,
   textoDoAlerta,
   type SituacaoDaFicha,
   type TemperaturaDaFicha,
 } from "@/lib/dados/regra-da-ficha";
 import { variacao } from "@/lib/dados/retrato";
+import { textoDaAcaoNoRetrato } from "@/lib/dados/retrato-pela-ficha";
 import type { LeadNaTela, RespostaDaQualidade } from "@/lib/dados/resposta";
 import { cn } from "@/lib/utils";
 
@@ -78,7 +78,8 @@ function rotuloDaSituacaoDaFicha(s: SituacaoDaFicha, t: (x: string) => string): 
     case "Em qualificação":
       return t("Em qualificação");
     case "Sem leitura":
-      return t("Sem leitura");
+      // A SITUAÇÃO da ficha (o Leitor leu e não entendeu) — não confundir com o lead não lido.
+      return t("Ilegível");
     case "Só chegou":
       return t("Só chegou");
   }
@@ -92,6 +93,8 @@ export function AbaQualidadePelaFicha({ dados }: { dados: RespostaDaQualidade })
   const t = useT();
   const r = dados.resumo!;
   const pf = r.pela_ficha;
+  // As porcentagens da PC-037 são SOBRE OS LIDOS: lead sem ficha não é "não respondeu".
+  const lidos = pf?.lidos ?? 0;
   const pid = dados.pipeline_id;
   const interesse = dados.rotulo_do_interesse ?? t("Interesse");
   const [selecao, setSelecao] = useState<Selecao>({ tipo: "nivel", valor: "A" });
@@ -176,12 +179,12 @@ export function AbaQualidadePelaFicha({ dados }: { dados: RespostaDaQualidade })
         />
         <CartaoDeNumero
           rotulo={t("Responderam com as próprias palavras")}
-          valor={`${pct(r.responderam, r.leads)}%`}
-          complemento={t("{a} de {b}").replace("{a}", String(r.responderam)).replace("{b}", String(r.leads))}
+          valor={`${pct(r.responderam, lidos)}%`}
+          complemento={t("{a} de {b} lidos").replace("{a}", String(r.responderam)).replace("{b}", String(lidos))}
         />
         <CartaoDeNumero
           rotulo={t("Engajados (contaram o caso)")}
-          valor={`${pct(r.engajados, r.leads)}%`}
+          valor={`${pct(r.engajados, lidos)}%`}
           complemento={
             <>
               {t("{n} leads").replace("{n}", String(r.engajados))} ·{" "}
@@ -191,7 +194,7 @@ export function AbaQualidadePelaFicha({ dados }: { dados: RespostaDaQualidade })
         />
         <CartaoDeNumero
           rotulo={`${interesse} ${t("identificado na conversa")}`}
-          valor={`${pct(r.interesse_identificado, r.leads)}%`}
+          valor={`${pct(r.interesse_identificado, lidos)}%`}
           complemento={
             <>
               {t("{n} leads").replace("{n}", String(r.interesse_identificado))} ·{" "}
@@ -319,7 +322,7 @@ export function AbaQualidadePelaFicha({ dados }: { dados: RespostaDaQualidade })
                   </span>
                 ),
               },
-              { titulo: t("Ação"), celula: (l: LeadNaTela) => <span className="text-xs">{l.ficha ? textoDaAcao(l.ficha.acao, t) : t("Aguardando a leitura")}</span> },
+              { titulo: t("Ação"), celula: (l: LeadNaTela) => <span className="text-xs">{l.ficha ? textoDaAcaoNoRetrato(l.ficha.acao, t) : t("Aguardando a leitura")}</span> },
               {
                 titulo: t("Alertas"),
                 celula: (l: LeadNaTela) => (

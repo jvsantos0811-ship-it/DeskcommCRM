@@ -14,8 +14,11 @@
  *   - Interesse  = a ficha aponta um tipo de lead (o que o lead contou, não o anúncio).
  *
  * Puro: nada de banco nem de relógio (o `agora` vem por parâmetro). O retrato
- * guarda só o que a regra devolve — nunca as provas da ficha, que são trechos da
- * conversa (LGPD: o retrato não guarda texto de conversa).
+ * guarda só CÓDIGOS do que a regra devolve — nunca texto livre tirado da
+ * conversa (LGPD: o retrato não guarda texto de conversa, e não é limpo pela
+ * anonimização). Por isso a ação vai só com o tipo (`AcaoNoRetrato`), sem o
+ * evento esperado nem o que falta, e o interesse só quando é um tipo do catálogo.
+ * O detalhe mora na ficha (`crm_lead_ficha`), que a anonimização apaga.
  */
 import type { FatosDoBanco, FichaDoLeitor } from "./ficha";
 import { INTERESSE_A_CONFIRMAR } from "./ficha";
@@ -24,6 +27,7 @@ import {
   classificarFicha,
   FORA_DA_VENDA,
   SITUACOES_DA_FICHA,
+  textoDaAcao,
   type AcaoDaFicha,
   type AlertaDaFicha,
   type QualidadeDaFicha,
@@ -36,14 +40,42 @@ import type { Nivel, Temperatura } from "./qualidade";
 export const REGUA_POR_MENSAGENS = 1;
 export const REGUA_PELA_FICHA = 2;
 
-/** O que o retrato guarda de cada lead lido: só o que a regra fixa devolve. */
+/**
+ * A ação como o retrato a guarda: só o tipo (e se falta confirmar a assinatura).
+ * O texto do evento esperado e do que falta sai da conversa ("perícia do INSS",
+ * "o problema de saúde") — fica na ficha, nunca no retrato.
+ */
+export interface AcaoNoRetrato {
+  tipo: AcaoDaFicha["tipo"];
+  confirmar_assinatura?: boolean;
+}
+
+export function acaoNoRetrato(a: AcaoDaFicha): AcaoNoRetrato {
+  return a.tipo === "mover_para_clientes" ? { tipo: a.tipo, confirmar_assinatura: a.confirmarAssinatura } : { tipo: a.tipo };
+}
+
+/** O texto da ação no painel, sem o detalhe que só a ficha tem. */
+export function textoDaAcaoNoRetrato(a: AcaoNoRetrato, t: (s: string) => string, funilDeClientes: string | null = null): string {
+  switch (a.tipo) {
+    case "chamar_depois":
+      return t("Chamar depois do evento esperado");
+    case "retomar":
+      return t("Retomar a conversa");
+    case "mover_para_clientes":
+      return textoDaAcao({ tipo: a.tipo, confirmarAssinatura: a.confirmar_assinatura === true }, t, funilDeClientes);
+    default:
+      return textoDaAcao({ tipo: a.tipo } as AcaoDaFicha, t, funilDeClientes);
+  }
+}
+
+/** O que o retrato guarda de cada lead lido: só os códigos que a regra fixa devolve. */
 export interface FichaNoRetrato {
   situacao: SituacaoDaFicha;
   temperatura: TemperaturaDaFicha;
   qualidade: QualidadeDaFicha;
-  acao: AcaoDaFicha;
+  acao: AcaoNoRetrato;
   alertas: AlertaDaFicha[];
-  /** O tipo de lead que a conversa indica; nulo quando nada indica ou "a confirmar". */
+  /** O tipo de lead DO CATÁLOGO que a conversa indica; nulo quando nada indica, "a confirmar" ou fora do catálogo. */
   interesse: string | null;
   palavras_proprias: boolean;
   contou_o_caso: FichaDoLeitor["contou_o_caso"];
@@ -53,8 +85,10 @@ export interface FichaNoRetrato {
 export interface EntradaPelaFicha {
   /** A ficha de cada lead (só as que passam no schema central). */
   fichas: Map<string, FichaDoLeitor>;
-  /** Leads com outro card aberto do mesmo contato, criado antes. */
+  /** Leads com outro negócio com potencial do mesmo contato, criado antes (a mesma régua do Leitor). */
   duplicados: Set<string>;
+  /** Os tipos de lead do catálogo: só eles valem como interesse (o resto é texto livre e não vai ao retrato). */
+  tipos?: ReadonlySet<string>;
 }
 
 /** Os fatos de uma linha do retrato que a regra fixa usa ao lado da ficha. */
@@ -78,15 +112,21 @@ export function fatosDoBancoDaLinha(f: FatosDaLinha): FatosDoBanco {
   };
 }
 
-/** A regra fixa aplicada a um lead lido. */
-export function fichaNoRetrato(ficha: FichaDoLeitor, banco: FatosDoBanco, agora: Date): FichaNoRetrato {
+/** A regra fixa aplicada a um lead lido. `tipos` = os tipos de lead do catálogo da organização. */
+export function fichaNoRetrato(
+  ficha: FichaDoLeitor,
+  banco: FatosDoBanco,
+  agora: Date,
+  tipos: ReadonlySet<string> = new Set(),
+): FichaNoRetrato {
   const c = classificarFicha({ ficha, banco }, agora);
-  const interesse = ficha.interesse && ficha.interesse !== INTERESSE_A_CONFIRMAR ? ficha.interesse : null;
+  const interesse =
+    ficha.interesse && ficha.interesse !== INTERESSE_A_CONFIRMAR && tipos.has(ficha.interesse) ? ficha.interesse : null;
   return {
     situacao: c.situacao,
     temperatura: c.temperatura,
     qualidade: c.qualidade,
-    acao: c.acao,
+    acao: acaoNoRetrato(c.acao),
     alertas: [...c.alertas],
     interesse,
     palavras_proprias: ficha.palavras_proprias,
@@ -111,6 +151,28 @@ export function temperaturaPelaFicha(f: FichaNoRetrato | null): Temperatura | nu
 
 export function foraDaVenda(f: FichaNoRetrato | null | undefined): boolean {
   return Boolean(f && FORA_DA_VENDA.has(f.situacao));
+}
+
+/**
+ * Régua v2: o grupo do lead ABERTO que não tem nível nem temperatura de venda —
+ * para as listas e o Explorar não o chamarem de "Fechado" nem de "desqualificado".
+ * Nulo quando o lead tem nível/temperatura (ou não é aberto, ou é régua v1).
+ */
+export type ChaveForaDaNota = "sem_leitura" | "agendado" | "fora_do_funil";
+export const CHAVES_FORA_DA_NOTA: readonly ChaveForaDaNota[] = ["agendado", "fora_do_funil", "sem_leitura"];
+
+export function chaveForaDaNota(l: { status: string; ficha?: FichaNoRetrato | null }): ChaveForaDaNota | null {
+  if (l.status !== "open" || l.ficha === undefined) return null;
+  if (l.ficha === null) return "sem_leitura";
+  if (foraDaVenda(l.ficha)) return "fora_do_funil";
+  if (l.ficha.temperatura === "Agendado") return "agendado";
+  return null;
+}
+
+/** Régua v2: esfriou = contou o caso (sim ou parcial) e a regra diz Frio. Nada de contar mensagem. */
+export function esfriouPelaFicha(f: FichaNoRetrato | null | undefined): boolean {
+  if (!f || foraDaVenda(f)) return false;
+  return f.temperatura === "Frio" && (f.contou_o_caso === "sim" || f.contou_o_caso === "parcial");
 }
 
 /** O lead de que os contadores precisam. */

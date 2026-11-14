@@ -26,18 +26,13 @@ vi.mock("@/lib/dados/gerar-retrato", async (importOriginal) => {
   return {
     ...real,
     gerarRetratoDaOrg: vi.fn(),
-    fichaMaisNovaQueORetrato: vi.fn(async () => false),
-    refazerRetratoPelaFicha: vi.fn(),
+    retratoPrecisaRefazer: vi.fn(async () => false),
+    refazerRetratoDoDia: vi.fn(),
   };
 });
 
 import { audit } from "@/lib/audit";
-import {
-  ErroDoRetrato,
-  fichaMaisNovaQueORetrato,
-  gerarRetratoDaOrg,
-  refazerRetratoPelaFicha,
-} from "@/lib/dados/gerar-retrato";
+import { ErroDoRetrato, gerarRetratoDaOrg, refazerRetratoDoDia, retratoPrecisaRefazer } from "@/lib/dados/gerar-retrato";
 import { HORA_DO_RETRATO } from "@/lib/dados/retrato";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -49,7 +44,7 @@ const PARADA = "33333333-3333-4333-8333-333333333333";
 let pedidoAoBanco: Record<string, unknown> | null = null;
 function admin(
   lista: Array<{ organization_id: string; dia: string }>,
-  pelaFicha: Array<{ id: string; timezone: string | null }> = [],
+  pelaFicha: Array<{ id: string; timezone: string | null; settings: unknown }> = [],
 ) {
   return {
     rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
@@ -59,8 +54,8 @@ function admin(
     from: () => ({
       select: () => ({
         in: async (_col: string, ids: string[]) => ({ data: ids.map((id) => ({ id, settings: {}, timezone: null })), error: null }),
-        // PC-037 §3: as organizações com `leitor.painel_pela_ficha` ligado.
-        eq: async (_col: string, _v: string) => ({ data: pelaFicha, error: null }),
+        // PC-037 §3: as organizações em que a chave `leitor.painel_pela_ficha` já foi tocada.
+        not: async (_col: string, _op: string, _v: unknown) => ({ data: pelaFicha, error: null }),
       }),
     }),
   };
@@ -158,27 +153,45 @@ describe("cron dados-retrato", () => {
     expect(corpo.data).toMatchObject({ gerados: 1, esperando_o_leitor: 1 });
   });
 
-  it("PC-037: refaz pela ficha só a organização com ficha mais nova que o retrato, pula a parada, e audita com origem ficha", async () => {
+  it("PC-037: refaz só a organização cujo retrato precisa (ficha mais nova ou régua trocada), pula a parada, e audita com origem ficha", async () => {
     vi.mocked(idsDeOrgsParadas).mockResolvedValueOnce([PARADA]);
+    const ligada = { leitor: { escolha: "claude", painel_pela_ficha: true } };
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
         [],
         [
-          { id: A, timezone: "America/Sao_Paulo" },
-          { id: B, timezone: null },
-          { id: PARADA, timezone: null },
+          { id: A, timezone: "America/Sao_Paulo", settings: ligada },
+          { id: B, timezone: null, settings: { leitor: { painel_pela_ficha: false } } },
+          { id: PARADA, timezone: null, settings: ligada },
         ],
       ) as never,
     );
-    vi.mocked(fichaMaisNovaQueORetrato).mockImplementation(async (_db, org) => org === A);
-    vi.mocked(refazerRetratoPelaFicha).mockResolvedValueOnce(gravado(true));
+    vi.mocked(retratoPrecisaRefazer).mockImplementation(async (_db, org) => org === A);
+    vi.mocked(refazerRetratoDoDia).mockResolvedValueOnce(gravado(true));
     const { GET } = await import("./route");
     const corpo = (await (await GET(pedido())).json()) as { data: Record<string, number> };
-    expect(vi.mocked(fichaMaisNovaQueORetrato).mock.calls.map((c) => c[1])).toEqual([A, B]);
-    expect(vi.mocked(refazerRetratoPelaFicha).mock.calls.map((c) => c[1])).toEqual([A]);
+    expect(vi.mocked(retratoPrecisaRefazer).mock.calls.map((c) => [c[1], c[3]])).toEqual([
+      [A, 2],
+      [B, 1],
+    ]);
+    expect(vi.mocked(refazerRetratoDoDia).mock.calls.map((c) => c[1])).toEqual([A]);
     expect(corpo.data).toMatchObject({ refeitos_pela_ficha: 1 });
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: A, action: "dados.retrato_gerado", metadata: expect.objectContaining({ origem: "ficha" }) }),
     );
+  });
+
+  it("PC-037: o refazer que falha conta como falha e não para o cron", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin([], [{ id: A, timezone: null, settings: { leitor: { escolha: "claude", painel_pela_ficha: true } } }]) as never,
+    );
+    vi.mocked(retratoPrecisaRefazer).mockResolvedValueOnce(true);
+    vi.mocked(refazerRetratoDoDia).mockImplementationOnce(async (_db, _org, opts) => {
+      opts?.falhou?.(new Error("caiu"));
+      return null;
+    });
+    const { GET } = await import("./route");
+    const corpo = (await (await GET(pedido())).json()) as { data: Record<string, number> };
+    expect(corpo.data).toMatchObject({ refeitos_pela_ficha: 0, falhas: 1 });
   });
 });

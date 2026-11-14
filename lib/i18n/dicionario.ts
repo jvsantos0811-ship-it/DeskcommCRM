@@ -1550,6 +1550,12 @@ export const DICIONARIO: Traducoes = {
   "Ler pelo Claude (tarefa da agência)": { es: "Leer con Claude (tarea de la agencia)" },
   "Parar a leitura pelo Claude": { es: "Detener la lectura con Claude" },
   // Regra v2 + PC-037: o painel de Dados pela ficha.
+  // Revisão do PR #62: ação sem texto livre no retrato, porcentagens sobre os lidos.
+  "Ilegível": { es: "Ilegible" },
+  "Retomar a conversa": { es: "Retomar la conversación" },
+  "Chamar depois do evento esperado": { es: "Contactar después del evento esperado" },
+  "{a} de {b} lidos": { es: "{a} de {b} leídos" },
+  "{n} leads contaram o caso e estão frios": { es: "{n} leads contaron su caso y están fríos" },
   "Não é lead": { es: "No es lead" },
   "Já é cliente": { es: "Ya es cliente" },
   "Duplicado": { es: "Duplicado" },

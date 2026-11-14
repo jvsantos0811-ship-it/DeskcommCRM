@@ -37,11 +37,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { CHAVE_DO_ALCANCE } from "@/lib/dados/alcance-do-leitor";
 import { configDoLeitor, configEfetivaDoLeitor, ESCOLHAS_DO_LEITOR, type EscolhaDoLeitor } from "@/lib/dados/leitor/config";
-import { gerarRetratoDaOrg } from "@/lib/dados/gerar-retrato";
+import { refazerRetratoDoDia } from "@/lib/dados/gerar-retrato";
 import { conferirEscolha, dadosDoLeitor, type RecusaDoLeitor } from "@/lib/dados/leitor/leitor-da-org";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { ultimaRodadaDoClaude } from "@/lib/dados/leitor/pelo-claude";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -229,15 +230,20 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     },
   });
 
-  // A régua do painel mudou: o retrato do dia é refeito na hora. Falhar aqui não
-  // desfaz a configuração; o cron de hora em hora e o "Atualizar agora" refazem.
+  // A régua do painel mudou: o retrato do dia é refeito na hora (depois das 06:00
+  // e fora do lote de 5 minutos). Falhar aqui não desfaz a configuração; o cron
+  // de hora em hora refaz o retrato que ficou na régua velha (`retratoPrecisaRefazer`).
   let painelRefeito = false;
   if (antes.painel_pela_ficha !== painelPelaFicha || (painelPelaFicha && mudouAEscolha)) {
-    try {
-      painelRefeito = (await gerarRetratoDaOrg(admin, orgId, "ficha")).gravado;
-    } catch {
-      painelRefeito = false;
-    }
+    const r = await refazerRetratoDoDia(admin, orgId, {
+      falhou: (e) =>
+        logger.warn("[leitor] a régua do painel mudou e o retrato não foi refeito; o cron refaz", {
+          requestId,
+          organization_id: orgId,
+          message: e instanceof Error ? e.message : String(e),
+        }),
+    });
+    painelRefeito = r?.gravado === true;
   }
   return ok({ config: novaEfetiva, painel_refeito: painelRefeito }, { requestId });
 }

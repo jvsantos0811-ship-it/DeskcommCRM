@@ -15,12 +15,14 @@ import {
   type Medida,
 } from "@/lib/dados/retrato";
 import type { PeriodoPedido } from "@/lib/dados/periodo";
+import { REGUA_PELA_FICHA } from "@/lib/dados/retrato-pela-ficha";
 import type { RespostaDaQualidade } from "@/lib/dados/resposta";
 import { cn } from "@/lib/utils";
 
 import { MedidaMotivoDePerda } from "./MedidaMotivoDePerda";
 import { MedidaParouAntes } from "./MedidaParouAntes";
-import { nomeDoLead, rotuloDaOrigem, rotuloDaTemperatura, Secao, SeloDoNivel, TabelaDeLeads, useDinheiro, type T } from "./pecas";
+
+import { nomeDoLead, rotuloDaOrigem, rotuloDaTemperatura, rotuloForaDaNota, Secao, SeloDoNivel, TabelaDeLeads, useDinheiro, type T } from "./pecas";
 
 function rotuloDoDia(d: string, t: T): string {
   const dias = [t("Domingo"), t("Segunda"), t("Terça"), t("Quarta"), t("Quinta"), t("Sexta"), t("Sábado")];
@@ -60,6 +62,8 @@ export function AbaExplorar({ dados, periodo = null }: { dados: RespostaDaQualid
   const interesse = dados.rotulo_do_interesse ?? t("Interesse");
   const [agrupar, setAgrupar] = useState<Agrupamento>("primeira_resposta");
   const [medir, setMedir] = useState<Medida>("pct_qualificacao");
+  // Régua v2: a nota antiga (contagem de mensagens) não aparece; o nível vem da ficha.
+  const pelaFicha = dados.resumo?.versao_regra === REGUA_PELA_FICHA;
   const [aoVivo, setAoVivo] = useState<MedidaAoVivo | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const grupos = dados.paineis?.explorar[agrupar] ?? [];
@@ -92,13 +96,15 @@ export function AbaExplorar({ dados, periodo = null }: { dados: RespostaDaQualid
       case "interesse":
         return k || t("Não identificado");
       case "nivel":
-        return k === "desqualificado" ? t("Desqualificado") : k === "fechado" ? t("Fechado") : `${t("Nível")} ${k}`;
+        return (
+          rotuloForaDaNota(k, t) ??
+          (k === "desqualificado" ? t("Desqualificado") : k === "fechado" ? t("Fechado") : `${t("Nível")} ${k}`)
+        );
       case "temperatura":
-        return k === "desqualificado"
-          ? t("Desqualificado")
-          : k === "fechado"
-            ? t("Fechado")
-            : rotuloDaTemperatura(k as Temperatura, t);
+        return (
+          rotuloForaDaNota(k, t) ??
+          (k === "desqualificado" ? t("Desqualificado") : k === "fechado" ? t("Fechado") : rotuloDaTemperatura(k as Temperatura, t))
+        );
       case "origem":
         return rotuloDaOrigem(k, t);
       case "anuncio": {
@@ -178,7 +184,7 @@ export function AbaExplorar({ dados, periodo = null }: { dados: RespostaDaQualid
         )}
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("Medir")}>
           <span className="mr-1 w-24 text-xs font-semibold uppercase tracking-wide text-text-muted">{t("Medir")}</span>
-          {MEDIDAS.map((m) => (
+          {MEDIDAS.filter((m) => !(pelaFicha && m === "nota_media")).map((m) => (
             <button
               key={m}
               type="button"
@@ -284,7 +290,7 @@ export function AbaExplorar({ dados, periodo = null }: { dados: RespostaDaQualid
               vazio={t("Nenhum lead neste grupo.")}
               colunas={[
                 { titulo: t("Lead"), celula: (l) => <span className="whitespace-nowrap font-semibold">{nomeDoLead(l, t)}</span> },
-                { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} /> },
+                { titulo: t("Nível"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} status={l.status} ficha={l.ficha} /> },
                 { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },
               ]}
             />

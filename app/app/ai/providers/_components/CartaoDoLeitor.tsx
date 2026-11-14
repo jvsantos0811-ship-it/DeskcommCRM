@@ -277,7 +277,7 @@ export function CartaoDoLeitor() {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2" data-testid="leitor-painel-pela-ficha">
         <p className="text-xs">
           <span className="font-semibold">{t("Painel de Dados:")}</span>{" "}
-          {dados.config.painel_pela_ficha
+          {dados.config.painel_pela_ficha && origem !== "desligado"
             ? t("conta pela ficha (régua v2: situação, temperatura, qualidade e ação da leitura da conversa).")
             : t("conta mensagens (régua v1).")}
         </p>

@@ -20,7 +20,9 @@
  *  - PC-037 §3: na organização com o painel pela ficha, a ficha gravada refaz o
  *    retrato na hora, em lote de 5 minutos. A que caiu dentro do lote (ex.: a
  *    correção do Gestor logo depois de outra) é refeita aqui, de hora em hora,
- *    quando há ficha mais nova que o retrato de hoje (`fichaMaisNovaQueORetrato`).
+ *    quando há ficha mais nova que o retrato de hoje ou quando o retrato está
+ *    numa régua que a chave não pede mais (`retratoPrecisaRefazer`). Entra toda
+ *    organização em que a chave já foi tocada (ligada ou desligada).
  */
 import { randomUUID } from "node:crypto";
 
@@ -29,7 +31,13 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
-import { ErroDoRetrato, fichaMaisNovaQueORetrato, gerarRetratoDaOrg, refazerRetratoPelaFicha } from "@/lib/dados/gerar-retrato";
+import {
+  ErroDoRetrato,
+  gerarRetratoDaOrg,
+  refazerRetratoDoDia,
+  reguaEsperada,
+  retratoPrecisaRefazer,
+} from "@/lib/dados/gerar-retrato";
 import { lerPadraoDoLeitor } from "@/lib/dados/leitor/padrao";
 import { retratoEsperaOLeitor } from "@/lib/dados/leitor/rodadas";
 import { diaNoFuso, HORA_DO_RETRATO } from "@/lib/dados/retrato";
@@ -115,19 +123,24 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  // PC-037 §3: o fim do lote do painel pela ficha.
+  // PC-037 §3: o fim do lote do painel pela ficha (e da troca da chave).
   let refeitosPelaFicha = 0;
   const { data: pelaFicha, error: ePelaFicha } = await admin
     .from("organizations")
-    .select("id, timezone")
-    .eq("settings->leitor->>painel_pela_ficha", "true");
+    .select("id, timezone, settings")
+    .not("settings->leitor->>painel_pela_ficha", "is", null);
   if (ePelaFicha) {
     logger.error("[dados-retrato] não consegui listar as organizações do painel pela ficha", { requestId, message: ePelaFicha.message });
   }
-  for (const org of ((pelaFicha ?? []) as Array<{ id: string; timezone: string | null }>).filter((o) => !paradas.has(o.id))) {
+  for (const org of ((pelaFicha ?? []) as Array<{ id: string; timezone: string | null; settings: unknown }>).filter(
+    (o) => !paradas.has(o.id),
+  )) {
     try {
-      if (!(await fichaMaisNovaQueORetrato(admin, org.id, diaNoFuso(agora, fusoUtilizavel(org.timezone))))) continue;
-      const r = await refazerRetratoPelaFicha(admin, org.id, { agora });
+      const dia = diaNoFuso(agora, fusoUtilizavel(org.timezone));
+      if (!(await retratoPrecisaRefazer(admin, org.id, dia, reguaEsperada(org.settings)))) continue;
+      let falhou: unknown = null;
+      const r = await refazerRetratoDoDia(admin, org.id, { agora, falhou: (e) => (falhou = e) });
+      if (falhou !== null) throw falhou;
       if (r?.gravado) {
         refeitosPelaFicha += 1;
         await audit({

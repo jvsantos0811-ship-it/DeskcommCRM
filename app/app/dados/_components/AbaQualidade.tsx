@@ -220,7 +220,7 @@ function AbaQualidadePorMensagens({ dados }: { dados: RespostaDaQualidade }) {
             pipelineId={pid}
             vazio={t("Nenhum lead aberto neste grupo.")}
             colunas={[
-              { titulo: t("Nota"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} /> },
+              { titulo: t("Nota"), celula: (l) => <SeloDoNivel nivel={l.nivel} nota={l.nota} status={l.status} ficha={l.ficha} /> },
               { titulo: t("Lead"), celula: (l) => <span className="whitespace-nowrap font-semibold">{nomeDoLead(l, t)}</span> },
               { titulo: interesse, celula: (l) => <span className="whitespace-nowrap">{l.interesse ?? t("Não identificado")}</span> },
               { titulo: t("Etapa"), celula: (l) => <span className="whitespace-nowrap text-text-muted">{l.etapa}</span> },

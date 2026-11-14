@@ -37,7 +37,9 @@ import {
 } from "@/lib/dados/qualidade";
 import { partesNoFuso } from "@/lib/agenda/fuso";
 import {
+  chaveForaDaNota,
   contadoresPelaFicha,
+  esfriouPelaFicha,
   fatosDoBancoDaLinha,
   fichaNoRetrato,
   nivelPelaFicha,
@@ -294,7 +296,8 @@ export function leadDoRetrato(
   const chance =
     q.estado === "ganho" ? 100 : q.estado === "perdido" || q.estado === "duplicado" ? 0 : (sinais.chanceDaIa ?? sinais.chanceDaEtapa);
   const aberto = sinais.status === "open";
-  const esfriou =
+  // A régua v2 decide "esfriou" pela ficha mais abaixo (Regra v2 §3: nada de contar mensagem).
+  const esfriouPorMensagens =
     aberto && !sinais.duplicadoDeDesqualificado && sinais.respostas >= PESOS_DA_NOTA.respostasDeEngajado && q.temperatura === "frio";
   const valor = numero(linha.valor_cents);
 
@@ -313,12 +316,14 @@ export function leadDoRetrato(
             duplicado: pelaFicha.duplicados.has(linha.lead_id),
           }),
           agora,
+          pelaFicha.tipos,
         )
       : null;
   }
   const nivel = ficha === undefined ? q.nivel : aberto ? nivelPelaFicha(ficha) : null;
   const temperatura = ficha === undefined ? q.temperatura : aberto ? temperaturaPelaFicha(ficha) : null;
   const interesse = ficha === undefined ? q.interesse : (ficha?.interesse ?? null);
+  const esfriou = ficha === undefined ? esfriouPorMensagens : aberto && esfriouPelaFicha(ficha);
 
   return {
     id: linha.lead_id,
@@ -617,14 +622,24 @@ function pct(parte: number, todo: number): number {
   return todo === 0 ? 0 : Math.round((parte / todo) * 100);
 }
 
+/** Régua v2 marca todo lead com `ficha` (objeto ou nulo); v1 não tem o campo. */
+function pelaFicha(ls: LeadDoRetrato[]): boolean {
+  return ls.some((l) => l.ficha !== undefined);
+}
+
+/** Respondeu: na régua v2, escreveu com as próprias palavras (PC-037); na v1, mandou 1 mensagem. */
+function respondeu(l: LeadDoRetrato): boolean {
+  return l.ficha === undefined ? l.respostas >= 1 : Boolean(l.ficha?.palavras_proprias);
+}
+
 function chaveDoGrupo(l: LeadDoRetrato, g: Agrupamento): string {
   switch (g) {
     case "interesse":
       return l.interesse ?? "";
     case "nivel":
-      return l.status === "lost" ? "desqualificado" : l.status === "won" ? "fechado" : (l.nivel ?? "");
+      return l.status === "lost" ? "desqualificado" : l.status === "won" ? "fechado" : (l.nivel ?? chaveForaDaNota(l) ?? "");
     case "temperatura":
-      return l.temperatura ?? (l.status === "won" ? "fechado" : "desqualificado");
+      return l.temperatura ?? chaveForaDaNota(l) ?? (l.status === "won" ? "fechado" : "desqualificado");
     case "origem":
       return l.origem;
     case "anuncio":
@@ -677,9 +692,9 @@ export function agrupar(leads: LeadDoRetrato[], g: Agrupamento, posicaoDaEtapa?:
       chave,
       ids: ls.map((l) => l.id),
       leads: ls.length,
-      pct_resposta: pct(ls.filter((l) => l.respostas >= 1).length, ls.length),
+      pct_resposta: pct(ls.filter(respondeu).length, ls.length),
       pct_qualificacao: pct(ls.filter((l) => l.qualificado_em !== null).length, ls.length),
-      nota_media: media(abertos.map((l) => l.nota)),
+      nota_media: pelaFicha(ls) ? null : media(abertos.map((l) => l.nota)),
       leads_ab: abertos.filter((l) => l.nivel === "A" || l.nivel === "B").length,
       em_jogo_cents: abertos.reduce((a, l) => a + (l.valor_cents ?? 0), 0),
     };
@@ -755,9 +770,9 @@ export function montarPaineis(c: Pick<ConteudoDoRetrato, "leads" | "resumo" | "p
       return {
         origem,
         leads: ls.length,
-        responderam: ls.filter((l) => l.respostas >= 1).length,
+        responderam: ls.filter(respondeu).length,
         leads_ab: abertos.filter((l) => l.nivel === "A" || l.nivel === "B").length,
-        nota_media: media(abertos.map((l) => l.nota)),
+        nota_media: pelaFicha(ls) ? null : media(abertos.map((l) => l.nota)),
       };
     })
     .sort((a, b) => b.leads - a.leads || a.origem.localeCompare(b.origem));
