@@ -276,6 +276,12 @@ const gravar = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** A gravação que gravou (a mantida pelo Gestor não tem a regra fixa). */
+function gravou<T extends { gravada: boolean }>(r: T): Extract<T, { gravada: true }> {
+  if (!r.gravada) throw new Error("esperava gravar e a ficha foi mantida");
+  return r as Extract<T, { gravada: true }>;
+}
+
 async function recusa(p: Promise<unknown>): Promise<string> {
   try {
     await p;
@@ -385,7 +391,7 @@ describe("crm_gravar_ficha_do_lead", () => {
   it("grava só a ficha, com a origem e o mensagens_ate da leitura, e devolve a regra fixa", async () => {
     const t = cenario();
     const antes = JSON.stringify({ leads: t.crm_leads, contacts: t.contacts, messages: t.messages, conversations: t.conversations });
-    const r = await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA });
+    const r = gravou(await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA }));
     expect(r).toMatchObject({ gravada: true, lead_id: "l-novo", mensagens_ate: "2026-11-05T12:00:00.000Z", conversa_mudou: false });
     expect(r.situacao).toBeTruthy();
     expect(t.crm_lead_ficha).toHaveLength(1);
@@ -441,20 +447,51 @@ describe("crm_gravar_ficha_do_lead", () => {
     expect(await recusa(gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA }))).toBe("leitura_mais_velha_que_a_atual");
   });
 
+  it("T-PM031-3: a ficha corrigida pelo Gestor fica; a leitura das 05h30 só a troca com mensagem nova", async () => {
+    const t = cenario();
+    await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA });
+    await new Promise((ok) => setTimeout(ok, 5));
+    // O Gestor corrige a ficha lendo a MESMA conversa (mesmo mensagens_ate).
+    gravou(await gravarFichaPeloClaude(db(t), ORG, gravar({ origem: "gestor_17h10" }), { agora: AGORA }));
+    expect(t.crm_lead_ficha![0]).toMatchObject({ origem: "gestor_17h10" });
+    await new Promise((ok) => setTimeout(ok, 5));
+    // A leitura diária sem mensagem nova: mantida, não grava, não é erro.
+    const mantida = await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA });
+    expect(mantida).toEqual({ gravada: false, mantida: "corrigida_pelo_gestor", lead_id: "l-novo", mensagens_ate: "2026-11-05T12:00:00.000Z" });
+    expect(t.crm_lead_ficha![0]).toMatchObject({ origem: "gestor_17h10" });
+    expect(t.crm_lead_ficha_historico).toHaveLength(1);
+    // Chegou mensagem depois da correção: a leitura nova vale.
+    t.messages!.push({
+      organization_id: ORG,
+      conversation_id: "cv-novo",
+      direction: "inbound",
+      sent_via: "external_device",
+      type: "text",
+      body: "e agora?",
+      media_derived_text: null,
+      status: "received",
+      created_at: "2026-11-06T08:00:00.000Z",
+      sent_by_user_id: null,
+    });
+    await new Promise((ok) => setTimeout(ok, 5));
+    gravou(await gravarFichaPeloClaude(db(t), ORG, gravar({ mensagens_ate: "2026-11-06T08:00:00.000Z", gatilho: "mensagem_do_lead" }), { agora: AGORA }));
+    expect(t.crm_lead_ficha![0]).toMatchObject({ origem: "leitor_0530", mensagens_ate: "2026-11-06T08:00:00.000Z" });
+  });
+
   it("mensagens_ate no futuro é recusado; mensagem depois dele avisa que a conversa mudou", async () => {
     const t = cenario();
     expect(await recusa(gravarFichaPeloClaude(db(t), ORG, gravar({ mensagens_ate: "2026-11-07T12:00:00.000Z" }), { agora: AGORA }))).toBe(
       "mensagens_ate_invalida",
     );
     t.conversations![0]!.last_message_at = "2026-11-06T08:30:00.000Z";
-    const r = await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA });
+    const r = gravou(await gravarFichaPeloClaude(db(t), ORG, gravar(), { agora: AGORA }));
     expect(r.conversa_mudou).toBe(true);
   });
 
   it("o lead que voltou com potencial abre o aviso na Central, uma vez", async () => {
     const t = cenario();
     const g = gravar({ lead_id: "l-voltou", gatilho: "lead_voltou", mensagens_ate: "2026-11-05T13:00:00.000Z" });
-    const r = await gravarFichaPeloClaude(db(t), ORG, g, { agora: AGORA });
+    const r = gravou(await gravarFichaPeloClaude(db(t), ORG, g, { agora: AGORA }));
     expect(r.aviso_lead_voltou).toBe(true);
     expect(t.agent_inbox_items).toHaveLength(1);
     expect(t.agent_inbox_items![0]).toMatchObject({ kind: "lead_voltou", ref_id: "l-voltou" });
@@ -499,7 +536,7 @@ describe("crm_gravar_ficha_do_lead", () => {
   it("a correção do Gestor no lead que voltou grava a ficha, mas não reabre o aviso", async () => {
     const t = cenario();
     const g = gravar({ lead_id: "l-voltou", gatilho: "lead_voltou", origem: "gestor_17h10", mensagens_ate: "2026-11-05T13:00:00.000Z" });
-    const r = await gravarFichaPeloClaude(db(t), ORG, g, { agora: AGORA });
+    const r = gravou(await gravarFichaPeloClaude(db(t), ORG, g, { agora: AGORA }));
     expect(r.aviso_lead_voltou).toBe(false);
     expect(t.agent_inbox_items).toHaveLength(0);
     expect(t.crm_lead_ficha![0]).toMatchObject({ origem: "gestor_17h10" });

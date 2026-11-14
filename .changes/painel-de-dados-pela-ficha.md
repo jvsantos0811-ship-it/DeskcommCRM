@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Painel de Dados pela ficha do lead (régua v2), com a correção do Gestor e o painel refeito no mesmo dia
+---
+O cartão do Leitor da conversa (IA › Provedores) ganha a chave "Contar pela ficha", desligada de fábrica. Ligada, a aba Qualidade do lead deixa de contar mensagens: cada lead lido passa pela regra fixa da ficha e o painel mostra a Situação, a Temperatura (Quente, Morno, Agendado, Frio), a Qualidade do caso (A–D), a Ação e os Alertas. "Respondeu" passa a ser quem escreveu com as próprias palavras, "Engajado" quem contou o caso e "Interesse" o que o lead contou — não o tema do anúncio. Quem ainda não foi lido aparece à parte como "sem leitura" e não entra em contador nenhum; cliente, card duplicado e quem saiu da venda vão para "Fora do funil de venda". A leitura diária não passa mais por cima da ficha corrigida pelo Gestor sem mensagem nova depois da correção, e cada ficha gravada refaz o painel do dia (no máximo uma vez a cada 5 minutos), sem esperar o dia seguinte. A porta Ficha ganha a leitura única da base aberta, para o painel não começar quase todo "sem leitura". Quem não ligar a chave continua exatamente como antes.

@@ -36,9 +36,27 @@ import {
   type Temperatura,
 } from "@/lib/dados/qualidade";
 import { partesNoFuso } from "@/lib/agenda/fuso";
+import {
+  contadoresPelaFicha,
+  fatosDoBancoDaLinha,
+  fichaNoRetrato,
+  nivelPelaFicha,
+  ordemDaQualidade,
+  REGUA_PELA_FICHA,
+  REGUA_POR_MENSAGENS,
+  resumoPelaFicha,
+  temperaturaPelaFicha,
+  type EntradaPelaFicha,
+  type FichaNoRetrato,
+  type ResumoPelaFicha,
+} from "@/lib/dados/retrato-pela-ficha";
 
-/** Sobe quando a regra muda: comparar retratos de réguas diferentes engana. */
-export const VERSAO_DA_REGRA = 1;
+/**
+ * Sobe quando a regra muda: comparar retratos de réguas diferentes engana. É a
+ * régua que conta mensagens; a organização com o painel pela ficha grava a
+ * `REGUA_PELA_FICHA` (2), e a comparação com ontem só junta retratos da mesma.
+ */
+export const VERSAO_DA_REGRA = REGUA_POR_MENSAGENS;
 /** O retrato do dia é montado a partir desta hora, no relógio da organização. */
 export const HORA_DO_RETRATO = 6;
 /**
@@ -124,6 +142,11 @@ export interface LeadDoRetrato {
   /** Aberto e esperando fechamento, parado além do prazo ou sem resposta. */
   parado_na_fila: boolean;
   motivo_da_perda: string | null;
+  /**
+   * Régua v2 (painel pela ficha): o que a regra fixa devolveu para este lead, ou
+   * `null` quando ele ainda não foi lido ("sem leitura"). Ausente na régua v1.
+   */
+  ficha?: FichaNoRetrato | null;
 }
 
 export interface TipoDoCatalogo {
@@ -173,6 +196,8 @@ export interface ResumoDoRetrato {
   qualificados_7_dias: number;
   fechados_7_dias: number;
   mediana_primeira_resposta_seg: number | null;
+  /** Só na régua v2: lidos, sem leitura, fora do funil de venda, agendados, situações e alertas. */
+  pela_ficha?: ResumoPelaFicha;
 }
 
 export interface PontoPorDia {
@@ -246,7 +271,12 @@ export function faixaDaPrimeiraResposta(segundos: number | null, mensagensDaEmpr
 }
 
 /** Uma linha do banco vira o lead do retrato, com a nota da regra única. */
-export function leadDoRetrato(linha: LinhaDoRetrato, agora: Date, fuso: string): LeadDoRetrato {
+export function leadDoRetrato(
+  linha: LinhaDoRetrato,
+  agora: Date,
+  fuso: string,
+  pelaFicha?: EntradaPelaFicha,
+): LeadDoRetrato {
   const sinais = sinaisDaLinha(linha);
   const q = calcularQualidade(sinais, agora);
   const criado = new Date(linha.criado_em);
@@ -268,16 +298,38 @@ export function leadDoRetrato(linha: LinhaDoRetrato, agora: Date, fuso: string):
     aberto && !sinais.duplicadoDeDesqualificado && sinais.respostas >= PESOS_DA_NOTA.respostasDeEngajado && q.temperatura === "frio";
   const valor = numero(linha.valor_cents);
 
+  // Régua v2: a ficha manda no nível, na temperatura e no interesse. Lead sem
+  // ficha fica "sem leitura" (nível e temperatura nulos): não entra em contador.
+  let ficha: FichaNoRetrato | null | undefined;
+  if (pelaFicha) {
+    const f = pelaFicha.fichas.get(linha.lead_id);
+    ficha = f
+      ? fichaNoRetrato(
+          f,
+          fatosDoBancoDaLinha({
+            ultimaFalaDoLead: sinais.ultimaRespostaEm,
+            primeiraMensagemDoLeadEm: linha.primeira_mensagem_do_lead_em,
+            primeiraRespostaDaEmpresaEm: linha.primeira_resposta_da_empresa_em,
+            duplicado: pelaFicha.duplicados.has(linha.lead_id),
+          }),
+          agora,
+        )
+      : null;
+  }
+  const nivel = ficha === undefined ? q.nivel : aberto ? nivelPelaFicha(ficha) : null;
+  const temperatura = ficha === undefined ? q.temperatura : aberto ? temperaturaPelaFicha(ficha) : null;
+  const interesse = ficha === undefined ? q.interesse : (ficha?.interesse ?? null);
+
   return {
     id: linha.lead_id,
     status: sinais.status,
     estado: q.estado,
     nota: q.nota,
-    nivel: q.nivel,
-    temperatura: q.temperatura,
+    nivel,
+    temperatura,
     situacoes: q.situacoes,
     porque: q.parcelas.map((x) => [x.chave, x.pontos]),
-    interesse: q.interesse,
+    interesse,
     interesse_registrado: Boolean(linha.interesse_registrado),
     etapa_id: linha.etapa_id,
     etapa: linha.etapa,
@@ -302,6 +354,7 @@ export function leadDoRetrato(linha: LinhaDoRetrato, agora: Date, fuso: string):
     esfriou,
     parado_na_fila: aberto && q.situacoes.length > 0,
     motivo_da_perda: sinais.status === "lost" ? linha.motivo_da_perda?.trim() || null : null,
+    ...(ficha === undefined ? {} : { ficha }),
   };
 }
 
@@ -335,6 +388,14 @@ interface Contexto {
   pipelineId: string | null;
   moeda: string;
   tipos: TipoDoCatalogo[];
+  /** A régua do retrato (1 = mensagens, 2 = ficha). */
+  regua: number;
+}
+
+/** A régua de leads já montados: a v2 marca todo lead com `ficha` (objeto ou `null`). */
+function reguaDosLeads(leads: LeadDoRetrato[], regua?: number): number {
+  if (regua !== undefined) return regua;
+  return leads.some((l) => l.ficha !== undefined) ? REGUA_PELA_FICHA : REGUA_POR_MENSAGENS;
 }
 
 /** Os números do retrato, a partir dos leads. */
@@ -356,9 +417,11 @@ export function resumir(leads: LeadDoRetrato[], ctx: Contexto): ResumoDoRetrato 
   const soma = (xs: LeadDoRetrato[], f: (l: LeadDoRetrato) => number) => xs.reduce((a, l) => a + f(l), 0);
   const paradoNaFila = abertos.filter((l) => l.parado_na_fila);
   const esfriaram = abertos.filter((l) => l.esfriou);
+  const pelaFicha = ctx.regua === REGUA_PELA_FICHA;
+  const contadores = pelaFicha ? contadoresPelaFicha(leads) : null;
 
   return {
-    versao_regra: VERSAO_DA_REGRA,
+    versao_regra: ctx.regua,
     pipeline_id: ctx.pipelineId,
     moeda: ctx.moeda,
     tipos: ctx.tipos,
@@ -366,10 +429,11 @@ export function resumir(leads: LeadDoRetrato[], ctx: Contexto): ResumoDoRetrato 
     abertos: abertos.length,
     ganhos: leads.filter((l) => l.status === "won").length,
     desqualificados: leads.filter((l) => l.status === "lost").length,
-    nota_media_abertos: media(abertos.map((l) => l.nota)),
-    responderam: leads.filter((l) => l.respostas >= 1).length,
-    engajados: leads.filter((l) => l.respostas >= PESOS_DA_NOTA.respostasDeEngajado).length,
-    interesse_identificado: leads.filter((l) => l.interesse !== null).length,
+    // A régua v2 não tem nota 0–100 (Regra v2 §3: "sai a nota").
+    nota_media_abertos: pelaFicha ? null : media(abertos.map((l) => l.nota)),
+    responderam: contadores ? contadores.responderam : leads.filter((l) => l.respostas >= 1).length,
+    engajados: contadores ? contadores.engajados : leads.filter((l) => l.respostas >= PESOS_DA_NOTA.respostasDeEngajado).length,
+    interesse_identificado: contadores ? contadores.interesse : leads.filter((l) => l.interesse !== null).length,
     interesse_registrado: leads.filter((l) => l.interesse_registrado).length,
     niveis,
     temperaturas,
@@ -394,6 +458,7 @@ export function resumir(leads: LeadDoRetrato[], ctx: Contexto): ResumoDoRetrato 
     mediana_primeira_resposta_seg: mediana(
       leads.map((l) => l.primeira_resposta_seg).filter((s): s is number => s !== null),
     ),
+    ...(pelaFicha ? { pela_ficha: resumoPelaFicha(leads) } : {}),
   };
 }
 
@@ -406,14 +471,24 @@ export interface EntradaDoRetrato {
   tipos: TipoDoCatalogo[];
   /** As etapas do funil padrão, para "Leads por etapa" mostrar também a etapa vazia. */
   etapas: EtapaDoFunil[];
+  /** Régua v2: as fichas e os duplicados. Ausente = régua v1 (conta mensagens). */
+  pelaFicha?: EntradaPelaFicha;
 }
 
 /** O retrato inteiro: leads, resumo e as séries que a tela desenha. */
 export function montarRetrato(e: EntradaDoRetrato): ConteudoDoRetrato {
-  const leads = e.linhas.map((l) => leadDoRetrato(l, e.agora, e.fuso));
-  // A ordem que a tela usa nas listas: maior nota primeiro, depois o mais novo.
-  leads.sort((a, b) => b.nota - a.nota || b.criado_em.localeCompare(a.criado_em) || a.id.localeCompare(b.id));
-  return montarConteudo(leads, e);
+  const leads = e.linhas.map((l) => leadDoRetrato(l, e.agora, e.fuso, e.pelaFicha));
+  if (e.pelaFicha) {
+    // Régua v2: qualidade A → D (sem leitura por último), depois o mais novo.
+    leads.sort(
+      (a, b) =>
+        ordemDaQualidade(a.ficha) - ordemDaQualidade(b.ficha) || b.criado_em.localeCompare(a.criado_em) || a.id.localeCompare(b.id),
+    );
+  } else {
+    // A ordem que a tela usa nas listas: maior nota primeiro, depois o mais novo.
+    leads.sort((a, b) => b.nota - a.nota || b.criado_em.localeCompare(a.criado_em) || a.id.localeCompare(b.id));
+  }
+  return montarConteudo(leads, { ...e, regua: e.pelaFicha ? REGUA_PELA_FICHA : REGUA_POR_MENSAGENS });
 }
 
 /**
@@ -425,10 +500,17 @@ export function montarRetrato(e: EntradaDoRetrato): ConteudoDoRetrato {
  */
 export function montarConteudo(
   leads: LeadDoRetrato[],
-  e: Pick<EntradaDoRetrato, "agora" | "fuso" | "pipelineId" | "moeda" | "tipos" | "etapas">,
+  e: Pick<EntradaDoRetrato, "agora" | "fuso" | "pipelineId" | "moeda" | "tipos" | "etapas"> & { regua?: number },
   dias?: readonly string[],
 ): ConteudoDoRetrato {
-  const ctx: Contexto = { agora: e.agora, fuso: e.fuso, pipelineId: e.pipelineId, moeda: e.moeda, tipos: e.tipos };
+  const ctx: Contexto = {
+    agora: e.agora,
+    fuso: e.fuso,
+    pipelineId: e.pipelineId,
+    moeda: e.moeda,
+    tipos: e.tipos,
+    regua: reguaDosLeads(leads, e.regua),
+  };
   const resumo = resumir(leads, ctx);
 
   const hoje = diaNoFuso(e.agora, e.fuso);

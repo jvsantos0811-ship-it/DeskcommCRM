@@ -27,6 +27,7 @@ import { z } from "zod";
 
 import { alcanceDaOrg, funisLidos, posicaoNoAlcance, type FunilDaOrg } from "@/lib/dados/alcance-do-leitor";
 import { GATILHOS, lerFicha, type FatosDoBanco } from "@/lib/dados/ficha";
+import { refazerRetratoPelaFicha } from "@/lib/dados/gerar-retrato";
 import {
   concluirRodadaPeloClaude,
   entradaDaGravacaoSchema,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/dados/leitor/pelo-claude";
 import { KIND_LEAD_VOLTOU, type LeadRow } from "@/lib/dados/leitor/rodada";
 import { classificarFicha } from "@/lib/dados/regra-da-ficha";
+import { logger } from "@/lib/logger";
 
 import type { McpToolDefinition } from "../types";
 
@@ -51,6 +53,14 @@ const pendentesShape = {
     .max(PENDENTES_POR_CHAMADA)
     .optional()
     .describe(`Quantos leads devolver (1 a ${PENDENTES_POR_CHAMADA}; padrão ${PENDENTES_POR_CHAMADA}).`),
+  base_aberta: z
+    .boolean()
+    .optional()
+    .describe(
+      "true = a leitura única da base aberta: os leads abertos do painel de Dados que ainda não têm ficha " +
+        "(inclusive de antes de ligar a leitura pelo Claude), mais recentes primeiro. Repetir só devolve quem falta. " +
+        "Padrão false (a seleção do dia).",
+    ),
 };
 
 export const crmLeitorPendentes: McpToolDefinition<typeof pendentesShape> = {
@@ -65,7 +75,12 @@ export const crmLeitorPendentes: McpToolDefinition<typeof pendentesShape> = {
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) => pendentesPeloClaude(ctx.supabase, ctx.organizationId, { agora: new Date(), limite: input.limite }),
+  handler: async (input, ctx) =>
+    pendentesPeloClaude(ctx.supabase, ctx.organizationId, {
+      agora: new Date(),
+      limite: input.limite,
+      baseAberta: input.base_aberta === true,
+    }),
 };
 
 const conversaShape = {
@@ -108,7 +123,10 @@ export const crmGravarFichaDoLead: McpToolDefinition<typeof gravarShape> = {
   description:
     "Grava a ficha de um lead (só a ficha: não move card, não muda etapa, não mexe em marcador nem fala com " +
     "ninguém). Valida pelo schema central e recusa com o campo errado; recusa leitura mais velha que a ficha " +
-    "atual e gatilho que não confere com o lead (devolva o de crm_leitor_pendentes). A ficha anterior vai para o histórico. Devolve a situação, a temperatura, a qualidade, a ação e os " +
+    "atual e gatilho que não confere com o lead (devolva o de crm_leitor_pendentes). A ficha anterior vai para o histórico. " +
+    "A leitura diária (`leitor_0530`) NÃO substitui a ficha corrigida pelo Gestor (`gestor_17h10`) sem mensagem nova " +
+    "depois da correção: devolve `gravada: false, mantida: \"corrigida_pelo_gestor\"` (não é erro). Na organização com o " +
+    "painel de Dados pela ficha, refaz o painel do dia (no máximo 1 vez a cada 5 min). Devolve a situação, a temperatura, a qualidade, a ação e os " +
     "alertas da regra fixa, se abriu o aviso de lead que voltou, e `conversa_mudou` quando chegou mensagem depois " +
     "de `mensagens_ate` (a próxima seleção pega o lead de novo). Só organização com a leitura pelo Claude.",
   inputSchema: gravarShape,
@@ -120,9 +138,22 @@ export const crmGravarFichaDoLead: McpToolDefinition<typeof gravarShape> = {
     const ficha = args.ficha && typeof args.ficha === "object" ? Object.keys(args.ficha as Record<string, unknown>) : [];
     return { ...args, ficha: { campos: ficha } };
   },
-  handler: async (input, ctx) =>
-    gravarFichaPeloClaude(ctx.supabase, ctx.organizationId, entradaDaGravacaoSchema.parse(input), { agora: new Date() }),
+  handler: async (input, ctx) => {
+    const r = await gravarFichaPeloClaude(ctx.supabase, ctx.organizationId, entradaDaGravacaoSchema.parse(input), { agora: new Date() });
+    if (!r.gravada) return r;
+    const painel = await refazerRetratoPelaFicha(ctx.supabase, ctx.organizationId, { falhou: falhouORetrato(ctx.organizationId) });
+    return { ...r, painel_refeito: painel?.gravado === true };
+  },
 };
+
+/** O retrato que falhou depois da ficha gravada vai para o log; a ficha já está salva. */
+function falhouORetrato(organizationId: string) {
+  return (e: unknown) =>
+    logger.warn("[ficha] o painel de Dados não foi refeito depois da ficha; o cron de hora em hora refaz", {
+      organization_id: organizationId,
+      message: e instanceof Error ? e.message : String(e),
+    });
+}
 
 const concluirShape = {
   lidos: z.number().int().min(0).max(10_000).describe("Quantos leads a tarefa leu nesta rodada."),
@@ -135,19 +166,22 @@ export const crmLeitorConcluirRodada: McpToolDefinition<typeof concluirShape> = 
   description:
     "Fecha a rodada do dia do Leitor pelo Claude nesta organização: conta no banco as fichas gravadas desde o " +
     "começo da rodada e guarda os erros (só o código, nunca dado de lead). O retrato do dia do painel Dados, que " +
-    "esperava a rodada aberta, sai na passada seguinte do cron. Chame uma vez no fim. Só organização com a " +
-    "leitura pelo Claude.",
+    "esperava a rodada aberta, sai na passada seguinte do cron (depois das 06:00, na organização com o painel pela " +
+    "ficha, sai na hora). Chame uma vez no fim. Só organização com a leitura pelo Claude.",
   inputSchema: concluirShape,
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    concluirRodadaPeloClaude(
+  handler: async (input, ctx) => {
+    const r = await concluirRodadaPeloClaude(
       ctx.supabase,
       ctx.organizationId,
       { lidos: input.lidos, erros: input.erros, ultimo_erro: input.ultimo_erro ?? null },
       { agora: new Date(), requestId: ctx.requestId },
-    ),
+    );
+    const painel = await refazerRetratoPelaFicha(ctx.supabase, ctx.organizationId, { falhou: falhouORetrato(ctx.organizationId) });
+    return { ...r, painel_refeito: painel?.gravado === true };
+  },
 };
 
 /** As ferramentas da porta Ficha (fora de `allTools`). */
