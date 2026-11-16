@@ -263,6 +263,8 @@ function BlocoDoNumero({
   const [salvando, setSalvando] = useState(false);
   const conectado = numero !== null;
   const canal = numero?.channel_session_id ?? null;
+  // Nome do CANAL (channel_sessions), não de contato.
+  const nomeDoCanal = numero ? numero.display_name : null;
   // Ids únicos por número: com dois formulários na tela, `htmlFor` repetido
   // ligaria o rótulo de um ao campo do outro.
   const sufixo = indice === 0 ? "" : `-${indice + 1}`;
@@ -311,7 +313,7 @@ function BlocoDoNumero({
 
         {conectado && (
           <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-            <p className="font-medium">{numero?.display_name ?? t("Número conectado")}</p>
+            <p className="font-medium">{nomeDoCanal ?? t("Número conectado")}</p>
             <p className="text-xs text-muted-foreground">
               {numero?.phone_number ?? t("sem número informado")} · {numero?.status ?? "—"}
             </p>
@@ -325,7 +327,7 @@ function BlocoDoNumero({
           <div>
             <RenomearConexao
               channelId={canal}
-              currentName={numero?.display_name ?? null}
+              currentName={nomeDoCanal}
               onSaved={carregar}
             />
           </div>
