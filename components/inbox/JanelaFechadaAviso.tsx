@@ -307,11 +307,18 @@ export function JanelaFechadaAviso({
   conversationId,
   provider,
   motivo,
+  channelSessionId = null,
 }: {
   conversationId: string;
   /** Decide de ONDE vêm as definições. A tela não interpreta este valor. */
   provider: string | null;
   motivo: string;
+  /**
+   * O número da empresa por onde a conversa anda. Com dois números pelo
+   * parceiro, os modelos são os DESTE número — a lista do outro ofereceria um
+   * modelo que esta conta pode não ter.
+   */
+  channelSessionId?: string | null;
 }) {
   const t = useT();
   const send = useSendMessage();
@@ -322,14 +329,20 @@ export function JanelaFechadaAviso({
   const qc = useQueryClient();
 
   const fonte = fonteDeTemplates(provider);
+  // Só o parceiro escolhe o número pela URL; as outras fontes resolvem sozinhas.
+  const numero = fonte === "parceiro" && channelSessionId ? channelSessionId : null;
   const { data } = useQuery({
-    // A chave inclui a fonte: sem isso, trocar de conversa entre canais serviria
-    // a lista em cache do canal anterior, e o operador mandaria um modelo que
-    // não existe na conta desta conversa.
-    queryKey: ["templates-da-conversa", fonte],
+    // A chave inclui a fonte e o número: sem isso, trocar de conversa entre
+    // canais (ou entre dois números do mesmo canal) serviria a lista em cache do
+    // anterior, e o operador mandaria um modelo que não existe na conta desta conversa.
+    queryKey: ["templates-da-conversa", fonte, numero],
     enabled: fonte !== null,
     queryFn: async () =>
-      apiClient.get<{ data: { templates: ModeloAprovado[] } }>(rotaDeTemplates(fonte!)),
+      apiClient.get<{ data: { templates: ModeloAprovado[] } }>(
+        numero
+          ? `${rotaDeTemplates(fonte!)}?channel_session_id=${encodeURIComponent(numero)}`
+          : rotaDeTemplates(fonte!),
+      ),
     staleTime: 30_000,
   });
 

@@ -27,6 +27,13 @@ const toastOk = vi.fn();
 const toastErro = vi.fn();
 vi.mock("sonner", () => ({ toast: { success: (m: string) => toastOk(m), error: (m: string) => toastErro(m) } }));
 vi.mock("@/lib/clipboard", () => ({ copyToClipboard: vi.fn(async () => true) }));
+// Os ajustes POR NÚMERO (IA, funil, responsável, nome, histórico) têm testes
+// próprios e pedem um QueryClient; aqui o que se mede é a tela de conexão.
+vi.mock("@/components/connections/ChannelAiAccess", () => ({ ChannelAiAccess: () => null }));
+vi.mock("@/components/connections/FunilDoNumero", () => ({ FunilDoNumero: () => null }));
+vi.mock("@/components/connections/ResponsavelDoNumero", () => ({ ResponsavelDoNumero: () => null }));
+vi.mock("@/components/connections/RenomearConexao", () => ({ RenomearConexao: () => null }));
+vi.mock("@/components/connections/ImportarHistorico", () => ({ ImportarHistorico: () => null }));
 
 import { CanalParceiroClient } from "@/components/connections/CanalParceiroClient";
 
@@ -192,3 +199,114 @@ describe("conectar", () => {
     expect(screen.queryByText(/Segredo \(assinatura\)/)).not.toBeInTheDocument();
   });
 });
+
+describe("dois números (16/11/2026)", () => {
+  const N1 = "22222222-2222-4222-8222-222222222222";
+  const N2 = "44444444-4444-4444-8444-444444444444";
+  const numero = (id: string, conta: string, telefone: string) => ({
+    channel_session_id: id,
+    account_id: conta,
+    phone_number: telefone,
+    display_name: `Número ${conta}`,
+    status: "WORKING",
+    has_api_key: true,
+    webhook_url: `https://crm.exemplo/api/v1/webhooks/channel/tok-${conta}`,
+  });
+
+  it("com um número e espaço para outro, oferece adicionar — fechado até o clique", async () => {
+    getMock.mockResolvedValue({
+      data: { ...conectado.data, numbers: [numero(N1, "acc_1", "+5511911110001")], can_add: true },
+    });
+    render(<CanalParceiroClient />);
+    const botao = await screen.findByRole("button", { name: "Adicionar outro número" });
+    // Fechado: um só formulário de credencial na tela.
+    expect(screen.getAllByLabelText(/Chave de API/)).toHaveLength(1);
+    fireEvent.click(botao);
+    expect(await screen.findByText(/Adicionar outro número por Zernio/)).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/Chave de API/)).toHaveLength(2);
+  });
+
+  it("adicionar manda `novo: true` e mostra o webhook do número NOVO para colar", async () => {
+    getMock.mockResolvedValue({
+      data: { ...conectado.data, numbers: [numero(N1, "acc_1", "+5511911110001")], can_add: true },
+    });
+    postMock.mockResolvedValue({
+      data: {
+        channel_session_id: N2,
+        webhook_url: "https://crm.exemplo/api/v1/webhooks/channel/tok-novo",
+        webhook_secret: "segredo-do-novo",
+        phone_number: "+5511922220002",
+        quality_rating: null,
+      },
+    });
+    render(<CanalParceiroClient />);
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar outro número" }));
+    fireEvent.change(screen.getByLabelText("Conta", { selector: "#parceiro-conta-novo" }), {
+      target: { value: "acc_2" },
+    });
+    fireEvent.change(screen.getByLabelText(/Chave de API/, { selector: "#parceiro-chave-novo" }), {
+      target: { value: "sk_live_y" },
+    });
+    // Depois de gravar, a leitura do estado já traz os dois números.
+    getMock.mockResolvedValue({
+      data: {
+        ...conectado.data,
+        numbers: [numero(N1, "acc_1", "+5511911110001"), numero(N2, "acc_2", "+5511922220002")],
+        can_add: false,
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar número" }));
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/api/v1/channels/partner", {
+        account_id: "acc_2",
+        api_key: "sk_live_y",
+        novo: true,
+      }),
+    );
+    expect(await screen.findByText("segredo-do-novo")).toBeInTheDocument();
+    expect(screen.getByText(/Falta ligar a volta/)).toBeInTheDocument();
+  });
+
+  it("com dois números mostra os dois, cada um com o seu webhook, e não oferece um terceiro", async () => {
+    getMock.mockResolvedValue({
+      data: {
+        ...conectado.data,
+        numbers: [numero(N1, "acc_1", "+5511911110001"), numero(N2, "acc_2", "+5511922220002")],
+        can_add: false,
+      },
+    });
+    render(<CanalParceiroClient />);
+    expect(await screen.findByText(/\+5511911110001/)).toBeInTheDocument();
+    expect(screen.getByText(/\+5511922220002/)).toBeInTheDocument();
+    expect(screen.getByText("https://crm.exemplo/api/v1/webhooks/channel/tok-acc_1")).toBeInTheDocument();
+    expect(screen.getByText("https://crm.exemplo/api/v1/webhooks/channel/tok-acc_2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adicionar outro número" })).not.toBeInTheDocument();
+  });
+
+  it("Reconectar um número diz QUAL — a conta colada nunca troca o outro", async () => {
+    getMock.mockResolvedValue({
+      data: {
+        ...conectado.data,
+        numbers: [numero(N1, "acc_1", "+5511911110001"), numero(N2, "acc_2", "+5511922220002")],
+        can_add: false,
+      },
+    });
+    postMock.mockResolvedValue({ data: { webhook_url: "https://x/w/2", webhook_secret: "s" } });
+    render(<CanalParceiroClient />);
+    await screen.findByText(/\+5511922220002/);
+    fireEvent.change(screen.getByLabelText(/Chave de API/, { selector: "#parceiro-chave-2" }), {
+      target: { value: "sk_live_z" },
+    });
+    const reconectar = screen.getAllByRole("button", { name: "Reconectar" });
+    fireEvent.click(reconectar[1] as HTMLElement);
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/api/v1/channels/partner", {
+        account_id: "acc_2",
+        api_key: "sk_live_z",
+        channel_session_id: N2,
+      }),
+    );
+  });
+});
+

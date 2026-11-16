@@ -932,6 +932,7 @@ export function InboxLayout({
                 conversationId={selectedConversation.id}
                 provider={selectedConversation.channel_sessions?.provider ?? null}
                 motivo={motivoDaJanela}
+                channelSessionId={selectedConversation.channel_session_id ?? null}
               />
             )}
             <MensagensAgendadas

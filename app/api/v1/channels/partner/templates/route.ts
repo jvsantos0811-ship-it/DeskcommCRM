@@ -24,6 +24,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * `channel_session_id` é o que permite responder "o que posso usar NESTA
  * conexão?". Sem ele, dois números do mesmo provider dividiriam a mesma lista.
  *
+ * ─── Qual número (16/11/2026) ───────────────────────────────────────────────
+ *
+ * Uma organização pode ter dois números por este canal. `?channel_session_id=`
+ * escolhe de qual número são os modelos; sem ele vale o número principal (o
+ * mais antigo), que é o que esta rota sempre mostrou.
+ *
  * ─── Quem pode ──────────────────────────────────────────────────────────────
  *
  * Ler (`agent`): é a lista que o seletor do inbox usa, e quem atende precisa
@@ -47,7 +53,7 @@ import {
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
-import { findPartnerSession } from "@/lib/channels/connect";
+import { findPartnerSession, findPartnerSessionById } from "@/lib/channels/connect";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -90,9 +96,18 @@ interface Contexto {
  * A conexão vem do banco e não do corpo: `organization_id` tirado do body é o
  * anti-pattern nº 10 da doutrina, e aqui daria a um tenant a lista do outro.
  */
+/** O número pedido na URL, se veio. Id inválido é tratado como pedido inválido, não como "principal". */
+function numeroPedido(req: NextRequest | undefined): { ok: true; id: string | null } | { ok: false } {
+  const bruto = req ? new URL(req.url).searchParams.get("channel_session_id") : null;
+  if (!bruto) return { ok: true, id: null };
+  const r = z.string().uuid().safeParse(bruto);
+  return r.success ? { ok: true, id: r.data } : { ok: false };
+}
+
 async function contexto(
   requestId: string,
   papel: "agent" | "admin",
+  req?: NextRequest,
 ): Promise<{ ok: true; ctx: Contexto } | { ok: false; res: Response }> {
   // O papel ANTES da conexão: o 404 de "sem conexão" diria a quem não pode
   // nada se a organização tem ou não o canal.
@@ -101,8 +116,15 @@ async function contexto(
   const { user, org } = authz;
   const t = (texto: string) => traduzir(texto, user.idioma);
 
+  const pedido = numeroPedido(req);
+  if (!pedido.ok) {
+    return { ok: false, res: fail("invalid_request", t("Número inválido."), 422, { requestId }) };
+  }
+
   const admin = createAdminClient();
-  const sessao = await findPartnerSession(admin, org.orgId);
+  const sessao = pedido.id
+    ? await findPartnerSessionById(admin, org.orgId, pedido.id)
+    : await findPartnerSession(admin, org.orgId);
   if (!sessao || sessao.archivedAt) {
     return {
       ok: false,
@@ -136,9 +158,9 @@ async function contexto(
 }
 
 /** Lista o que está ESPELHADO. Rápido, e é o que a tela mostra. */
-export async function GET(): Promise<Response> {
+export async function GET(req?: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const r = await contexto(requestId, "agent");
+  const r = await contexto(requestId, "agent", req);
   if (!r.ok) return r.res;
 
   const admin = createAdminClient();
@@ -182,7 +204,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const r = await contexto(requestId, "admin");
+  const r = await contexto(requestId, "admin", req);
   if (!r.ok) return r.res;
   const t = (texto: string) => traduzir(texto, r.ctx.idioma);
 

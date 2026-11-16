@@ -125,7 +125,12 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
         />
       </div>
       {motivoDaJanela && (
-        <JanelaFechadaAviso conversationId={c.id} provider={provider} motivo={motivoDaJanela} />
+        <JanelaFechadaAviso
+          conversationId={c.id}
+          provider={provider}
+          motivo={motivoDaJanela}
+          channelSessionId={c.channel_session_id ?? null}
+        />
       )}
       <MensagensAgendadas
         key={`agendadas:${c.id}`}

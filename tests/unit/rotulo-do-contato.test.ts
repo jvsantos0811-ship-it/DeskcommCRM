@@ -209,11 +209,6 @@ describe("a sétima cópia não nasce", () => {
       motivo: "a ficha mostra a COLUNA `display_name` com rótulo próprio, logo abaixo de `name`",
     },
     {
-      arquivo: "components/connections/CanalParceiroClient.tsx",
-      trecho: 'estado?.display_name ?? t("Número conectado")',
-      motivo: "nome do CANAL conectado",
-    },
-    {
       arquivo: "components/connections/RedesSociaisClient.tsx",
       trecho: "{orfao.display_name ?? orfao.account_id}",
       motivo: "rótulo do CANAL órfão (channel_sessions), não de contato",
