@@ -17805,6 +17805,21 @@ export const DICIONARIO: Traducoes = {
   "Contratos assinados": { es: "Contratos firmados" },
   "Contratos por lead (%)": { es: "Contratos por lead (%)" },
   "Mediana da 1ª resposta (s)": { es: "Mediana de la 1ª respuesta (s)" },
+  // Dois números pelo provedor parceiro (16/11/2026)
+  "Outro número por": { es: "Otro número por" },
+  "Adicionar outro número": { es: "Agregar otro número" },
+  "Para um segundo número da mesma empresa — por exemplo, um para os anúncios e outro para a equipe.": { es: "Para un segundo número de la misma empresa — por ejemplo, uno para los anuncios y otro para el equipo." },
+  "Número adicionado.": { es: "Número agregado." },
+  "Adicionar outro número por": { es: "Agregar otro número por" },
+  "Cada número tem a sua Conta no provedor, o seu webhook e o seu funil de entrada. O número novo começa com a IA fechada (só números de teste) até você abrir o acesso dele.": { es: "Cada número tiene su propia Cuenta en el proveedor, su webhook y su embudo de entrada. El número nuevo empieza con la IA cerrada (solo números de prueba) hasta que abras su acceso." },
+  "Adicionar número": { es: "Agregar número" },
+  "Cada número tem os seus modelos. Escolha de qual número quer ver, sincronizar ou criar.": { es: "Cada número tiene sus propias plantillas. Elige de qué número quieres verlas, sincronizarlas o crearlas." },
+  "Número não encontrado nesta organização.": { es: "Número no encontrado en esta organización." },
+  "Esta Conta já está conectada em outro número desta organização.": { es: "Esta Cuenta ya está conectada en otro número de esta organización." },
+  "Esta organização já tem o máximo de números por este canal. Exclua um em Conexões para conectar outro.": { es: "Esta organización ya tiene el máximo de números por este canal. Elimina uno en Conexiones para conectar otro." },
+  "Esta Conta já está conectada em outra organização.": { es: "Esta Cuenta ya está conectada en otra organización." },
+  "Este telefone já está conectado nesta organização por outra conexão. Exclua a antiga em Conexões e tente de novo.": { es: "Este teléfono ya está conectado en esta organización por otra conexión. Elimina la anterior en Conexiones e inténtalo de nuevo." },
+  "Número inválido.": { es: "Número inválido." },
 };
 
 /**

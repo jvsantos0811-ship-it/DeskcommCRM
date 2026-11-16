@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   role: vi.fn(),
   audit: vi.fn(),
   find: vi.fn(),
+  findById: vi.fn(),
   create: vi.fn(),
   list: vi.fn(),
   upserts: [] as Record<string, unknown>[],
@@ -22,7 +23,7 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
-vi.mock("@/lib/channels/connect", () => ({ findPartnerSession: h.find }));
+vi.mock("@/lib/channels/connect", () => ({ findPartnerSession: h.find, findPartnerSessionById: h.findById }));
 vi.mock("@/lib/channels", async (original) => ({
   ...(await original<typeof Canais>()),
   getAdapter: () => ({ templates: { create: h.create, list: h.list } }),
@@ -64,6 +65,7 @@ beforeEach(() => {
   h.upserts = [];
   h.role.mockResolvedValue(PERMITIDO);
   h.find.mockResolvedValue({ id: "sess-1", archivedAt: null });
+  h.findById.mockResolvedValue({ id: "sess-1", archivedAt: null });
   h.list.mockResolvedValue([
     { name: "boas_vindas", language: "pt_BR", status: "APPROVED", category: "UTILITY", components: CORPO },
   ]);
@@ -120,5 +122,41 @@ describe("rota de modelos do canal intermediado", () => {
       expect.objectContaining({ action: "template.created", actorUserId: "u-1", organizationId: "org-da-sessao" }),
     );
     expect(h.upserts[0]).toMatchObject({ organization_id: "org-da-sessao", channel_session_id: "sess-1" });
+  });
+});
+
+describe("dois números: ?channel_session_id= escolhe de qual número são os modelos", () => {
+  const NUMERO = "44444444-4444-4444-8444-444444444444";
+  const getCom = (qs: string) => GET(new NextRequest(`${URL_}${qs}`));
+
+  it("sem o parâmetro vale o número principal (o comportamento de sempre)", async () => {
+    expect((await getCom("")).status).toBe(200);
+    expect(h.find).toHaveBeenCalledTimes(1);
+    expect(h.findById).not.toHaveBeenCalled();
+  });
+
+  it("com o parâmetro busca AQUELE número, na organização da sessão", async () => {
+    expect((await getCom(`?channel_session_id=${NUMERO}`)).status).toBe(200);
+    expect(h.findById).toHaveBeenCalledWith(expect.anything(), "org-da-sessao", NUMERO);
+    expect(h.find).not.toHaveBeenCalled();
+  });
+
+  it("número que não é desta organização é 404; id malformado é 422 — nunca cai no principal", async () => {
+    h.findById.mockResolvedValue(null);
+    expect((await getCom(`?channel_session_id=${NUMERO}`)).status).toBe(404);
+    expect((await getCom("?channel_session_id=nao-e-uuid")).status).toBe(422);
+    expect(h.find).not.toHaveBeenCalled();
+  });
+
+  it("sincronizar pela URL com o número grava o espelho DESSE número", async () => {
+    h.findById.mockResolvedValue({ id: "sess-2", archivedAt: null });
+    const r = await POST(
+      new NextRequest(`${URL_}?channel_session_id=${NUMERO}`, {
+        method: "POST",
+        body: JSON.stringify({ acao: "sincronizar" }),
+      }),
+    );
+    expect(r.status).toBe(200);
+    expect(h.upserts[0]).toMatchObject({ channel_session_id: "sess-2" });
   });
 });

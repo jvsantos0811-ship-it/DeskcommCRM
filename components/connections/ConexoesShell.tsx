@@ -7,6 +7,7 @@ import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
+import { ModelosDoParceiroPorNumero } from "./ModelosDoParceiroPorNumero";
 import { CanalVozClient } from "./CanalVozClient";
 import { ConnectionsClient } from "./ConnectionsClient";
 import { TemplatesClient } from "./TemplatesClient";
@@ -161,7 +162,7 @@ export function ConexoesShell({
             <CanalParceiroClient />
           </TabsContent>
           <TabsContent value="templates" className="mt-0">
-            <TemplatesParceiroClient />
+            <ModelosDoParceiroPorNumero />
           </TabsContent>
         </Tabs>
       </TabsContent>

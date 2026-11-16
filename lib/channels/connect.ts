@@ -193,10 +193,21 @@ export interface PartnerSession {
   webhookPathToken: string | null;
   hasApiKey: boolean;
   archivedAt: string | null;
+  createdAt: string | null;
 }
 
 const COLUNAS =
-  "id, zernio_account_id, phone_number, display_name, status, webhook_path_token, zernio_token_encrypted";
+  "id, zernio_account_id, phone_number, display_name, status, webhook_path_token, zernio_token_encrypted, created_at";
+
+/**
+ * Quantos números ATIVOS uma organização pode ter por este canal.
+ *
+ * Dois, e não "quantos o plano deixar": o caso que existe é o escritório com um
+ * número para o tráfego pago e outro para a equipe (João, 16/11/2026). O limite
+ * de números do PLANO continua valendo por cima deste — quem recusa é o gatilho
+ * `trg_trava_canais_do_plano`, e a rota traduz a recusa.
+ */
+export const MAX_PARTNER_NUMBERS = 2;
 
 function toPartnerSession(row: Record<string, unknown> | null): PartnerSession | null {
   if (!row) return null;
@@ -209,26 +220,144 @@ function toPartnerSession(row: Record<string, unknown> | null): PartnerSession |
     webhookPathToken: (row.webhook_path_token as string) ?? null,
     hasApiKey: !!row.zernio_token_encrypted,
     archivedAt: (row.archived_at as string) ?? null,
+    createdAt: (row.created_at as string) ?? null,
   };
 }
 
-export async function findPartnerSession(
+/**
+ * TODAS as conexões deste canal na organização — as excluídas inclusive, porque
+ * reconectar por cima de uma excluída a ressuscita (ver `savePartnerSession`).
+ *
+ * Ordem: a mais antiga primeiro. É ela a "principal" (ver `escolherPrincipal`),
+ * e a ordem estável é o que faz a tela mostrar os números sempre na mesma
+ * sequência.
+ */
+export async function listPartnerSessions(
   admin: SupabaseClient,
   organizationId: string,
-): Promise<PartnerSession | null> {
+): Promise<PartnerSession[]> {
   const buscar = (colunas: string) =>
     admin
       .from("channel_sessions")
       .select(colunas)
       .eq("organization_id", organizationId)
       .eq("provider", PARTNER_CHANNEL_PROVIDER)
-      .maybeSingle();
+      .order("created_at", { ascending: true });
 
-  const { data } = await queryTolerantToMissingArchived(
+  const { data, error } = await queryTolerantToMissingArchived(
     () => buscar(`${COLUNAS}, ${ARCHIVED_AT}`),
     () => buscar(COLUNAS),
   );
-  return toPartnerSession(data as Record<string, unknown> | null);
+  // Falha de leitura NÃO é "nenhum número": tratada assim, um "Reconectar"
+  // criaria uma linha nova em vez de atualizar a que existe.
+  if (error) throw new Error("partner_sessions_lookup_failed");
+  const bruto = data as unknown;
+  const linhas: Record<string, unknown>[] = Array.isArray(bruto)
+    ? (bruto as Record<string, unknown>[])
+    : bruto
+      ? [bruto as Record<string, unknown>]
+      : [];
+  return linhas
+    .map((l) => toPartnerSession(l))
+    .filter((s): s is PartnerSession => s !== null)
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+}
+
+/** As conexões que estão em uso (não excluídas), na ordem da lista. */
+export function sessoesAtivas(sessoes: PartnerSession[]): PartnerSession[] {
+  return sessoes.filter((s) => !s.archivedAt);
+}
+
+/**
+ * A conexão "principal": a mais antiga em uso; sem nenhuma em uso, a excluída
+ * mais recente (a que um "Reconectar" traria de volta).
+ *
+ * ─── Por que existe ─────────────────────────────────────────────────────────
+ *
+ * Até 16/11/2026 a organização tinha UMA conexão deste canal, e todo caminho que
+ * dizia "a conexão" lia com `maybeSingle()`. Com uma linha só, esta função
+ * devolve exatamente essa linha — ativa ou excluída —, então quem tem um número
+ * vê o mesmo de antes. Com duas, `maybeSingle()` devolvia NADA (PGRST116), e a
+ * tela dizia "não conectado" para um número que estava recebendo.
+ */
+export function escolherPrincipal(sessoes: PartnerSession[]): PartnerSession | null {
+  const ativas = sessoesAtivas(sessoes);
+  if (ativas.length > 0) return ativas[0] ?? null;
+  const excluidas = sessoes.filter((s) => s.archivedAt);
+  return excluidas[excluidas.length - 1] ?? null;
+}
+
+export async function findPartnerSession(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<PartnerSession | null> {
+  return escolherPrincipal(await listPartnerSessions(admin, organizationId));
+}
+
+/**
+ * Uma conexão deste canal pelo id, SÓ se for desta organização e deste canal.
+ * A organização vem da sessão de quem chama, nunca do corpo do pedido.
+ */
+export async function findPartnerSessionById(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<PartnerSession | null> {
+  const sessoes = await listPartnerSessions(admin, organizationId);
+  return sessoes.find((s) => s.id === channelSessionId) ?? null;
+}
+
+/**
+ * Qual linha um envio de credencial grava: a pedida, a que já tem esta conta,
+ * uma nova, ou a principal (o comportamento de antes).
+ *
+ * A ordem importa e cada degrau tem motivo:
+ *   1. `channelSessionId` pedido → aquela, e só ela (Reconectar de um número).
+ *   2. A conta já está gravada na organização → aquela linha. Sem isso, colar a
+ *      conta do 2º número no formulário do 1º trocaria o 1º (o defeito que
+ *      motivou esta mudança), e "Adicionar" com uma conta já conectada criaria
+ *      uma segunda linha que o índice único recusaria.
+ *   3. `novo` → linha nova, se couber no teto.
+ *   4. Senão → a principal. Com um número só, é o mesmo de antes.
+ */
+export type AlvoDaCredencial =
+  | { tipo: "existente"; sessao: PartnerSession }
+  | { tipo: "nova" }
+  | { tipo: "nao_encontrada" }
+  | { tipo: "conta_em_outro_numero" }
+  | { tipo: "teto"; maximo: number };
+
+export function escolherAlvoDaCredencial(
+  sessoes: PartnerSession[],
+  pedido: { accountId: string; channelSessionId?: string | null; novo?: boolean },
+): AlvoDaCredencial {
+  const conta = pedido.accountId.trim();
+
+  if (pedido.channelSessionId) {
+    const pedida = sessoes.find((s) => s.id === pedido.channelSessionId);
+    if (!pedida) return { tipo: "nao_encontrada" };
+    // A conta colada já é de OUTRO número ativo desta organização: gravar
+    // trocaria este número pelo outro (e o índice único recusaria). Melhor dizer.
+    const outro = sessoes.find((s) => s.id !== pedida.id && !s.archivedAt && s.accountId === conta);
+    return outro ? { tipo: "conta_em_outro_numero" } : { tipo: "existente", sessao: pedida };
+  }
+
+  const mesmaConta = sessoes.filter((s) => s.accountId === conta);
+  if (mesmaConta.length > 0) {
+    // Ativa antes de excluída; entre excluídas, a mais recente.
+    const escolhida = mesmaConta.find((s) => !s.archivedAt) ?? mesmaConta[mesmaConta.length - 1];
+    if (escolhida) return { tipo: "existente", sessao: escolhida };
+  }
+
+  if (pedido.novo) {
+    if (sessoesAtivas(sessoes).length >= MAX_PARTNER_NUMBERS) {
+      return { tipo: "teto", maximo: MAX_PARTNER_NUMBERS };
+    }
+    return { tipo: "nova" };
+  }
+
+  const principal = escolherPrincipal(sessoes);
+  return principal ? { tipo: "existente", sessao: principal } : { tipo: "nova" };
 }
 
 /**
@@ -251,7 +380,12 @@ export async function savePartnerSession(
     phoneNumber: string | null;
     displayName: string;
   },
-): Promise<{ error: string | null }> {
+): Promise<{
+  error: string | null;
+  id?: string | null;
+  contaJaConectada?: boolean;
+  telefoneJaConectado?: boolean;
+}> {
   const linha = {
     organization_id: input.organizationId,
     provider: PARTNER_CHANNEL_PROVIDER,
@@ -265,11 +399,27 @@ export async function savePartnerSession(
     archived_at: null,
   };
 
-  const { error } = input.existingId
+  const { data, error } = input.existingId
     ? await admin.from("channel_sessions").update(linha).eq("id", input.existingId)
     : await admin
         .from("channel_sessions")
-        .insert({ ...linha, metadata: metadataInicialDoCanal() });
+        .insert({ ...linha, metadata: metadataInicialDoCanal() })
+        .select("id")
+        .single();
+  const id = input.existingId ?? ((data as { id?: string } | null)?.id ?? null);
 
-  return { error: error?.message ?? null };
+  // A conta já é de um canal ATIVO (índice único da migration 0165) — de outra
+  // organização, porque as desta a rota já resolveu antes. Dito em português,
+  // em vez do texto cru do Postgres num 500.
+  const duplicado = !!error && (error as { code?: string }).code === "23505";
+  const contaJaConectada = duplicado && (error?.message ?? "").includes("zernio_account_id");
+  // O mesmo TELEFONE já está ativo nesta organização por outro canal (o QR, por
+  // exemplo): índice `channel_sessions_phone_per_org_unique` (migration 0107).
+  const telefoneJaConectado = duplicado && (error?.message ?? "").includes("phone_per_org");
+  return {
+    error: error?.message ?? null,
+    id,
+    ...(contaJaConectada ? { contaJaConectada } : {}),
+    ...(telefoneJaConectado ? { telefoneJaConectado } : {}),
+  };
 }

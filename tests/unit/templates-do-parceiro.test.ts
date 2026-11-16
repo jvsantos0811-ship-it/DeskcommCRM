@@ -85,8 +85,12 @@ describe("os elos que somem sem barulho", () => {
   it("a aba existe dentro do canal do parceiro", () => {
     // Sem porta, a tela não é alcançável — e o CI já reprova tela sem porta.
     const fonte = readFileSync("components/connections/ConexoesShell.tsx", "utf8");
-    expect(fonte).toMatch(/\n\s*<TemplatesParceiroClient \/>/);
+    // Desde 16/11/2026 a aba passa pela escolha do número (até dois por
+    // organização); com um número só ela entrega o MESMO cliente de antes.
+    expect(fonte).toMatch(/\n\s*<ModelosDoParceiroPorNumero \/>/);
     expect(fonte).toMatch(/Modelos do parceiro/);
+    const porNumero = readFileSync("components/connections/ModelosDoParceiroPorNumero.tsx", "utf8");
+    expect(porNumero).toMatch(/return <TemplatesParceiroClient \/>;/);
   });
 
   it("a aba Graph GERENCIA modelo — o gerenciar={false} saiu (#1734)", () => {

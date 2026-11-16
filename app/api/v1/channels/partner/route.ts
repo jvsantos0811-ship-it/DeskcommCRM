@@ -22,13 +22,19 @@ import type { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import {
+  MAX_PARTNER_NUMBERS,
   PARTNER_CHANNEL_LABEL,
-  findPartnerSession,
+  escolherAlvoDaCredencial,
+  escolherPrincipal,
+  listPartnerSessions,
   partnerEndpoint,
   savePartnerSession,
+  sessoesAtivas,
   validatePartnerCredentials,
+  type PartnerSession,
 } from "@/lib/channels/connect";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
@@ -42,6 +48,10 @@ export const runtime = "nodejs";
 const conectarSchema = z.object({
   account_id: z.string().trim().min(1).max(200),
   api_key: z.string().trim().min(8).max(500),
+  /** Reconectar ESTE número (a tela manda quando há mais de um). */
+  channel_session_id: z.string().uuid().optional(),
+  /** Acrescentar um número em vez de trocar o que existe. */
+  novo: z.boolean().optional(),
 });
 
 /**
@@ -65,9 +75,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
 
-  const sessao = await findPartnerSession(createAdminClient(), orgId);
+  const sessoes = await listPartnerSessions(createAdminClient(), orgId);
+  const sessao = escolherPrincipal(sessoes);
   const conectado = !!sessao && !sessao.archivedAt;
+  const ativas = sessoesAtivas(sessoes);
 
+  // Os campos de cima são os de SEMPRE (o número principal), para quem lê esta
+  // rota com um número só não ver diferença. `numbers` é a lista completa.
   return ok(
     {
       label: PARTNER_CHANNEL_LABEL,
@@ -83,9 +97,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       endpoint: conectado ? partnerEndpoint() : null,
       webhook_url:
         conectado && sessao.webhookPathToken ? urlDoWebhook(req, sessao.webhookPathToken) : null,
+      numbers: ativas.map((s) => numeroParaATela(req, s)),
+      max_numbers: MAX_PARTNER_NUMBERS,
+      can_add: ativas.length > 0 && ativas.length < MAX_PARTNER_NUMBERS,
     },
     { requestId },
   );
+}
+
+/** Um número como a tela o mostra. A chave NUNCA volta — só se existe. */
+function numeroParaATela(req: NextRequest, s: PartnerSession) {
+  return {
+    channel_session_id: s.id,
+    account_id: s.accountId,
+    phone_number: s.phoneNumber,
+    display_name: s.displayName,
+    status: s.status,
+    has_api_key: s.hasApiKey,
+    webhook_url: s.webhookPathToken ? urlDoWebhook(req, s.webhookPathToken) : null,
+  };
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -130,7 +160,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const existente = await findPartnerSession(admin, orgId);
+  // QUAL linha esta credencial grava. Com um número só, é a mesma de sempre;
+  // com dois, a tela diz qual (ou pede um novo), e a conta já gravada nunca
+  // troca de número por engano. A regra inteira está em `escolherAlvoDaCredencial`.
+  const sessoes = await listPartnerSessions(admin, orgId);
+  const alvo = escolherAlvoDaCredencial(sessoes, {
+    accountId: parsed.data.account_id,
+    channelSessionId: parsed.data.channel_session_id ?? null,
+    novo: parsed.data.novo ?? false,
+  });
+  if (alvo.tipo === "nao_encontrada") {
+    return fail("not_found", t("Número não encontrado nesta organização."), 404, { requestId });
+  }
+  if (alvo.tipo === "conta_em_outro_numero") {
+    return fail(
+      "state_conflict",
+      t("Esta Conta já está conectada em outro número desta organização."),
+      409,
+      { requestId },
+    );
+  }
+  if (alvo.tipo === "teto") {
+    return fail(
+      "state_conflict",
+      t("Esta organização já tem o máximo de números por este canal. Exclua um em Conexões para conectar outro."),
+      409,
+      { requestId, details: { max_numbers: alvo.maximo } },
+    );
+  }
+  const existente = alvo.tipo === "existente" ? alvo.sessao : null;
   // Reconectar por cima de um canal excluído RESSUSCITA a linha, e o token de
   // webhook é preservado para não invalidar o que já está colado do outro lado.
   const token = existente?.webhookPathToken ?? randomBytes(16).toString("hex");
@@ -138,7 +196,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (Renomear), e salvar a credencial de novo não o apaga.
   const displayName = existente?.displayName || (v.displayName ?? PARTNER_CHANNEL_LABEL);
 
-  const { error } = await savePartnerSession(admin, {
+  const { error, contaJaConectada, telefoneJaConectado, id: idDaSessao } = await savePartnerSession(admin, {
     organizationId: orgId,
     existingId: existente?.id ?? null,
     accountId: parsed.data.account_id.trim(),
@@ -148,12 +206,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     phoneNumber: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
     displayName,
   });
+  if (contaJaConectada) {
+    return fail("state_conflict", t("Esta Conta já está conectada em outra organização."), 409, { requestId });
+  }
+  if (telefoneJaConectado) {
+    return fail(
+      "state_conflict",
+      t("Este telefone já está conectado nesta organização por outra conexão. Exclua a antiga em Conexões e tente de novo."),
+      409,
+      { requestId },
+    );
+  }
   if (error) {
     // `savePartnerSession` devolve só a mensagem: é ela que carrega o limite do plano.
     const limite = traduzirLimiteDoPlano(error, authz.user.idioma);
     if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
     return fail("internal_error", error, 500, { requestId });
   }
+
+  // Número novo e troca de credencial ficam no registro; a volta de um canal
+  // excluído também passa por aqui (esta rota ressuscita a linha sozinha).
+  void audit({
+    action: "channel.connected",
+    actorUserId: authz.user.id,
+    organizationId: orgId,
+    resourceType: "channel_session",
+    resourceId: idDaSessao ?? existente?.id ?? null,
+    requestId,
+    metadata: { canal: "partner", numero_novo: !existente, ressuscitado: !!existente?.archivedAt },
+  });
 
   return ok(
     {
