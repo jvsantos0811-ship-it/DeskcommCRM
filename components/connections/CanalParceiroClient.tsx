@@ -69,6 +69,8 @@ interface Estado {
 }
 
 interface Conectado {
+  /** De qual número é o segredo (servidor de antes desta mudança não manda). */
+  channel_session_id?: string | null;
   webhook_url: string;
   webhook_secret: string;
   phone_number: string | null;
@@ -125,8 +127,18 @@ function ParaColar({ rotulo, valor }: { rotulo: string; valor: string }) {
 export function CanalParceiroClient() {
   const t = useT();
   const [estado, setEstado] = useState<Estado | null>(null);
-  /** O segredo recém-gerado e o número (pela posição na lista) a que ele pertence. */
+  /**
+   * O segredo recém-gerado e o número a que ele pertence: pelo id quando a rota
+   * o devolve (a ordem da lista pode mudar ao trazer um número de volta), e pela
+   * posição só como reserva.
+   */
   const [recem, setRecem] = useState<{ indice: number; dados: Conectado } | null>(null);
+  const recemDe = (numero: Numero | null, indice: number): Conectado | null => {
+    if (!recem) return null;
+    const id = recem.dados.channel_session_id ?? null;
+    if (id && numero?.channel_session_id) return numero.channel_session_id === id ? recem.dados : null;
+    return recem.indice === indice ? recem.dados : null;
+  };
   const [adicionando, setAdicionando] = useState(false);
 
   const carregar = async () => {
@@ -159,7 +171,7 @@ export function CanalParceiroClient() {
           indice={indice}
           numero={numero}
           endpoint={estado?.endpoint ?? null}
-          recem={recem?.indice === indice ? recem.dados : null}
+          recem={recemDe(numero, indice)}
           onConectado={async (dados) => {
             setRecem({ indice, dados });
             await carregar();

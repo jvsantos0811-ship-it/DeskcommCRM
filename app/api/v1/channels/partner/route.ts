@@ -180,6 +180,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { requestId },
     );
   }
+  if (alvo.tipo === "conta_ja_conectada") {
+    return fail(
+      "state_conflict",
+      t("Esta Conta já está conectada aqui. Para trocar a chave dela, use Reconectar no número dela."),
+      409,
+      { requestId },
+    );
+  }
+  if (alvo.tipo === "numero_nao_informado") {
+    return fail(
+      "state_conflict",
+      t("Esta organização tem mais de um número. Use Reconectar no número que quer trocar."),
+      409,
+      { requestId },
+    );
+  }
   if (alvo.tipo === "teto") {
     return fail(
       "state_conflict",
@@ -239,6 +255,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return ok(
     {
       connected: true,
+      // De qual número é o segredo abaixo: a tela mostra o cartão no bloco certo.
+      channel_session_id: idDaSessao ?? existente?.id ?? null,
       phone_number: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
       display_name: displayName,
       quality_rating: v.qualityRating,

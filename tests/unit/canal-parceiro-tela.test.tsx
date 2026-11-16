@@ -232,6 +232,7 @@ describe("dois números (16/11/2026)", () => {
     });
     postMock.mockResolvedValue({
       data: {
+        channel_session_id: N2,
         webhook_url: "https://crm.exemplo/api/v1/webhooks/channel/tok-novo",
         webhook_secret: "segredo-do-novo",
         phone_number: "+5511922220002",

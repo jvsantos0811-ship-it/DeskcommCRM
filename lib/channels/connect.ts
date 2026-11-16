@@ -313,18 +313,23 @@ export async function findPartnerSessionById(
  *
  * A ordem importa e cada degrau tem motivo:
  *   1. `channelSessionId` pedido → aquela, e só ela (Reconectar de um número).
- *   2. A conta já está gravada na organização → aquela linha. Sem isso, colar a
- *      conta do 2º número no formulário do 1º trocaria o 1º (o defeito que
- *      motivou esta mudança), e "Adicionar" com uma conta já conectada criaria
- *      uma segunda linha que o índice único recusaria.
- *   3. `novo` → linha nova, se couber no teto.
- *   4. Senão → a principal. Com um número só, é o mesmo de antes.
+ *      Se a conta colada já é de OUTRO número em uso, recusa.
+ *   2. A conta já está em uso nesta organização → aquela linha (reconectar a
+ *      chave dela). Mas, se o pedido era "Adicionar", recusa: gravar por cima
+ *      trocaria o segredo do webhook daquele número e o calaria em silêncio.
+ *   3. A conta é de um número EXCLUÍDO desta organização → ele volta.
+ *   4. `novo` → linha nova.
+ *   5. Sem dizer qual número: com um (ou nenhum) é a principal, como antes;
+ *      com dois, adivinhar trocaria um número em uso, então recusa.
+ * Trazer de volta uma linha excluída também ocupa vaga: passa pelo teto.
  */
 export type AlvoDaCredencial =
   | { tipo: "existente"; sessao: PartnerSession }
   | { tipo: "nova" }
   | { tipo: "nao_encontrada" }
   | { tipo: "conta_em_outro_numero" }
+  | { tipo: "conta_ja_conectada" }
+  | { tipo: "numero_nao_informado" }
   | { tipo: "teto"; maximo: number };
 
 export function escolherAlvoDaCredencial(
@@ -332,32 +337,35 @@ export function escolherAlvoDaCredencial(
   pedido: { accountId: string; channelSessionId?: string | null; novo?: boolean },
 ): AlvoDaCredencial {
   const conta = pedido.accountId.trim();
+  const ativas = sessoesAtivas(sessoes);
+  const teto: AlvoDaCredencial = { tipo: "teto", maximo: MAX_PARTNER_NUMBERS };
+  // Uma linha excluída que volta ocupa vaga como uma nova.
+  const cabe = (alvo: PartnerSession): AlvoDaCredencial =>
+    alvo.archivedAt && ativas.length >= MAX_PARTNER_NUMBERS ? teto : { tipo: "existente", sessao: alvo };
 
   if (pedido.channelSessionId) {
     const pedida = sessoes.find((s) => s.id === pedido.channelSessionId);
     if (!pedida) return { tipo: "nao_encontrada" };
     // A conta colada já é de OUTRO número ativo desta organização: gravar
     // trocaria este número pelo outro (e o índice único recusaria). Melhor dizer.
-    const outro = sessoes.find((s) => s.id !== pedida.id && !s.archivedAt && s.accountId === conta);
-    return outro ? { tipo: "conta_em_outro_numero" } : { tipo: "existente", sessao: pedida };
+    const outro = ativas.find((s) => s.id !== pedida.id && s.accountId === conta);
+    return outro ? { tipo: "conta_em_outro_numero" } : cabe(pedida);
   }
 
   const mesmaConta = sessoes.filter((s) => s.accountId === conta);
-  if (mesmaConta.length > 0) {
-    // Ativa antes de excluída; entre excluídas, a mais recente.
-    const escolhida = mesmaConta.find((s) => !s.archivedAt) ?? mesmaConta[mesmaConta.length - 1];
-    if (escolhida) return { tipo: "existente", sessao: escolhida };
+  const ativaComAConta = mesmaConta.find((s) => !s.archivedAt);
+  if (ativaComAConta) {
+    return pedido.novo ? { tipo: "conta_ja_conectada" } : { tipo: "existente", sessao: ativaComAConta };
   }
+  // Entre as excluídas com esta conta, a mais recente.
+  const excluida = mesmaConta[mesmaConta.length - 1];
+  if (excluida) return cabe(excluida);
 
-  if (pedido.novo) {
-    if (sessoesAtivas(sessoes).length >= MAX_PARTNER_NUMBERS) {
-      return { tipo: "teto", maximo: MAX_PARTNER_NUMBERS };
-    }
-    return { tipo: "nova" };
-  }
+  if (pedido.novo) return ativas.length >= MAX_PARTNER_NUMBERS ? teto : { tipo: "nova" };
 
+  if (ativas.length >= 2) return { tipo: "numero_nao_informado" };
   const principal = escolherPrincipal(sessoes);
-  return principal ? { tipo: "existente", sessao: principal } : { tipo: "nova" };
+  return principal ? cabe(principal) : { tipo: "nova" };
 }
 
 /**

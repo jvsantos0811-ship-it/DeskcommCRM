@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   linhas: [] as Array<Record<string, unknown>>,
   validar: vi.fn(),
   proximoId: 0,
+  /** Erro que a próxima escrita devolve (simula os índices únicos do banco). */
+  erroNaEscrita: null as null | { code: string; message: string },
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
@@ -76,6 +78,11 @@ function dubleDoBanco() {
       let unica = false;
       const casam = () => h.linhas.filter((l) => filtros.every(([c, v]) => (l[c] ?? null) === v));
       const executar = () => {
+        if (op !== "select" && h.erroNaEscrita) {
+          const erro = h.erroNaEscrita;
+          h.erroNaEscrita = null;
+          return { data: null, error: erro };
+        }
         if (op === "insert") {
           h.proximoId += 1;
           const nova = {
@@ -142,6 +149,7 @@ const daOrg = () => h.linhas.filter((l) => l.organization_id === ORG && l.provid
 beforeEach(() => {
   h.linhas = [];
   h.proximoId = 0;
+  h.erroNaEscrita = null;
   h.validar.mockReset();
   h.validar.mockResolvedValue({ ok: true, phoneNumber: "5511900000000", displayName: "Do provedor", qualityRating: null });
 });
@@ -218,11 +226,50 @@ describe("adicionar o segundo número", () => {
     expect(r.status).toBe(200);
   });
 
-  it("'adicionar' com uma conta que JÁ é desta organização reconecta aquela linha, sem duplicar", async () => {
+  it("'adicionar' com a conta de um número EM USO é recusado e não troca o segredo dele (não o cala)", async () => {
     h.linhas.push(numero(NUMERO_1, "acc_a"));
+    const antes = { ...h.linhas[0] };
     const r = await conectar({ account_id: "acc_a", novo: true });
-    expect(r.status).toBe(200);
+    expect(r.status).toBe(409);
     expect(daOrg()).toHaveLength(1);
+    // Nada foi gravado: nem chave, nem segredo do webhook.
+    expect(h.linhas[0]).toEqual(antes);
+    expect(h.linhas[0]).not.toHaveProperty("webhook_secret_encrypted");
+  });
+
+  it("'adicionar' com a conta de um número EXCLUÍDO desta organização o traz de volta, sem duplicar", async () => {
+    h.linhas.push(numero(NUMERO_1, "acc_a"), numero(NUMERO_2, "acc_b", { archived_at: "2026-11-01T00:00:00.000Z" }));
+    const r = await conectar({ account_id: "acc_b", novo: true });
+    expect(r.status).toBe(200);
+    expect(daOrg()).toHaveLength(2);
+    expect(h.linhas.find((l) => l.id === NUMERO_2)?.archived_at).toBeNull();
+    const corpo = (await r.json()) as { data: { channel_session_id: string } };
+    expect(corpo.data.channel_session_id).toBe(NUMERO_2);
+  });
+
+  it("trazer de volta um número excluído também ocupa vaga: com dois em uso é 409, por qualquer caminho", async () => {
+    const terceiro = "66666666-6666-4666-8666-666666666666";
+    h.linhas.push(
+      numero(NUMERO_1, "acc_a"),
+      numero(NUMERO_2, "acc_b"),
+      numero(terceiro, "acc_c", { archived_at: "2026-11-01T00:00:00.000Z" }),
+    );
+    for (const corpo of [
+      { account_id: "acc_c" },
+      { account_id: "acc_c", novo: true },
+      { account_id: "acc_c", channel_session_id: terceiro },
+    ]) {
+      expect((await conectar(corpo)).status, JSON.stringify(corpo)).toBe(409);
+    }
+    expect(h.linhas.find((l) => l.id === terceiro)?.archived_at).not.toBeNull();
+  });
+
+  it("o POST devolve DE QUAL número é o segredo novo", async () => {
+    h.linhas.push(numero(NUMERO_1, "acc_a"));
+    const r = await conectar({ account_id: "acc_b", novo: true });
+    const corpo = (await r.json()) as { data: { channel_session_id: string } };
+    const nova = daOrg().find((l) => l.id !== NUMERO_1)!;
+    expect(corpo.data.channel_session_id).toBe(nova.id);
   });
 });
 
@@ -243,6 +290,14 @@ describe("a conta nunca troca de número por engano", () => {
     expect(h.linhas.find((l) => l.id === NUMERO_2)?.zernio_token_encrypted).toBe("cifrado");
   });
 
+  it("com dois números, um pedido que não diz qual (aba antiga, chamada pela API) é 409 e não troca nenhum", async () => {
+    h.linhas.push(numero(NUMERO_1, "acc_a"), numero(NUMERO_2, "acc_b"));
+    const r = await conectar({ account_id: "acc_novinha" });
+    expect(r.status).toBe(409);
+    expect(daOrg().map((l) => l.zernio_account_id).sort()).toEqual(["acc_a", "acc_b"]);
+    expect(daOrg().every((l) => l.zernio_token_encrypted === "cifrado-antigo")).toBe(true);
+  });
+
   it("Reconectar um número de OUTRA organização pelo id é 404 e não grava", async () => {
     h.linhas.push(numero(NUMERO_1, "acc_a"), { ...numero(NUMERO_2, "acc_x"), organization_id: OUTRA_ORG });
     const r = await conectar({ account_id: "acc_x", channel_session_id: NUMERO_2 });
@@ -254,6 +309,32 @@ describe("a conta nunca troca de número por engano", () => {
     h.linhas.push({ ...numero(NUMERO_2, "acc_x"), organization_id: OUTRA_ORG });
     expect(await findPartnerSessionById(createAdminClient(), ORG, NUMERO_2)).toBeNull();
     expect(await findPartnerSessionById(createAdminClient(), OUTRA_ORG, NUMERO_2)).not.toBeNull();
+  });
+});
+
+describe("recusas do banco viram frase, não 500", () => {
+  it("conta ativa em OUTRA organização (índice único da 0165) é 409", async () => {
+    h.linhas.push(numero(NUMERO_1, "acc_a"));
+    h.erroNaEscrita = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "channel_sessions_zernio_account_id_ativo_unique"',
+    };
+    const r = await conectar({ account_id: "acc_de_outra_org", novo: true });
+    expect(r.status).toBe(409);
+    const corpo = (await r.json()) as { error: { message: string } };
+    expect(corpo.error.message).toMatch(/outra organização/);
+  });
+
+  it("telefone já ativo nesta organização por outra conexão (índice da 0107) é 409", async () => {
+    h.linhas.push(numero(NUMERO_1, "acc_a"));
+    h.erroNaEscrita = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "channel_sessions_phone_per_org_unique"',
+    };
+    const r = await conectar({ account_id: "acc_b", novo: true });
+    expect(r.status).toBe(409);
+    const corpo = (await r.json()) as { error: { message: string } };
+    expect(corpo.error.message).toMatch(/telefone já está conectado/);
   });
 });
 

@@ -17820,6 +17820,8 @@ export const DICIONARIO: Traducoes = {
   "Esta Conta já está conectada em outra organização.": { es: "Esta Cuenta ya está conectada en otra organización." },
   "Este telefone já está conectado nesta organização por outra conexão. Exclua a antiga em Conexões e tente de novo.": { es: "Este teléfono ya está conectado en esta organización por otra conexión. Elimina la anterior en Conexiones e inténtalo de nuevo." },
   "Número inválido.": { es: "Número inválido." },
+  "Esta Conta já está conectada aqui. Para trocar a chave dela, use Reconectar no número dela.": { es: "Esta Cuenta ya está conectada aquí. Para cambiar su clave, usa Reconectar en su número." },
+  "Esta organização tem mais de um número. Use Reconectar no número que quer trocar.": { es: "Esta organización tiene más de un número. Usa Reconectar en el número que quieres cambiar." },
 };
 
 /**
