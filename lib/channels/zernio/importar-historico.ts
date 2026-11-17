@@ -33,7 +33,7 @@
  * (a tela chegou a mostrar 0 mensagens com milhares no banco). Agora:
  *  - o orçamento é conferido entre CONVERSAS;
  *  - cada conversa termina com uma gravação que renova o carimbo e guarda onde
- *    a rodada está dentro da página (`CHAVES_DA_RETOMADA`), para a rodada
+ *    a rodada está dentro da página (`PREFIXO_DA_FEITA`), para a rodada
  *    seguinte continuar dali sem refazer a página — e conversa longa renova o
  *    carimbo também entre as páginas de MENSAGENS;
  *  - rodada que para pelo tempo LIBERA a importação (carimbo vencido), para o
@@ -112,22 +112,21 @@ export class RodadaPerdeuAImportacao extends Error {
 }
 
 /**
- * Onde a rodada parou DENTRO da página: quantas conversas do começo da página
- * já foram feitas, e a impressão da LISTA dessas conversas, na ordem.
+ * Quais conversas da página EM ANDAMENTO já foram feitas: uma chave
+ * `feita_<impressão do id>` por conversa.
  *
  * A lista do provedor é ordenada por atividade, e o número segue em uso durante
- * a importação: uma conversa ainda não importada que recebe mensagem sobe para o
- * topo. Retomar "depois da última feita" pularia essa conversa para sempre. Por
- * isso a retomada só pula o começo da página se ele for EXATAMENTE o mesmo (as
- * mesmas conversas, na mesma ordem); qualquer mudança refaz a página inteira —
- * refazer é seguro (ver o cabeçalho), pular não seria.
+ * a importação: conversas sobem para o topo quando recebem mensagem. Retomar por
+ * posição ("depois da 20ª") pularia a conversa não feita que subiu; e refazer a
+ * página a cada mudança de ordem não termina nunca num número movimentado. Por
+ * isso a rodada percorre a página na ordem ATUAL e pula só as conversas já
+ * feitas nela: nada fica de fora, e cada rodada avança.
  *
  * Moram em `contagens` porque é a única coluna livre sem migration; são números
  * (o tipo da coluna) e a tela só lê as chaves que conhece. Saem das contagens
  * quando a página termina e antes da auditoria final.
  */
-export const CHAVES_DA_RETOMADA = ["retomar_quantas", "retomar_impressao"] as const;
-const [RETOMAR_QUANTAS, RETOMAR_IMPRESSAO] = CHAVES_DA_RETOMADA;
+export const PREFIXO_DA_FEITA = "feita_";
 
 /** FNV-1a de 32 bits: estável, curto, e cabe num número do JSON. */
 export function impressao(texto: string): number {
@@ -139,18 +138,14 @@ export function impressao(texto: string): number {
   return h;
 }
 
-/** A impressão das `n` primeiras conversas da página, na ordem. */
-export function impressaoDoComeco(conversas: ReadonlyArray<{ id: string }>, n: number): number {
-  return impressao(
-    conversas
-      .slice(0, n)
-      .map((c) => c.id)
-      .join("\n"),
-  );
+const chaveDaFeita = (conversaId: string) => `${PREFIXO_DA_FEITA}${impressao(conversaId)}`;
+
+function temFeitas(c: Record<string, number>): boolean {
+  return Object.keys(c).some((k) => k.startsWith(PREFIXO_DA_FEITA));
 }
 
-function limparRetomada(c: Record<string, number>): void {
-  for (const k of CHAVES_DA_RETOMADA) delete c[k];
+function limparFeitas(c: Record<string, number>): void {
+  for (const k of Object.keys(c)) if (k.startsWith(PREFIXO_DA_FEITA)) delete c[k];
 }
 
 /** O que a rodada escreveu por último: o carimbo (`atualizada_em`) e o estado. */
@@ -323,7 +318,10 @@ export async function importacoesPendentes(admin: Admin, deps: Dependencias = PA
     .select("id")
     .in("estado", [...ESTADOS_VIVOS])
     .or(`estado.eq.na_fila,atualizada_em.lt.${perdida}`)
-    .order("criada_em", { ascending: true })
+    // Pelo carimbo, não pela criação: a rodada que termina libera a importação
+    // com um carimbo vencido de AGORA, e quem está esperando há mais tempo passa
+    // na frente — duas organizações importando ao mesmo tempo se revezam.
+    .order("atualizada_em", { ascending: true })
     .limit(5);
   return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
 }
@@ -373,8 +371,17 @@ async function importarUmaConversa(
   }
 
   // Conversa longa (até 5.000 mensagens) pode passar de 3 minutos sozinha.
+  // Erro de banco no sinal de vida não derruba a conversa: a posse volta a ser
+  // conferida no `salvar` do fim dela. Só a perda da posse para a rodada.
   const { mensagens, ignoradas } = await buscarMensagensDaConversa(deps, creds, conversa.id, () =>
-    renovar(admin, imp, posse, deps),
+    renovar(admin, imp, posse, deps).catch((err: unknown) => {
+      if (err instanceof RodadaPerdeuAImportacao) throw err;
+      logger.warn("[importacao-historico] sinal de vida não gravou", {
+        organization_id: imp.organization_id,
+        importacao_id: imp.id,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }),
   );
   somar(c, "mensagens_ignoradas", ignoradas);
   if (mensagens.length === 0) {
@@ -524,23 +531,15 @@ export async function rodarImportacao(
         const pagina = lerPaginaDeConversas(await chamarApi(deps, creds, `/v1/inbox/conversations?${qs}`), creds.accountId);
         if (pagina.contaRecusada) throw new ProvedorPediuEspera(pagina.contaRecusada.esperarSegundos);
 
-        // Página retomada: pula o começo já feito SÓ se ele for o mesmo, na
-        // mesma ordem (ver `CHAVES_DA_RETOMADA`). Senão, refaz a página inteira.
-        const quantas = imp.contagens[RETOMAR_QUANTAS];
-        const marca = imp.contagens[RETOMAR_IMPRESSAO];
-        let comeco = 0;
-        if (typeof quantas === "number" && typeof marca === "number") {
-          const igual = quantas <= pagina.conversas.length && impressaoDoComeco(pagina.conversas, quantas) === marca;
-          comeco = igual ? quantas : 0;
-        } else {
-          somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
-        }
+        // Página nova conta quem veio sem identidade; página retomada já contou.
+        if (!temFeitas(imp.contagens)) somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
 
-        for (let i = comeco; i < pagina.conversas.length; i++) {
+        for (const conversa of pagina.conversas) {
+          // Já feita nesta página (ver `PREFIXO_DA_FEITA`): pula, em qualquer posição.
+          if (imp.contagens[chaveDaFeita(conversa.id)] !== undefined) continue;
           // O orçamento é conferido entre CONVERSAS: com o banco lento, uma
           // página inteira passa de minutos.
           if (acabouOTempo()) break paginas;
-          const conversa = pagina.conversas[i]!;
           try {
             await importarUmaConversa(admin, deps, creds, imp, posse, conversa, interno);
           } catch (err) {
@@ -549,14 +548,13 @@ export async function rodarImportacao(
             registrarFalha(imp, err instanceof Error ? err.message : String(err), conversa.id);
           }
           conversas++;
-          imp.contagens[RETOMAR_QUANTAS] = i + 1;
-          imp.contagens[RETOMAR_IMPRESSAO] = impressaoDoComeco(pagina.conversas, i + 1);
+          imp.contagens[chaveDaFeita(conversa.id)] = 1;
           // Sinal de vida + progresso, a cada conversa.
           await salvar(admin, imp, posse, deps);
         }
 
         // Página feita: o cursor anda e a marca de retomada sai.
-        limparRetomada(imp.contagens);
+        limparFeitas(imp.contagens);
         imp.cursor_conversas = pagina.proximoCursor;
         if (!pagina.proximoCursor) {
           imp.estado = imp.triagem_ligada && imp.pipeline_id ? "triando" : "concluida";
@@ -635,7 +633,7 @@ async function concluir(admin: Admin, imp: Importacao, posse: Posse, deps: Depen
     mensagens_no_banco: mensagens ?? 0,
     negocios_no_banco: negocios ?? 0,
   };
-  limparRetomada(imp.contagens);
+  limparFeitas(imp.contagens);
   await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
   await audit({
     action: "lead.imported",

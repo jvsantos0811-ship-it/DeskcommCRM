@@ -41,9 +41,10 @@ async function handle(req: NextRequest): Promise<Response> {
   if (ids.length === 0) return ok({ rodadas: 0 }, { requestId });
 
   const { data: linhas } = await admin.from("importacoes_de_historico").select("id, organization_id").in("id", ids);
-  const alvo = ((linhas ?? []) as Array<{ id: string; organization_id: string }>).find(
-    (l) => !paradas.has(l.organization_id),
-  );
+  // Na ordem de `importacoesPendentes` (quem espera há mais tempo primeiro) —
+  // o `in` não devolve as linhas em ordem nenhuma.
+  const porId = new Map(((linhas ?? []) as Array<{ id: string; organization_id: string }>).map((l) => [l.id, l]));
+  const alvo = ids.map((id) => porId.get(id)).find((l) => l !== undefined && !paradas.has(l.organization_id));
   if (!alvo) return ok({ rodadas: 0 }, { requestId });
 
   const resultado = await rodarImportacao(admin, alvo.id);

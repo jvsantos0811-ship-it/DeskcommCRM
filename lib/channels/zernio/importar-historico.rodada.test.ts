@@ -17,10 +17,11 @@
  *  - tirar `.eq("atualizada_em", posse.carimbo)` de `salvar` = "carimbo velho"
  *    vermelho (a rodada velha regrava contagens e cursor por cima da nova);
  *  - tirar `.in("estado", ...)` de `salvar` = "cancelada" vermelho;
- *  - ignorar `CHAVES_DA_RETOMADA` ao abrir a página = "continua de onde parou"
- *    vermelho (refaz as conversas já feitas);
- *  - retomar pelo ÍNDICE sem conferir a impressão do começo da página =
- *    "lista reordenada" vermelho (a conversa que subiu para o topo nunca entra);
+ *  - ignorar as chaves `feita_*` ao percorrer a página = "continua de onde
+ *    parou" e "número movimentado" vermelhos (refaz as conversas já feitas, e a
+ *    página 1 de um número ativo nunca termina);
+ *  - retomar por POSIÇÃO ("depois da última feita") = "lista reordenada"
+ *    vermelho (a conversa que subiu para o topo nunca entra);
  *  - não liberar a importação no fim por tempo = "libera para o minuto seguinte"
  *    vermelho;
  *  - não renovar o carimbo entre páginas de mensagens = "conversa longa"
@@ -52,10 +53,10 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 
 import { audit } from "@/lib/audit";
 import {
-  CHAVES_DA_RETOMADA,
   ORCAMENTO_DA_RODADA_MS,
+  PREFIXO_DA_FEITA,
   RODADA_PERDIDA_MS,
-  impressaoDoComeco,
+  impressao,
   pegarImportacao,
   rodarImportacao,
   type Dependencias,
@@ -284,9 +285,11 @@ const proximaRodada = () => {
   relogio.t += RODADA_PERDIDA_MS + 1_000;
 };
 
+const feitas = (c: Record<string, unknown>) => Object.keys(c).filter((k) => k.startsWith(PREFIXO_DA_FEITA));
+
 const contadores = (c: Record<string, number>) => {
   const resto = { ...c };
-  for (const k of CHAVES_DA_RETOMADA) delete resto[k];
+  for (const k of feitas(c)) delete resto[k];
   return resto;
 };
 
@@ -311,8 +314,9 @@ describe("importação do histórico: uma rodada por vez (PC-042)", () => {
     expect(Math.max(...idades)).toBeLessThanOrEqual(15_000);
     // A página não terminou: o cursor não andou, e a marca diz onde parou.
     expect(banco.linha.cursor_conversas).toBeNull();
-    expect(banco.linha.contagens.retomar_quantas).toBe(3);
-    expect(banco.linha.contagens.retomar_impressao).toBe(impressaoDoComeco([{ id: "c0" }, { id: "c1" }, { id: "c2" }], 3));
+    expect(feitas(banco.linha.contagens).sort()).toEqual(
+      ["c0", "c1", "c2"].map((id) => `${PREFIXO_DA_FEITA}${impressao(id)}`).sort(),
+    );
   });
 
   it("com conversas de 35 s, uma segunda rodada nunca consegue pegar a importação no meio", async () => {
@@ -404,10 +408,10 @@ describe("importação do histórico: uma rodada por vez (PC-042)", () => {
     expect(banco.linha.estado).toBe("concluida");
     expect(banco.linha.cursor_conversas).toBeNull();
     expect(banco.linha.contagens.conversas_lidas).toBe(110);
-    for (const k of CHAVES_DA_RETOMADA) expect(k in banco.linha.contagens).toBe(false);
+    expect(feitas(banco.linha.contagens)).toEqual([]);
     const meta = vi.mocked(audit).mock.calls[0]?.[0]?.metadata as Record<string, unknown>;
     expect(meta).toBeDefined();
-    for (const k of CHAVES_DA_RETOMADA) expect(k in meta).toBe(false);
+    expect(feitas(meta)).toEqual([]);
   });
   it("lista reordenada no meio da página: a conversa que subiu para o topo é importada", async () => {
     const { banco, admin, deps } = montar(15_000);
@@ -454,5 +458,29 @@ describe("importação do histórico: uma rodada por vez (PC-042)", () => {
     expect(r.conversas).toBe(1);
     expect(Math.max(...idades)).toBeLessThanOrEqual(20_000);
     expect(rivais.every((x) => x === null)).toBe(true);
+  });
+  it("número movimentado (a ordem muda entre TODAS as rodadas): a importação anda e termina, sem deixar ninguém de fora", async () => {
+    const { banco, admin, deps } = montar(2_000);
+    const todas = new Set<string>();
+    let rodadas = 0;
+    let refeitas = 0;
+    while (banco.linha.estado !== "concluida" && rodadas < 50) {
+      // Uma mensagem nova numa conversa do meio da página 1 a cada rodada.
+      const meio = banco.ordemDaPagina1[50]!;
+      banco.ordemDaPagina1 = [meio, ...banco.ordemDaPagina1.filter((id) => id !== meio)];
+      banco.gravadas = [];
+      await rodarImportacao(admin, "imp-1", deps);
+      for (const id of banco.gravadas) {
+        if (todas.has(id)) refeitas++;
+        todas.add(id);
+      }
+      rodadas++;
+      proximaRodada();
+    }
+    expect(banco.linha.estado).toBe("concluida");
+    // 110 conversas a 20 por rodada: 6 rodadas; folga para a conclusão.
+    expect(rodadas).toBeLessThanOrEqual(8);
+    expect(refeitas).toBe(0);
+    expect(todas.size).toBe(110);
   });
 });
