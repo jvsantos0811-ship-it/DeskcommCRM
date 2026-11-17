@@ -14,6 +14,8 @@
  *
  * SABOTAGEM: tirar as fichas de `agendarRecargaDasConversas` (voltar a agendar
  * sempre em `JANELA_MS`) = o primeiro caso vermelho, com dezenas de recargas.
+ * Tirar a trava do relógio (`Math.max(0, …)` e o realinhamento de `em`) = o
+ * caso "relógio que volta" vermelho: a recarga ficava marcada para daqui a 1 h.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QueryClient } from "@tanstack/react-query";
@@ -75,6 +77,21 @@ describe("recarga do inbox numa rajada contínua (PC-042)", () => {
     agendarRecargaDasConversas(qc);
     vi.advanceTimersByTime(1_000);
     expect(recargas).toEqual([t0 + 150, t1 + 150]);
+  });
+
+  it("relógio do computador que volta 1 h não segura a recarga", () => {
+    const { qc, recargas } = clienteFalso();
+    agendarRecargaDasConversas(qc);
+    vi.advanceTimersByTime(200);
+    agendarRecargaDasConversas(qc);
+    vi.advanceTimersByTime(200);
+    expect(recargas.length).toBe(2);
+    vi.setSystemTime(Date.now() - 60 * 60_000);
+    const ev = Date.now();
+    agendarRecargaDasConversas(qc);
+    vi.advanceTimersByTime(6_000);
+    expect(recargas.length).toBe(3);
+    expect(recargas[2]! - ev).toBeLessThanOrEqual(5_000 + 150);
   });
 
   it("nenhum evento da rajada espera mais que ~5 s pela recarga", () => {

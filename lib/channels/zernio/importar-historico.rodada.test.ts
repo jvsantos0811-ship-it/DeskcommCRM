@@ -17,8 +17,14 @@
  *  - tirar `.eq("atualizada_em", posse.carimbo)` de `salvar` = "carimbo velho"
  *    vermelho (a rodada velha regrava contagens e cursor por cima da nova);
  *  - tirar `.in("estado", ...)` de `salvar` = "cancelada" vermelho;
- *  - ignorar `CHAVE_DA_RETOMADA` ao abrir a página = "continua de onde parou"
+ *  - ignorar `CHAVES_DA_RETOMADA` ao abrir a página = "continua de onde parou"
  *    vermelho (refaz as conversas já feitas);
+ *  - retomar pelo ÍNDICE sem conferir a impressão do começo da página =
+ *    "lista reordenada" vermelho (a conversa que subiu para o topo nunca entra);
+ *  - não liberar a importação no fim por tempo = "libera para o minuto seguinte"
+ *    vermelho;
+ *  - não renovar o carimbo entre páginas de mensagens = "conversa longa"
+ *    vermelho;
  *  - `pegar` deixar a linha em `na_fila` = "35 s" vermelho: a fila não olha o
  *    carimbo, e o cron seguinte pegava a mesma importação na primeira página.
  */
@@ -46,10 +52,10 @@ vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 
 import { audit } from "@/lib/audit";
 import {
-  CHAVE_DA_RETOMADA,
+  CHAVES_DA_RETOMADA,
   ORCAMENTO_DA_RODADA_MS,
   RODADA_PERDIDA_MS,
-  impressaoDoId,
+  impressaoDoComeco,
   pegarImportacao,
   rodarImportacao,
   type Dependencias,
@@ -74,6 +80,13 @@ interface Banco {
   aoGravar?: (thread: string) => Promise<void> | void;
   /** A próxima leitura da listagem falha (rede). */
   falharListagem: boolean;
+  /** Ordem da página 1 da listagem (ids); padrão c0..c99. */
+  ordemDaPagina1: string[];
+  /** Páginas de mensagens por conversa, e quanto o relógio anda em cada uma. */
+  paginasDeMensagens: number;
+  paginaDeMensagensMs: number;
+  /** Chamado a cada página de mensagens buscada. */
+  aoBuscarMensagens?: () => Promise<void> | void;
 }
 
 const relogio = { t: 0 };
@@ -159,13 +172,13 @@ class Consulta {
   }
 }
 
-function pagina(prefixo: string, n: number, proximo: string | null) {
+function pagina(ids: string[], proximo: string | null) {
   return {
-    conversas: Array.from({ length: n }, (_, i) => ({
-      id: `${prefixo}${i}`,
+    conversas: ids.map((id) => ({
+      id,
       isGroup: false,
       atualizadaEm: null,
-      identity: { displayName: `Contato de teste ${prefixo}${i}`, phone: null },
+      identity: { displayName: `Contato de teste ${id}`, phone: null },
     })),
     semIdentidade: 0,
     proximoCursor: proximo,
@@ -195,6 +208,9 @@ function montar(conversaMs: number) {
     gravadas: [],
     conversaMs,
     falharListagem: false,
+    ordemDaPagina1: Array.from({ length: 100 }, (_, i) => `c${i}`),
+    paginasDeMensagens: 1,
+    paginaDeMensagensMs: 0,
   };
   const admin = {
     from: (t: string) => new Consulta(banco, t),
@@ -224,6 +240,9 @@ function montar(conversaMs: number) {
     agora: () => relogio.t,
     fetch: (async (url: string) => {
       if (url.includes("/messages?")) {
+        relogio.t += banco.paginaDeMensagensMs;
+        await banco.aoBuscarMensagens?.();
+        const n = Number(new URL(url).searchParams.get("cursor")?.slice(1) ?? "0");
         return resposta({
           mensagens: [
             {
@@ -240,14 +259,21 @@ function montar(conversaMs: number) {
             },
           ],
           ignoradas: 0,
-          proximoCursor: null,
+          proximoCursor: n + 1 < banco.paginasDeMensagens ? `m${n + 1}` : null,
         });
       }
       if (banco.falharListagem) {
         banco.falharListagem = false;
         throw new Error("rede_caiu");
       }
-      return resposta(url.includes("cursor=p2") ? pagina("d", 10, null) : pagina("c", 100, "p2"));
+      return resposta(
+        url.includes("cursor=p2")
+          ? pagina(
+              Array.from({ length: 10 }, (_, i) => `d${i}`),
+              null,
+            )
+          : pagina(banco.ordemDaPagina1, "p2"),
+      );
     }) as unknown as typeof fetch,
   };
   // O cliente admin falso cobre só o que a importação usa.
@@ -259,8 +285,8 @@ const proximaRodada = () => {
 };
 
 const contadores = (c: Record<string, number>) => {
-  const { [CHAVE_DA_RETOMADA]: _marca, ...resto } = c;
-  void _marca;
+  const resto = { ...c };
+  for (const k of CHAVES_DA_RETOMADA) delete resto[k];
   return resto;
 };
 
@@ -285,7 +311,8 @@ describe("importação do histórico: uma rodada por vez (PC-042)", () => {
     expect(Math.max(...idades)).toBeLessThanOrEqual(15_000);
     // A página não terminou: o cursor não andou, e a marca diz onde parou.
     expect(banco.linha.cursor_conversas).toBeNull();
-    expect(banco.linha.contagens[CHAVE_DA_RETOMADA]).toBe(impressaoDoId("c2"));
+    expect(banco.linha.contagens.retomar_quantas).toBe(3);
+    expect(banco.linha.contagens.retomar_impressao).toBe(impressaoDoComeco([{ id: "c0" }, { id: "c1" }, { id: "c2" }], 3));
   });
 
   it("com conversas de 35 s, uma segunda rodada nunca consegue pegar a importação no meio", async () => {
@@ -377,9 +404,55 @@ describe("importação do histórico: uma rodada por vez (PC-042)", () => {
     expect(banco.linha.estado).toBe("concluida");
     expect(banco.linha.cursor_conversas).toBeNull();
     expect(banco.linha.contagens.conversas_lidas).toBe(110);
-    expect(CHAVE_DA_RETOMADA in banco.linha.contagens).toBe(false);
+    for (const k of CHAVES_DA_RETOMADA) expect(k in banco.linha.contagens).toBe(false);
     const meta = vi.mocked(audit).mock.calls[0]?.[0]?.metadata as Record<string, unknown>;
     expect(meta).toBeDefined();
-    expect(CHAVE_DA_RETOMADA in meta).toBe(false);
+    for (const k of CHAVES_DA_RETOMADA) expect(k in meta).toBe(false);
+  });
+  it("lista reordenada no meio da página: a conversa que subiu para o topo é importada", async () => {
+    const { banco, admin, deps } = montar(15_000);
+    await rodarImportacao(admin, "imp-1", deps);
+    expect(banco.gravadas).toEqual(["c0", "c1", "c2"]);
+
+    // Uma conversa ainda não importada recebe mensagem e sobe para o topo.
+    banco.ordemDaPagina1 = ["c50", ...banco.ordemDaPagina1.filter((id) => id !== "c50")];
+    const todas = new Set<string>(banco.gravadas);
+    for (let rodada = 0; rodada < 200 && banco.linha.estado !== "concluida"; rodada++) {
+      proximaRodada();
+      banco.gravadas = [];
+      await rodarImportacao(admin, "imp-1", deps);
+      for (const id of banco.gravadas) todas.add(id);
+    }
+    expect(banco.linha.estado).toBe("concluida");
+    const faltando = [...banco.ordemDaPagina1, ...Array.from({ length: 10 }, (_, i) => `d${i}`)].filter(
+      (id) => !todas.has(id),
+    );
+    expect(faltando).toEqual([]);
+  });
+
+  it("rodada que para pelo tempo libera a importação para o cron do minuto seguinte", async () => {
+    const { admin, deps } = montar(15_000);
+    const r = await rodarImportacao(admin, "imp-1", deps);
+    expect(r.parouPor).toBe("tempo");
+    relogio.t += 61_000;
+    expect(await pegarImportacao(admin, "imp-1", deps)).not.toBeNull();
+  });
+
+  it("conversa longa (muitas páginas de mensagens) renova o carimbo e ninguém a pega no meio", async () => {
+    const { banco, admin, deps } = montar(1_000);
+    banco.paginasDeMensagens = 15;
+    banco.paginaDeMensagensMs = 20_000;
+    const idades: number[] = [];
+    const rivais: unknown[] = [];
+    banco.aoBuscarMensagens = async () => {
+      idades.push(relogio.t - Date.parse(banco.linha.atualizada_em));
+      rivais.push(await pegarImportacao(admin, "imp-1", deps));
+    };
+    const r = await rodarImportacao(admin, "imp-1", deps);
+
+    // 15 páginas de 20 s = 300 s numa conversa só, mais que os 3 min de "perdida".
+    expect(r.conversas).toBe(1);
+    expect(Math.max(...idades)).toBeLessThanOrEqual(20_000);
+    expect(rivais.every((x) => x === null)).toBe(true);
   });
 });

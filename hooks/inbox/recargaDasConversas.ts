@@ -64,7 +64,8 @@ interface Estado {
 const estados = new WeakMap<QueryClient, Estado>();
 
 function fichasEm(e: Estado, agora: number): number {
-  return Math.min(FICHAS_MAX, e.fichas + (agora - e.em) / INTERVALO_MS);
+  // Relógio que volta (ajuste do sistema) não gera dívida de fichas.
+  return Math.min(FICHAS_MAX, e.fichas + Math.max(0, agora - e.em) / INTERVALO_MS);
 }
 
 export function agendarRecargaDasConversas(qc: QueryClient): void {
@@ -74,6 +75,7 @@ export function agendarRecargaDasConversas(qc: QueryClient): void {
     e = { timer: null, fichas: FICHAS_MAX, em: agora };
     estados.set(qc, e);
   }
+  if (agora < e.em) e.em = agora;
   // Já há recarga marcada: ela sai depois deste evento e o leva junto.
   if (e.timer) return;
   const faltam = 1 - fichasEm(e, agora);

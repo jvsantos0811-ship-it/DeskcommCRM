@@ -33,8 +33,11 @@
  * (a tela chegou a mostrar 0 mensagens com milhares no banco). Agora:
  *  - o orçamento é conferido entre CONVERSAS;
  *  - cada conversa termina com uma gravação que renova o carimbo e guarda onde
- *    a rodada está dentro da página (`CHAVE_DA_RETOMADA`), para a rodada
- *    seguinte continuar dali sem refazer a página;
+ *    a rodada está dentro da página (`CHAVES_DA_RETOMADA`), para a rodada
+ *    seguinte continuar dali sem refazer a página — e conversa longa renova o
+ *    carimbo também entre as páginas de MENSAGENS;
+ *  - rodada que para pelo tempo LIBERA a importação (carimbo vencido), para o
+ *    cron do minuto seguinte continuar sem esperar os 3 minutos de "perdida";
  *  - toda gravação é condicionada ao carimbo da própria rodada e a um estado
  *    vivo: se outra rodada pegou a importação, ou alguém a cancelou, a gravação
  *    não casa linha nenhuma e a rodada para sem escrever mais nada
@@ -109,21 +112,45 @@ export class RodadaPerdeuAImportacao extends Error {
 }
 
 /**
- * Onde a rodada parou DENTRO da página: a impressão do id da última conversa
- * feita. Mora em `contagens` porque é a única coluna livre sem migration; é um
- * número (o tipo da coluna) e a tela só lê as chaves que conhece. Sai das
- * contagens quando a página termina e antes da auditoria final.
+ * Onde a rodada parou DENTRO da página: quantas conversas do começo da página
+ * já foram feitas, e a impressão da LISTA dessas conversas, na ordem.
+ *
+ * A lista do provedor é ordenada por atividade, e o número segue em uso durante
+ * a importação: uma conversa ainda não importada que recebe mensagem sobe para o
+ * topo. Retomar "depois da última feita" pularia essa conversa para sempre. Por
+ * isso a retomada só pula o começo da página se ele for EXATAMENTE o mesmo (as
+ * mesmas conversas, na mesma ordem); qualquer mudança refaz a página inteira —
+ * refazer é seguro (ver o cabeçalho), pular não seria.
+ *
+ * Moram em `contagens` porque é a única coluna livre sem migration; são números
+ * (o tipo da coluna) e a tela só lê as chaves que conhece. Saem das contagens
+ * quando a página termina e antes da auditoria final.
  */
-export const CHAVE_DA_RETOMADA = "retomar_depois_de";
+export const CHAVES_DA_RETOMADA = ["retomar_quantas", "retomar_impressao"] as const;
+const [RETOMAR_QUANTAS, RETOMAR_IMPRESSAO] = CHAVES_DA_RETOMADA;
 
 /** FNV-1a de 32 bits: estável, curto, e cabe num número do JSON. */
-export function impressaoDoId(id: string): number {
+export function impressao(texto: string): number {
   let h = 0x811c9dc5;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h;
+}
+
+/** A impressão das `n` primeiras conversas da página, na ordem. */
+export function impressaoDoComeco(conversas: ReadonlyArray<{ id: string }>, n: number): number {
+  return impressao(
+    conversas
+      .slice(0, n)
+      .map((c) => c.id)
+      .join("\n"),
+  );
+}
+
+function limparRetomada(c: Record<string, number>): void {
+  for (const k of CHAVES_DA_RETOMADA) delete c[k];
 }
 
 /** O que a rodada escreveu por último: o carimbo (`atualizada_em`) e o estado. */
@@ -157,6 +184,8 @@ export async function buscarMensagensDaConversa(
   deps: Dependencias,
   creds: ZernioCredentials,
   conversaId: string,
+  /** Chamado entre as páginas de mensagens: o sinal de vida da rodada. */
+  entrePaginas?: () => Promise<void>,
 ): Promise<{ mensagens: MensagemDoHistorico[]; ignoradas: number }> {
   const mensagens: MensagemDoHistorico[] = [];
   let ignoradas = 0;
@@ -170,6 +199,7 @@ export async function buscarMensagensDaConversa(
     mensagens.push(...pagina.mensagens);
     ignoradas += pagina.ignoradas;
     cursor = pagina.proximoCursor;
+    if (cursor && mensagens.length < TETO_DE_MENSAGENS) await entrePaginas?.();
   } while (cursor && mensagens.length < TETO_DE_MENSAGENS);
   return { mensagens, ignoradas };
 }
@@ -196,8 +226,12 @@ async function salvar(
   posse: Posse,
   deps: Dependencias,
   extra: Record<string, unknown> = {},
+  opcoes: { liberar?: boolean } = {},
 ): Promise<void> {
-  const carimbo = new Date(deps.agora()).toISOString();
+  // Liberar = gravar um carimbo já vencido: a rodada terminou bem e a próxima
+  // pode começar no minuto seguinte, sem esperar os 3 minutos de "perdida".
+  // `atualizada_em` não aparece na tela; quem lê o banco, leia este comentário.
+  const carimbo = new Date(deps.agora() - (opcoes.liberar ? RODADA_PERDIDA_MS + 1_000 : 0)).toISOString();
   const { data, error } = await admin
     .from("importacoes_de_historico")
     .update({
@@ -220,6 +254,23 @@ async function salvar(
   if (!data) throw new RodadaPerdeuAImportacao();
   posse.carimbo = carimbo;
   posse.estado = imp.estado;
+}
+
+/** Só o sinal de vida, com a mesma condição de posse de `salvar`. */
+async function renovar(admin: Admin, imp: Importacao, posse: Posse, deps: Dependencias): Promise<void> {
+  const carimbo = new Date(deps.agora()).toISOString();
+  const { data, error } = await admin
+    .from("importacoes_de_historico")
+    .update({ atualizada_em: carimbo })
+    .eq("id", imp.id)
+    .eq("organization_id", imp.organization_id)
+    .eq("atualizada_em", posse.carimbo)
+    .in("estado", [...new Set<string>([...ESTADOS_VIVOS, posse.estado])])
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(`importacao_nao_salva: ${error.message}`);
+  if (!data) throw new RodadaPerdeuAImportacao();
+  posse.carimbo = carimbo;
 }
 
 /**
@@ -294,6 +345,7 @@ async function importarUmaConversa(
   deps: Dependencias,
   creds: ZernioCredentials,
   imp: Importacao,
+  posse: Posse,
   conversa: ConversaDoHistorico,
   internoCfg: Awaited<ReturnType<typeof lerNumeroInternoDeAviso>>,
 ): Promise<void> {
@@ -320,7 +372,10 @@ async function importarUmaConversa(
     return;
   }
 
-  const { mensagens, ignoradas } = await buscarMensagensDaConversa(deps, creds, conversa.id);
+  // Conversa longa (até 5.000 mensagens) pode passar de 3 minutos sozinha.
+  const { mensagens, ignoradas } = await buscarMensagensDaConversa(deps, creds, conversa.id, () =>
+    renovar(admin, imp, posse, deps),
+  );
   somar(c, "mensagens_ignoradas", ignoradas);
   if (mensagens.length === 0) {
     somar(c, "conversas_vazias");
@@ -469,14 +524,14 @@ export async function rodarImportacao(
         const pagina = lerPaginaDeConversas(await chamarApi(deps, creds, `/v1/inbox/conversations?${qs}`), creds.accountId);
         if (pagina.contaRecusada) throw new ProvedorPediuEspera(pagina.contaRecusada.esperarSegundos);
 
-        // Página retomada: continua depois da última conversa feita. Se ela não
-        // está mais na página (a lista do provedor andou), refaz a página
-        // inteira — refazer é seguro (ver o cabeçalho), pular não seria.
-        const retomada = imp.contagens[CHAVE_DA_RETOMADA];
+        // Página retomada: pula o começo já feito SÓ se ele for o mesmo, na
+        // mesma ordem (ver `CHAVES_DA_RETOMADA`). Senão, refaz a página inteira.
+        const quantas = imp.contagens[RETOMAR_QUANTAS];
+        const marca = imp.contagens[RETOMAR_IMPRESSAO];
         let comeco = 0;
-        if (typeof retomada === "number") {
-          const feita = pagina.conversas.findIndex((c) => impressaoDoId(c.id) === retomada);
-          comeco = feita >= 0 ? feita + 1 : 0;
+        if (typeof quantas === "number" && typeof marca === "number") {
+          const igual = quantas <= pagina.conversas.length && impressaoDoComeco(pagina.conversas, quantas) === marca;
+          comeco = igual ? quantas : 0;
         } else {
           somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
         }
@@ -487,20 +542,21 @@ export async function rodarImportacao(
           if (acabouOTempo()) break paginas;
           const conversa = pagina.conversas[i]!;
           try {
-            await importarUmaConversa(admin, deps, creds, imp, conversa, interno);
+            await importarUmaConversa(admin, deps, creds, imp, posse, conversa, interno);
           } catch (err) {
-            if (err instanceof ProvedorPediuEspera) throw err;
+            if (err instanceof ProvedorPediuEspera || err instanceof RodadaPerdeuAImportacao) throw err;
             somar(imp.contagens, "falhas");
             registrarFalha(imp, err instanceof Error ? err.message : String(err), conversa.id);
           }
           conversas++;
-          imp.contagens[CHAVE_DA_RETOMADA] = impressaoDoId(conversa.id);
+          imp.contagens[RETOMAR_QUANTAS] = i + 1;
+          imp.contagens[RETOMAR_IMPRESSAO] = impressaoDoComeco(pagina.conversas, i + 1);
           // Sinal de vida + progresso, a cada conversa.
           await salvar(admin, imp, posse, deps);
         }
 
         // Página feita: o cursor anda e a marca de retomada sai.
-        delete imp.contagens[CHAVE_DA_RETOMADA];
+        limparRetomada(imp.contagens);
         imp.cursor_conversas = pagina.proximoCursor;
         if (!pagina.proximoCursor) {
           imp.estado = imp.triagem_ligada && imp.pipeline_id ? "triando" : "concluida";
@@ -525,6 +581,8 @@ export async function rodarImportacao(
       await concluir(admin, imp, posse, deps);
       return { estado: imp.estado, conversas, parouPor: "fim" };
     }
+    // Parou pelo tempo, com tudo gravado: libera para o cron do minuto seguinte.
+    await salvar(admin, imp, posse, deps, {}, { liberar: true });
     return { estado: imp.estado, conversas, parouPor: "tempo" };
   } catch (err) {
     if (err instanceof RodadaPerdeuAImportacao) {
@@ -577,7 +635,7 @@ async function concluir(admin: Admin, imp: Importacao, posse: Posse, deps: Depen
     mensagens_no_banco: mensagens ?? 0,
     negocios_no_banco: negocios ?? 0,
   };
-  delete imp.contagens[CHAVE_DA_RETOMADA];
+  limparRetomada(imp.contagens);
   await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
   await audit({
     action: "lead.imported",
