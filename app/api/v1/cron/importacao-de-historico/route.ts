@@ -6,8 +6,10 @@
  * Cada rodada pega no máximo UMA importação viva e trabalha nela por até 40 s
  * (`ORCAMENTO_DA_RODADA_MS`): importa conversas, guarda o cursor, e na rodada
  * seguinte continua. Duas rodadas nunca trabalham na mesma importação — o
- * `update` condicional de `pegarImportacao` é o cadeado — e uma rodada que
- * morreu no meio é retomada depois de 3 minutos sem sinal de vida.
+ * `update` condicional de `pegarImportacao` é o cadeado, e toda gravação da
+ * rodada é condicionada ao carimbo dela (PC-042) — e uma rodada que morreu no
+ * meio é retomada depois de 3 minutos sem sinal de vida. O sinal de vida é
+ * renovado a cada conversa importada, não a cada página.
  *
  * Organização parada não é varrida (`idsDeOrgsParadas`): a importação espera.
  *

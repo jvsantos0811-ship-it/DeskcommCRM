@@ -23,6 +23,22 @@
  * contato (`fn_nascer_lead_da_conversa`). Conversa: pela thread do provedor.
  * Uma página reprocessada depois de uma queda não duplica nada; e "importar de
  * novo" a mesma conexão traz só o que faltou.
+ *
+ * ─── Uma rodada por vez, de verdade (PC-042) ────────────────────────────────
+ *
+ * Com o banco lento, uma página de 100 conversas passou de 3 minutos; o
+ * orçamento só era conferido entre PÁGINAS e o carimbo só era renovado no fim
+ * de cada uma, então o cron do minuto seguinte achou a rodada "perdida" e abriu
+ * outra na mesma página: deadlock, e as duas regravando `contagens` inteiras
+ * (a tela chegou a mostrar 0 mensagens com milhares no banco). Agora:
+ *  - o orçamento é conferido entre CONVERSAS;
+ *  - cada conversa termina com uma gravação que renova o carimbo e guarda onde
+ *    a rodada está dentro da página (`CHAVE_DA_RETOMADA`), para a rodada
+ *    seguinte continuar dali sem refazer a página;
+ *  - toda gravação é condicionada ao carimbo da própria rodada e a um estado
+ *    vivo: se outra rodada pegou a importação, ou alguém a cancelou, a gravação
+ *    não casa linha nenhuma e a rodada para sem escrever mais nada
+ *    (`RodadaPerdeuAImportacao`). Contagens nunca voltam para trás.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -81,6 +97,41 @@ export class ProvedorPediuEspera extends Error {
   }
 }
 
+/**
+ * A gravação não casou a linha: outra rodada pegou a importação (o carimbo
+ * mudou) ou ela não está mais viva (cancelada, concluída). A rodada para sem
+ * escrever — quem tem a importação agora é que grava.
+ */
+export class RodadaPerdeuAImportacao extends Error {
+  constructor() {
+    super("rodada_perdeu_a_importacao");
+  }
+}
+
+/**
+ * Onde a rodada parou DENTRO da página: a impressão do id da última conversa
+ * feita. Mora em `contagens` porque é a única coluna livre sem migration; é um
+ * número (o tipo da coluna) e a tela só lê as chaves que conhece. Sai das
+ * contagens quando a página termina e antes da auditoria final.
+ */
+export const CHAVE_DA_RETOMADA = "retomar_depois_de";
+
+/** FNV-1a de 32 bits: estável, curto, e cabe num número do JSON. */
+export function impressaoDoId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+/** O que a rodada escreveu por último: o carimbo (`atualizada_em`) e o estado. */
+interface Posse {
+  carimbo: string;
+  estado: EstadoDaImportacao;
+}
+
 export interface Dependencias {
   fetch: typeof fetch;
   agora: () => number;
@@ -134,38 +185,83 @@ function registrarFalha(imp: Importacao, motivo: string, conversa?: string): voi
   );
 }
 
-async function salvar(admin: Admin, imp: Importacao, extra: Record<string, unknown> = {}): Promise<void> {
-  const { error } = await admin
+/**
+ * Grava o estado da rodada — só se a importação ainda for DESTA rodada (o
+ * carimbo é o que ela escreveu por último) e ainda estiver viva. Renova o
+ * carimbo: é o sinal de vida que impede o cron de abrir uma segunda rodada.
+ */
+async function salvar(
+  admin: Admin,
+  imp: Importacao,
+  posse: Posse,
+  deps: Dependencias,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const carimbo = new Date(deps.agora()).toISOString();
+  const { data, error } = await admin
     .from("importacoes_de_historico")
     .update({
       estado: imp.estado,
       cursor_conversas: imp.cursor_conversas,
       contagens: imp.contagens,
       falhas: imp.falhas,
-      atualizada_em: new Date().toISOString(),
+      atualizada_em: carimbo,
       ...extra,
     })
     .eq("id", imp.id)
-    .eq("organization_id", imp.organization_id);
+    .eq("organization_id", imp.organization_id)
+    .eq("atualizada_em", posse.carimbo)
+    // Viva — ou no estado final que a PRÓPRIA rodada acabou de gravar (a
+    // conclusão grava duas vezes). Cancelada por outra mão nunca casa.
+    .in("estado", [...new Set<string>([...ESTADOS_VIVOS, posse.estado])])
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(`importacao_nao_salva: ${error.message}`);
+  if (!data) throw new RodadaPerdeuAImportacao();
+  posse.carimbo = carimbo;
+  posse.estado = imp.estado;
 }
 
 /**
  * Pega a importação para esta rodada. Só uma rodada por vez: o `update`
  * condicional é o cadeado — quem não casar a linha (outra rodada acabou de
- * carimbá-la) sai sem nada.
+ * carimbá-la) sai sem nada. O carimbo escrito aqui é a posse da rodada.
  */
-export async function pegarImportacao(admin: Admin, id: string, deps: Dependencias = PADRAO): Promise<Importacao | null> {
+async function pegar(
+  admin: Admin,
+  id: string,
+  deps: Dependencias,
+): Promise<{ imp: Importacao; posse: Posse } | null> {
   const perdida = new Date(deps.agora() - RODADA_PERDIDA_MS).toISOString();
-  const { data } = await admin
+  const carimbo = new Date(deps.agora()).toISOString();
+  // Na fila: sai dela no MESMO update. Enquanto a linha dizia `na_fila`, o
+  // cron seguinte podia pegá-la de novo — a fila não olha o carimbo — e duas
+  // rodadas andavam juntas na primeira página.
+  const daFila = await admin
     .from("importacoes_de_historico")
-    .update({ atualizada_em: new Date(deps.agora()).toISOString() })
+    .update({ atualizada_em: carimbo, estado: "importando" })
     .eq("id", id)
-    .in("estado", [...ESTADOS_VIVOS])
-    .or(`estado.eq.na_fila,atualizada_em.lt.${perdida}`)
+    .eq("estado", "na_fila")
     .select(COLUNAS)
     .maybeSingle();
-  return (data as Importacao | null) ?? null;
+  let imp = (daFila.data as Importacao | null) ?? null;
+  if (!imp) {
+    // Já começada: só se a rodada anterior está sem sinal de vida.
+    const perdidaDeVez = await admin
+      .from("importacoes_de_historico")
+      .update({ atualizada_em: carimbo })
+      .eq("id", id)
+      .in("estado", [...ESTADOS_VIVOS])
+      .lt("atualizada_em", perdida)
+      .select(COLUNAS)
+      .maybeSingle();
+    imp = (perdidaDeVez.data as Importacao | null) ?? null;
+  }
+  return imp ? { imp, posse: { carimbo, estado: imp.estado } } : null;
+}
+
+export async function pegarImportacao(admin: Admin, id: string, deps: Dependencias = PADRAO): Promise<Importacao | null> {
+  return (await pegar(admin, id, deps))?.imp ?? null;
 }
 
 /** As importações que precisam de uma rodada agora. */
@@ -318,7 +414,7 @@ async function importarUmaConversa(
 export interface ResultadoDaRodada {
   estado: EstadoDaImportacao;
   conversas: number;
-  parouPor: "fim" | "tempo" | "espera_do_provedor" | "erro" | "nada";
+  parouPor: "fim" | "tempo" | "espera_do_provedor" | "erro" | "nada" | "perdeu_a_vez";
 }
 
 /**
@@ -331,8 +427,10 @@ export async function rodarImportacao(
   deps: Dependencias = PADRAO,
 ): Promise<ResultadoDaRodada> {
   const inicio = deps.agora();
-  const imp = await pegarImportacao(admin, id, deps);
-  if (!imp) return { estado: "na_fila", conversas: 0, parouPor: "nada" };
+  const pega = await pegar(admin, id, deps);
+  if (!pega) return { estado: "na_fila", conversas: 0, parouPor: "nada" };
+  const { imp, posse } = pega;
+  const acabouOTempo = () => deps.agora() - inicio >= ORCAMENTO_DA_RODADA_MS;
 
   imp.contagens = { ...(imp.contagens ?? {}) };
   imp.falhas = Array.isArray(imp.falhas) ? imp.falhas : [];
@@ -355,12 +453,12 @@ export async function rodarImportacao(
       if (!creds) {
         imp.estado = "falhou";
         registrarFalha(imp, "A conexão não tem a chave do provedor, ou não é mais uma conexão deste tipo.");
-        await salvar(admin, imp, { concluida_em: new Date().toISOString() });
+        await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
         return { estado: imp.estado, conversas, parouPor: "erro" };
       }
       const interno = await lerNumeroInternoDeAviso(admin, imp.organization_id);
 
-      while (deps.agora() - inicio < ORCAMENTO_DA_RODADA_MS) {
+      paginas: while (!acabouOTempo()) {
         const qs = new URLSearchParams({
           accountId: creds.accountId,
           platform: "whatsapp",
@@ -370,9 +468,24 @@ export async function rodarImportacao(
         if (imp.cursor_conversas) qs.set("cursor", imp.cursor_conversas);
         const pagina = lerPaginaDeConversas(await chamarApi(deps, creds, `/v1/inbox/conversations?${qs}`), creds.accountId);
         if (pagina.contaRecusada) throw new ProvedorPediuEspera(pagina.contaRecusada.esperarSegundos);
-        somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
 
-        for (const conversa of pagina.conversas) {
+        // Página retomada: continua depois da última conversa feita. Se ela não
+        // está mais na página (a lista do provedor andou), refaz a página
+        // inteira — refazer é seguro (ver o cabeçalho), pular não seria.
+        const retomada = imp.contagens[CHAVE_DA_RETOMADA];
+        let comeco = 0;
+        if (typeof retomada === "number") {
+          const feita = pagina.conversas.findIndex((c) => impressaoDoId(c.id) === retomada);
+          comeco = feita >= 0 ? feita + 1 : 0;
+        } else {
+          somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
+        }
+
+        for (let i = comeco; i < pagina.conversas.length; i++) {
+          // O orçamento é conferido entre CONVERSAS: com o banco lento, uma
+          // página inteira passa de minutos.
+          if (acabouOTempo()) break paginas;
+          const conversa = pagina.conversas[i]!;
           try {
             await importarUmaConversa(admin, deps, creds, imp, conversa, interno);
           } catch (err) {
@@ -381,17 +494,21 @@ export async function rodarImportacao(
             registrarFalha(imp, err instanceof Error ? err.message : String(err), conversa.id);
           }
           conversas++;
+          imp.contagens[CHAVE_DA_RETOMADA] = impressaoDoId(conversa.id);
+          // Sinal de vida + progresso, a cada conversa.
+          await salvar(admin, imp, posse, deps);
         }
-        // O cursor anda por PÁGINA: uma queda no meio refaz a página inteira,
-        // e refazer é seguro (ver o cabeçalho).
+
+        // Página feita: o cursor anda e a marca de retomada sai.
+        delete imp.contagens[CHAVE_DA_RETOMADA];
         imp.cursor_conversas = pagina.proximoCursor;
         if (!pagina.proximoCursor) {
           imp.estado = imp.triagem_ligada && imp.pipeline_id ? "triando" : "concluida";
           break;
         }
-        await salvar(admin, imp);
+        await salvar(admin, imp, posse, deps);
       }
-      await salvar(admin, imp);
+      await salvar(admin, imp, posse, deps);
     }
 
     if (imp.estado === "triando") {
@@ -400,19 +517,27 @@ export async function rodarImportacao(
         const t = await triarLeadsImportados(admin, imp, restante, deps);
         for (const [k, v] of Object.entries(t.contagens)) somar(imp.contagens, k, v);
         if (t.terminou) imp.estado = "concluida";
-        await salvar(admin, imp);
+        await salvar(admin, imp, posse, deps);
       }
     }
 
     if (imp.estado === "concluida") {
-      await concluir(admin, imp);
+      await concluir(admin, imp, posse, deps);
       return { estado: imp.estado, conversas, parouPor: "fim" };
     }
     return { estado: imp.estado, conversas, parouPor: "tempo" };
   } catch (err) {
+    if (err instanceof RodadaPerdeuAImportacao) {
+      // Outra rodada tem a importação, ou ela foi cancelada: nada a gravar.
+      logger.info("[importacao-historico] rodada perdeu a importação", {
+        organization_id: imp.organization_id,
+        importacao_id: imp.id,
+      });
+      return { estado: imp.estado, conversas, parouPor: "perdeu_a_vez" };
+    }
     if (err instanceof ProvedorPediuEspera) {
       registrarFalha(imp, `O provedor pediu para esperar${err.segundos ? ` ${err.segundos} s` : ""}; a próxima rodada continua.`);
-      await salvar(admin, imp).catch(() => undefined);
+      await salvar(admin, imp, posse, deps).catch(() => undefined);
       return { estado: imp.estado, conversas, parouPor: "espera_do_provedor" };
     }
     logger.error("[importacao-historico] rodada falhou", {
@@ -423,7 +548,7 @@ export async function rodarImportacao(
     // Falha de rede ou do banco no meio: a linha segue viva e a próxima
     // rodada tenta de novo. Só a falta de credencial (acima) encerra.
     registrarFalha(imp, err instanceof Error ? err.message : String(err));
-    await salvar(admin, imp).catch(() => undefined);
+    await salvar(admin, imp, posse, deps).catch(() => undefined);
     return { estado: imp.estado, conversas, parouPor: "erro" };
   }
 }
@@ -433,7 +558,7 @@ export async function rodarImportacao(
  * progresso (uma página refeita conta duas vezes); o que vai para a auditoria
  * é medido.
  */
-async function concluir(admin: Admin, imp: Importacao): Promise<void> {
+async function concluir(admin: Admin, imp: Importacao, posse: Posse, deps: Dependencias): Promise<void> {
   const [{ count: mensagens }, { count: negocios }] = await Promise.all([
     admin
       .from("messages")
@@ -452,7 +577,8 @@ async function concluir(admin: Admin, imp: Importacao): Promise<void> {
     mensagens_no_banco: mensagens ?? 0,
     negocios_no_banco: negocios ?? 0,
   };
-  await salvar(admin, imp, { concluida_em: new Date().toISOString() });
+  delete imp.contagens[CHAVE_DA_RETOMADA];
+  await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
   await audit({
     action: "lead.imported",
     actorUserId: imp.iniciada_por,
