@@ -12,7 +12,8 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
-import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
+import { notaDeVozNoFormatoWhatsapp } from "@/lib/messaging/media/nota-de-voz-config";
+import { precisaTranscodificar, transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -98,7 +99,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // receber um arquivo válido, e o mesmo áudio poder ser reenviado depois sem
   // repetir o trabalho. Falha devolve o original: o canal que converte sozinho
   // continua funcionando como sempre.
-  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
+  //
+  // PC-043: com a chave da organização ligada, a nota de voz é reencodada no
+  // formato do WhatsApp (mono, 32 kbps, quadros de 20 ms). O canal oficial não
+  // converte nada, e a gravação do browser (128 kbps, quadros de 60 ms) chegava
+  // "picotada" ao cliente. A org vem da sessão ou do token, nunca do corpo; ler
+  // a chave que falhou = desligada (o comportamento de antes).
+  // Só áudio que a chave alcança paga a leitura: imagem e documento seguem direto.
+  const formatoWhatsapp = precisaTranscodificar(mime, { formatoWhatsapp: true })
+    ? await lerChaveDaNotaDeVoz(activeOrg.orgId)
+    : false;
+  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime }, {}, { formatoWhatsapp });
   const mimeFinal = audio.mime;
   const buffer = audio.buffer;
 
@@ -124,4 +135,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     },
     { requestId },
   );
+}
+
+/** PC-043 — a chave da organização. Leitura que falhou = desligada. Nunca lança. */
+async function lerChaveDaNotaDeVoz(orgId: string): Promise<boolean> {
+  try {
+    const { data } = await createAdminClient()
+      .from("organizations")
+      .select("settings")
+      .eq("id", orgId)
+      .maybeSingle();
+    return notaDeVozNoFormatoWhatsapp((data as { settings?: unknown } | null)?.settings);
+  } catch {
+    return false;
+  }
 }

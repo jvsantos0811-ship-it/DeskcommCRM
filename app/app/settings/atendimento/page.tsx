@@ -25,6 +25,8 @@ import { createClient } from "@/lib/supabase/server";
 import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { configAssinatura } from "@/lib/messaging/assinatura";
 import { AssinaturaForm } from "./_assinatura-form";
+import { NotaDeVozForm } from "./_nota-de-voz-form";
+import { notaDeVozNoFormatoWhatsapp } from "@/lib/messaging/media/nota-de-voz-config";
 import { fraseDaFilaDaOrg } from "@/lib/escalacao/aviso-ao-lead";
 import { acaoDaIrritacao } from "@/lib/escalacao/irritacao";
 
@@ -108,6 +110,7 @@ export default async function AtendimentoSettingsPage() {
       />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
+      <NotaDeVozForm inicial={notaDeVozNoFormatoWhatsapp(settings)} />
       <FraseSeguraForm inicial={fraseInicial} padrao={frasePadrao} />
       <HorarioDaEquipeForm inicial={horarioDaEquipeDaOrg(settings)} />
       <NinguemRespondeuForm inicial={ninguemRespondeuInicial} funis={funis} />

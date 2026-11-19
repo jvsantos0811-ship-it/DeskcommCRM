@@ -1,0 +1,148 @@
+/**
+ * PC-043 — a porta da chave "nota de voz no formato do WhatsApp":
+ * `/api/v1/settings/nota-de-voz`.
+ *
+ * Prova o que a rota faz com o settings: nasce desligada, o merge preserva as
+ * outras chaves, leitura que falhou não vira gravação, só booleano entra, e o
+ * papel mínimo. A guarda de suporte é cobrada por
+ * `tests/unit/suporte-cobertura-de-efeitos.test.ts`.
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+import { audit } from "@/lib/audit";
+import { fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
+
+vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+
+const ORG = "11111111-1111-4111-8111-111111111111";
+const estado: {
+  settings: Record<string, unknown>;
+  erroDeLeitura: boolean;
+  updates: unknown[];
+  filtros: Array<[string, unknown]>;
+} = {
+  settings: {},
+  erroDeLeitura: false,
+  updates: [],
+  filtros: [],
+};
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: (coluna: string, valor: unknown) => ({
+          maybeSingle: async () => {
+            estado.filtros.push([coluna, valor]);
+            return estado.erroDeLeitura
+              ? { data: null, error: { message: "falhou" } }
+              : { data: { settings: estado.settings }, error: null };
+          },
+        }),
+      }),
+      update: (patch: { settings: Record<string, unknown> }) => ({
+        eq: async (coluna: string, valor: unknown) => {
+          estado.filtros.push([coluna, valor]);
+          estado.updates.push(patch);
+          estado.settings = patch.settings;
+          return { error: null };
+        },
+      }),
+    }),
+  }),
+}));
+
+const { GET, PATCH } = await import("@/app/api/v1/settings/nota-de-voz/route");
+
+function sessao(role: Role) {
+  const user: AuthUser = {
+    id: "22222222-2222-4222-8222-222222222222",
+    email: "a@example.com",
+    full_name: null,
+    avatar_url: null,
+    is_platform_admin: false,
+    idioma: "pt-BR" as const,
+    organizations: [{ organization_id: ORG, organization_name: "Org", role }],
+  };
+  vi.mocked(requireRole).mockImplementation(async (min: Role) =>
+    ROLE_RANK[role] >= ROLE_RANK[min]
+      ? { ok: true, user, org: { orgId: ORG, name: "Org", role } }
+      : { ok: false, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) },
+  );
+}
+
+const patch = (corpo: unknown) =>
+  PATCH(
+    new NextRequest("http://localhost/api/v1/settings/nota-de-voz", {
+      method: "PATCH",
+      body: JSON.stringify(corpo),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+
+beforeEach(() => {
+  estado.settings = { routing: { mode: "round_robin" }, assinatura_mensagens: { humanos: true } };
+  estado.erroDeLeitura = false;
+  estado.updates = [];
+  estado.filtros = [];
+  vi.mocked(audit).mockClear();
+});
+
+describe("/api/v1/settings/nota-de-voz", () => {
+  it("GET sem a chave devolve DESLIGADA — o comportamento de antes", async () => {
+    sessao("manager");
+    const corpo = await (await GET()).json();
+    expect(corpo.data).toEqual({ formato_whatsapp: false });
+  });
+
+  it("PATCH liga SEM apagar as outras chaves, e audita o valor", async () => {
+    sessao("manager");
+    const res = await patch({ formato_whatsapp: true });
+    expect(res.status).toBe(200);
+    expect(estado.settings).toEqual({
+      routing: { mode: "round_robin" },
+      assinatura_mensagens: { humanos: true },
+      nota_de_voz: { formato_whatsapp: true },
+    });
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "settings.nota_de_voz_atualizada",
+        organizationId: ORG,
+        metadata: { formato_whatsapp: true },
+      }),
+    );
+    const lido = await (await GET()).json();
+    expect(lido.data).toEqual({ formato_whatsapp: true });
+    // Ler e gravar só tocam a organização da sessão — nunca uma vinda do corpo.
+    expect(estado.filtros.length).toBeGreaterThan(0);
+    expect(estado.filtros.every(([coluna, valor]) => coluna === "id" && valor === ORG)).toBe(true);
+  });
+
+  it.each([
+    ["texto no lugar do booleano", { formato_whatsapp: "true" }],
+    ["chave a mais", { formato_whatsapp: true, outra: 1 }],
+    ["corpo vazio", {}],
+  ])("PATCH recusa %s (422) e não grava", async (_rotulo, corpo) => {
+    sessao("manager");
+    expect((await patch(corpo)).status).toBe(422);
+    expect(estado.updates).toHaveLength(0);
+  });
+
+  it("leitura que falhou NÃO vira gravação (apagaria o settings inteiro)", async () => {
+    sessao("manager");
+    estado.erroDeLeitura = true;
+    expect((await patch({ formato_whatsapp: true })).status).toBe(500);
+    expect(estado.updates).toHaveLength(0);
+  });
+
+  it("atendente (agent) não liga a chave da organização", async () => {
+    sessao("agent");
+    expect((await patch({ formato_whatsapp: true })).status).toBe(403);
+    expect(estado.updates).toHaveLength(0);
+  });
+});
