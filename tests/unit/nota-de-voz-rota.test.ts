@@ -20,25 +20,34 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async (
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
-const estado: { settings: Record<string, unknown>; erroDeLeitura: boolean; updates: unknown[] } = {
+const estado: {
+  settings: Record<string, unknown>;
+  erroDeLeitura: boolean;
+  updates: unknown[];
+  filtros: Array<[string, unknown]>;
+} = {
   settings: {},
   erroDeLeitura: false,
   updates: [],
+  filtros: [],
 };
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => ({
       select: () => ({
-        eq: () => ({
-          maybeSingle: async () =>
-            estado.erroDeLeitura
+        eq: (coluna: string, valor: unknown) => ({
+          maybeSingle: async () => {
+            estado.filtros.push([coluna, valor]);
+            return estado.erroDeLeitura
               ? { data: null, error: { message: "falhou" } }
-              : { data: { settings: estado.settings }, error: null },
+              : { data: { settings: estado.settings }, error: null };
+          },
         }),
       }),
       update: (patch: { settings: Record<string, unknown> }) => ({
-        eq: async () => {
+        eq: async (coluna: string, valor: unknown) => {
+          estado.filtros.push([coluna, valor]);
           estado.updates.push(patch);
           estado.settings = patch.settings;
           return { error: null };
@@ -80,6 +89,7 @@ beforeEach(() => {
   estado.settings = { routing: { mode: "round_robin" }, assinatura_mensagens: { humanos: true } };
   estado.erroDeLeitura = false;
   estado.updates = [];
+  estado.filtros = [];
   vi.mocked(audit).mockClear();
 });
 
@@ -108,6 +118,9 @@ describe("/api/v1/settings/nota-de-voz", () => {
     );
     const lido = await (await GET()).json();
     expect(lido.data).toEqual({ formato_whatsapp: true });
+    // Ler e gravar só tocam a organização da sessão — nunca uma vinda do corpo.
+    expect(estado.filtros.length).toBeGreaterThan(0);
+    expect(estado.filtros.every(([coluna, valor]) => coluna === "id" && valor === ORG)).toBe(true);
   });
 
   it.each([

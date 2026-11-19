@@ -13,7 +13,7 @@ import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { notaDeVozNoFormatoWhatsapp } from "@/lib/messaging/media/nota-de-voz-config";
-import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
+import { precisaTranscodificar, transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -105,7 +105,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // converte nada, e a gravação do browser (128 kbps, quadros de 60 ms) chegava
   // "picotada" ao cliente. A org vem da sessão ou do token, nunca do corpo; ler
   // a chave que falhou = desligada (o comportamento de antes).
-  const formatoWhatsapp = await lerChaveDaNotaDeVoz(activeOrg.orgId);
+  // Só áudio que a chave alcança paga a leitura: imagem e documento seguem direto.
+  const formatoWhatsapp = precisaTranscodificar(mime, { formatoWhatsapp: true })
+    ? await lerChaveDaNotaDeVoz(activeOrg.orgId)
+    : false;
   const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime }, {}, { formatoWhatsapp });
   const mimeFinal = audio.mime;
   const buffer = audio.buffer;

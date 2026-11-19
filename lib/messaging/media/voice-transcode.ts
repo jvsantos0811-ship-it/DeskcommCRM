@@ -92,19 +92,35 @@ export interface Transcodificacao {
   modo: "formato_whatsapp" | "container" | "nenhuma";
 }
 
-/** Roda ffmpeg; rejeita se sair diferente de zero. Injetável para teste. */
+/**
+ * Teto de tempo de uma conversão. Medido: ~0,3 s por 20 s de áudio, e ~6 s por
+ * 10 min numa máquina de 2 núcleos ocupada. Passou disto, o ffmpeg é morto e
+ * a conversão cai para o passo seguinte — o upload não fica preso esperando.
+ */
+const TETO_DO_FFMPEG_MS = 30_000;
+
+/** Roda ffmpeg; rejeita se sair diferente de zero ou passar do teto. Injetável para teste. */
 async function runFfmpeg(args: string[], cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const proc = spawn("ffmpeg", ["-nostdin", "-y", ...args], { cwd });
     let erro = "";
+    const relogio = setTimeout(() => {
+      proc.kill("SIGKILL");
+      reject(new Error("ffmpeg_timeout"));
+    }, TETO_DO_FFMPEG_MS);
     proc.stderr?.on("data", (d: Buffer) => {
       // Só o fim interessa: ffmpeg escreve muito e o erro vem por último.
       erro = (erro + d.toString()).slice(-500);
     });
-    proc.on("error", (err) => reject(new Error(`ffmpeg_spawn_failed: ${err.message}`)));
-    proc.on("close", (code) =>
-      code === 0 ? resolve() : reject(new Error(`ffmpeg_exit_${code}: ${erro}`)),
-    );
+    proc.on("error", (err) => {
+      clearTimeout(relogio);
+      reject(new Error(`ffmpeg_spawn_failed: ${err.message}`));
+    });
+    proc.on("close", (code) => {
+      clearTimeout(relogio);
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg_exit_${code}: ${erro}`));
+    });
   });
 }
 
@@ -117,11 +133,11 @@ async function runFfmpeg(args: string[], cwd: string): Promise<void> {
  * O `MediaRecorder` do Chrome grava opus a **128 kbps**, em quadros de **60 ms**,
  * e a conversão de container (`-c:a copy`) guarda isso como está, com
  * `pre-skip` zero. A nota de voz do próprio WhatsApp é ~16 kbps, mono, em
- * quadros de 20 ms. Pelo WAHA nada disso aparecia, porque o WAHA reconverte
- * (`convert: true`, `lib/waha/media-send.ts`). Pelo canal oficial (Zernio e
- * Meta) o arquivo chega ao celular do cliente como o browser gravou — e a
- * equipe relatou o áudio chegando "picotado". A doc do canal oficial pede
- * `audio/ogg` opus com "mono input only".
+ * quadros de 20 ms. No canal por QR Code nada disso aparecia, porque o envio de
+ * voz de lá pede ao conector que reconverta; no canal oficial o arquivo chega
+ * ao celular do cliente como o browser gravou — e a equipe relatou o áudio
+ * chegando "picotado". A doc do canal oficial pede `audio/ogg` opus com "mono
+ * input only".
  *
  * ─── O que cada argumento faz ───────────────────────────────────────────────
  *

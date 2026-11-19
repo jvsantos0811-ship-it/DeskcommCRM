@@ -246,8 +246,9 @@ describe("PC-043: a reencodagem", () => {
     expect(fonte).toMatch(
       /transcodificarNotaDeVoz\(\{ buffer: bruto, mime \}, \{\}, \{ formatoWhatsapp \}\)/,
     );
-    // A org vem da sessão ou do token, nunca do corpo.
+    // A org vem da sessão ou do token, nunca do corpo; e só áudio paga a leitura.
     expect(fonte).toMatch(/lerChaveDaNotaDeVoz\(activeOrg\.orgId\)/);
+    expect(fonte).toMatch(/precisaTranscodificar\(mime, \{ formatoWhatsapp: true \}\)/);
   });
 });
 
