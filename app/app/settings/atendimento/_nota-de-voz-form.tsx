@@ -64,7 +64,7 @@ export function NotaDeVozForm({ inicial }: { inicial: boolean }) {
           disabled={ligada === salvo || isPending}
           data-testid="nota-de-voz-salvar"
         >
-          {isPending ? t("Salvando...") : t("Salvar")}
+          {isPending ? t("Salvando…") : t("Salvar formato da nota de voz")}
         </Button>
       </div>
     </form>

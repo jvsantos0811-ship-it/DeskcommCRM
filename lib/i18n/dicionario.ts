@@ -17263,6 +17263,7 @@ export const DICIONARIO: Traducoes = {
   // PC-043: Configurações › Atendimento › nota de voz no formato do WhatsApp.
   "Nota de voz no formato do WhatsApp": { es: "Nota de voz en el formato de WhatsApp" },
   "Formato da nota de voz salvo.": { es: "Formato de la nota de voz guardado." },
+  "Salvar formato da nota de voz": { es: "Guardar formato de la nota de voz" },
   "Ligada, o áudio que a equipe grava no CRM é convertido para o formato da nota de voz do WhatsApp antes de sair: um canal só, voz em 32 kbps e quadros curtos. O arquivo fica cerca de quatro vezes menor e toca no celular do cliente como um áudio gravado no próprio WhatsApp. Útil sobretudo no canal oficial, que entrega o arquivo do jeito que o navegador gravou.":
     {
       es: "Activada, el audio que el equipo graba en el CRM se convierte al formato de la nota de voz de WhatsApp antes de salir: un solo canal, voz a 32 kbps y cuadros cortos. El archivo queda unas cuatro veces más pequeño y suena en el celular del cliente como un audio grabado en el propio WhatsApp. Útil sobre todo en el canal oficial, que entrega el archivo tal como lo grabó el navegador.",
