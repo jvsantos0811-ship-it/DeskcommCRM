@@ -1255,6 +1255,9 @@ export const AUDIT_ACTIONS = [
   // Pacote Conversa (PC-018 em diante): as regras da IA na conversa da
   // organização (Configurações › IA). Metadata com as chaves alteradas.
   "settings.conversa_atualizada",
+  // PC-043: a chave "nota de voz no formato do WhatsApp" da organização
+  // (Configurações › Atendimento). Metadata com o valor gravado.
+  "settings.nota_de_voz_atualizada",
   // v3 §1.1: Configurações › Valor por tipo de lead — criar, mudar o valor médio,
   // marcar "confirmado pelo cliente" ou desativar um tipo de lead do catálogo.
   // Metadata com o valor antes e depois (centavos) e as chaves alteradas; o

@@ -61,10 +61,23 @@ const MAX_BYTES = 16 * 1024 * 1024;
 /**
  * Precisa converter? Só `webm` com opus — o resto ou já serve, ou não é nosso
  * problema resolver aqui.
+ *
+ * Com a chave "nota de voz no formato do WhatsApp" ligada (PC-043), o `ogg` que
+ * o browser grava também passa pela conversão: o container já serve, mas o
+ * conteúdo é o do gravador do browser, não o de uma nota de voz.
  */
-export function precisaTranscodificar(mime: string): boolean {
+export function precisaTranscodificar(mime: string, opcoes: OpcoesDaNotaDeVoz = {}): boolean {
   const base = mime.split(";")[0]?.trim().toLowerCase() ?? "";
-  return base === "audio/webm" || base === "video/webm";
+  if (base === "audio/webm" || base === "video/webm") return true;
+  return opcoes.formatoWhatsapp === true && base === "audio/ogg";
+}
+
+export interface OpcoesDaNotaDeVoz {
+  /**
+   * PC-043 — `settings.nota_de_voz.formato_whatsapp` da organização. Ausente =
+   * desligada = o comportamento de antes (só troca o container).
+   */
+  formatoWhatsapp?: boolean;
 }
 
 export interface Transcodificacao {
@@ -72,6 +85,11 @@ export interface Transcodificacao {
   mime: string;
   /** `false` = devolvido intacto, porque não precisava (ou não deu). */
   convertido: boolean;
+  /**
+   * Qual conversão saiu: `formato_whatsapp` (reencodada, PC-043), `container`
+   * (só a troca de webm para ogg) ou `nenhuma`.
+   */
+  modo: "formato_whatsapp" | "container" | "nenhuma";
 }
 
 /** Roda ffmpeg; rejeita se sair diferente de zero. Injetável para teste. */
@@ -91,7 +109,58 @@ async function runFfmpeg(args: string[], cwd: string): Promise<void> {
 }
 
 /**
- * WebM/Opus → Ogg/Opus, trocando só o container.
+ * PC-043 — os argumentos que deixam a gravação do browser igual a uma nota de
+ * voz do WhatsApp.
+ *
+ * ─── O defeito, medido (19/11/2026) ─────────────────────────────────────────
+ *
+ * O `MediaRecorder` do Chrome grava opus a **128 kbps**, em quadros de **60 ms**,
+ * e a conversão de container (`-c:a copy`) guarda isso como está, com
+ * `pre-skip` zero. A nota de voz do próprio WhatsApp é ~16 kbps, mono, em
+ * quadros de 20 ms. Pelo WAHA nada disso aparecia, porque o WAHA reconverte
+ * (`convert: true`, `lib/waha/media-send.ts`). Pelo canal oficial (Zernio e
+ * Meta) o arquivo chega ao celular do cliente como o browser gravou — e a
+ * equipe relatou o áudio chegando "picotado". A doc do canal oficial pede
+ * `audio/ogg` opus com "mono input only".
+ *
+ * ─── O que cada argumento faz ───────────────────────────────────────────────
+ *
+ * - `-ac 1`: mono, sempre (há microfone que entrega dois canais);
+ * - `-c:a libopus -b:a 32k -application voip`: o perfil de voz do opus, com
+ *   folga sobre os ~16 kbps do WhatsApp para não perder clareza;
+ * - `-frame_duration 20`: quadros de 20 ms, como a nota de voz do celular;
+ * - `-ar 48000`: a taxa que o opus usa por dentro (qualquer outra é reamostrada);
+ * - `-avoid_negative_ts make_zero` e `-map_metadata -1`: relógio começando em
+ *   zero e sem metadado do gravador.
+ */
+export const ARGS_FORMATO_WHATSAPP: readonly string[] = [
+  "-vn",
+  "-map_metadata",
+  "-1",
+  "-ac",
+  "1",
+  "-ar",
+  "48000",
+  "-c:a",
+  "libopus",
+  "-b:a",
+  "32k",
+  "-application",
+  "voip",
+  "-frame_duration",
+  "20",
+  "-avoid_negative_ts",
+  "make_zero",
+  "-f",
+  "ogg",
+];
+
+/**
+ * Gravação do browser → nota de voz.
+ *
+ * Desligada a chave (o padrão): WebM/Opus → Ogg/Opus, trocando só o container.
+ * Ligada (PC-043): reencoda no formato do WhatsApp; se a reencodagem falhar, cai
+ * para a troca de container (o que já funcionava), e só então para o original.
  *
  * Falha devolve o original INTACTO, não erro: um áudio que talvez não saia é
  * melhor que um envio que morre antes de tentar — e o canal que aceita webm
@@ -100,28 +169,50 @@ async function runFfmpeg(args: string[], cwd: string): Promise<void> {
 export async function transcodificarNotaDeVoz(
   input: { buffer: Buffer; mime: string },
   deps: { run?: typeof runFfmpeg } = {},
+  opcoes: OpcoesDaNotaDeVoz = {},
 ): Promise<Transcodificacao> {
-  if (!precisaTranscodificar(input.mime)) {
-    return { buffer: input.buffer, mime: input.mime, convertido: false };
-  }
-  if (input.buffer.length > MAX_BYTES) {
-    return { buffer: input.buffer, mime: input.mime, convertido: false };
-  }
+  const intacto: Transcodificacao = {
+    buffer: input.buffer,
+    mime: input.mime,
+    convertido: false,
+    modo: "nenhuma",
+  };
+  if (!precisaTranscodificar(input.mime, opcoes)) return intacto;
+  if (input.buffer.length > MAX_BYTES) return intacto;
 
   const executar = deps.run ?? runFfmpeg;
+  const base = input.mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  const ehWebm = base === "audio/webm" || base === "video/webm";
   const dir = await mkdtemp(join(tmpdir(), "voz-"));
   try {
-    const entrada = join(dir, "in.webm");
-    const saida = join(dir, "out.ogg");
+    const entrada = join(dir, ehWebm ? "in.webm" : "in.ogg");
     await writeFile(entrada, input.buffer);
+
+    if (opcoes.formatoWhatsapp === true) {
+      const saida = join(dir, "voz.ogg");
+      try {
+        await executar(["-i", entrada, ...ARGS_FORMATO_WHATSAPP, saida], dir);
+        const buffer = await readFile(saida);
+        if (buffer.length > 0)
+          return { buffer, mime: VOICE_MIME, convertido: true, modo: "formato_whatsapp" };
+      } catch {
+        // Cai para a troca de container abaixo: é o que funcionava antes da chave.
+      }
+    }
+
+    // Ogg que chegou aqui só pela chave já está no container certo: sem a
+    // reencodagem, ele segue como veio.
+    if (!ehWebm) return intacto;
+
+    const saida = join(dir, "out.ogg");
     // `-c:a copy`: o codec já é opus dos dois lados. Reencodar custaria tempo e
     // qualidade para chegar ao mesmo lugar.
     await executar(["-i", entrada, "-vn", "-c:a", "copy", "-f", "ogg", saida], dir);
     const buffer = await readFile(saida);
-    if (buffer.length === 0) return { buffer: input.buffer, mime: input.mime, convertido: false };
-    return { buffer, mime: VOICE_MIME, convertido: true };
+    if (buffer.length === 0) return intacto;
+    return { buffer, mime: VOICE_MIME, convertido: true, modo: "container" };
   } catch {
-    return { buffer: input.buffer, mime: input.mime, convertido: false };
+    return intacto;
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

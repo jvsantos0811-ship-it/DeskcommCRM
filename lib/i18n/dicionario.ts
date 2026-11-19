@@ -17260,6 +17260,13 @@ export const DICIONARIO: Traducoes = {
   "Reaproveitar o histórico entre respostas": { es: "Reaprovechar el historial entre respuestas" },
   "Ligada, a IA recebe a conversa na ordem em que o provedor consegue reaproveitar o que já leu na resposta anterior, e o atendimento termina assim que a mensagem é enviada, sem uma última chamada só para encerrar. A resposta fica mais barata e chega alguns segundos antes. A memória do cliente, o texto do agente e as regras de envio não mudam.": { es: "Activada, la IA recibe la conversación en el orden en que el proveedor puede reaprovechar lo que ya leyó en la respuesta anterior, y la atención termina en cuanto se envía el mensaje, sin una última llamada solo para cerrar. La respuesta sale más barata y llega unos segundos antes. La memoria del cliente, el texto del agente y las reglas de envío no cambian." },
   "Ligar nesta empresa": { es: "Activar en esta empresa" },
+  // PC-043: Configurações › Atendimento › nota de voz no formato do WhatsApp.
+  "Nota de voz no formato do WhatsApp": { es: "Nota de voz en el formato de WhatsApp" },
+  "Formato da nota de voz salvo.": { es: "Formato de la nota de voz guardado." },
+  "Ligada, o áudio que a equipe grava no CRM é convertido para o formato da nota de voz do WhatsApp antes de sair: um canal só, voz em 32 kbps e quadros curtos. O arquivo fica cerca de quatro vezes menor e toca no celular do cliente como um áudio gravado no próprio WhatsApp. Útil sobretudo no canal oficial, que entrega o arquivo do jeito que o navegador gravou.":
+    {
+      es: "Activada, el audio que el equipo graba en el CRM se convierte al formato de la nota de voz de WhatsApp antes de salir: un solo canal, voz a 32 kbps y cuadros cortos. El archivo queda unas cuatro veces más pequeño y suena en el celular del cliente como un audio grabado en el propio WhatsApp. Útil sobre todo en el canal oficial, que entrega el archivo tal como lo grabó el navegador.",
+    },
   "Só o administrador da empresa muda esta chave.": { es: "Solo el administrador de la empresa cambia esta opción." },
   "Não afirmar sem fonte": { es: "No afirmar sin fuente" },
   "Antes de a resposta sair, confere se a regra que ela afirma (benefício, prazo, valor, documento) está no material do escritório e se o que ela diz que o cliente falou ele falou mesmo.": { es: "Antes de que salga la respuesta, verifica si la regla que afirma (beneficio, plazo, valor, documento) está en el material del despacho y si lo que dice que el cliente dijo él realmente lo dijo." },
