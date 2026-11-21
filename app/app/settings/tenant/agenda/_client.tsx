@@ -2,6 +2,8 @@
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
+import { ModeloDoEventoNaAgenda } from "@/components/agenda/ModeloDoEventoNaAgenda";
+import type { ModeloDoEvento } from "@/lib/agenda/modelo-do-evento";
 import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
@@ -364,6 +366,8 @@ export function TiposDeAgendamentoClient({
   podeMudarAgendaDosColegas,
   meetAbertoLigado,
   podeMudarMeetAberto,
+  modeloDoEvento = null,
+  podeMudarModeloDoEvento = false,
 }: {
   tiposIniciais: TipoRow[];
   canais?: CanalParaLembrete[];
@@ -383,6 +387,9 @@ export function TiposDeAgendamentoClient({
   /** `organizations.settings.google_meet_acesso_aberto` (migration 0648, issue #2063). */
   meetAbertoLigado: boolean;
   podeMudarMeetAberto: boolean;
+  /** `organizations.settings.modelo_do_evento_agenda` (PC-044, migration 9035). */
+  modeloDoEvento?: ModeloDoEvento | null;
+  podeMudarModeloDoEvento?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -452,6 +459,11 @@ export function TiposDeAgendamentoClient({
       <MeetComAcessoAberto
         ligadoInicial={meetAbertoLigado}
         podeMudar={podeMudarMeetAberto}
+      />
+      {/* PC-044: como o compromisso aparece no calendário da equipe. */}
+      <ModeloDoEventoNaAgenda
+        modeloInicial={modeloDoEvento}
+        podeMudar={podeMudarModeloDoEvento}
       />
       <DiasBloqueados podeEditar={podeEditar} />
       {podeEditar ? (

@@ -54,6 +54,13 @@ import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moverLeadParaEtapaDeAgendamento } from "@/lib/leads/appointment-stage-move";
 import { logger } from "@/lib/logger";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import {
+  lerModeloDoEvento,
+  montarDescricao,
+  montarTitulo,
+  type DadosDoEvento,
+} from "@/lib/agenda/modelo-do-evento";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SB = SupabaseClient;
@@ -399,6 +406,16 @@ async function executarCriacaoDeAgendamento(
   }
   const delivery = booking ? { state:"waiting_for_link",generation:randomUUID(),service_boundary:booking.boundary,source_operation_id:booking.sourceJobId,
     booking_claim:booking.claim,authorized_by:{kind:ctx.actor.type,id:ctx.actor.id} } : {state:"none"};
+  // O MODELO DO EVENTO (PC-044): título e descrição no formato que a empresa
+  // escolheu. Sem modelo gravado, nada muda — título de quem marcou ou nome do
+  // tipo, descrição de quem marcou.
+  const formato = await formatoDoEvento(supabase, ctx, {
+    tipo: tipo.name,
+    contactId: input.contact_id ?? null,
+    descricaoDeQuemMarcou: input.description ?? null,
+    convidadoExterno: !!input.guest_email?.trim(),
+  });
+
   // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
   await guardServiceEffect();
   const { data: criado, error: erroInsert } = await supabase
@@ -406,7 +423,7 @@ async function executarCriacaoDeAgendamento(
     .insert({
       organization_id: ctx.organization_id,
       event_type_id: tipo.id,
-      title: input.title ?? tipo.name,
+      title: formato?.titulo ?? input.title ?? tipo.name,
       starts_at: inicio.toISOString(),
       ends_at: fim.toISOString(),
       // O fuso do compromisso é campo de primeira classe: é o da JORNADA, onde
@@ -423,6 +440,8 @@ async function executarCriacaoDeAgendamento(
           ? input.location_details.trim() || null
           : tipo.location_details,
       description: input.description !== undefined ? input.description.trim() || null : null,
+      // PC-044: o nível de descrição do modelo da empresa, quando há um.
+      ...(formato?.descricao !== undefined ? { description: formato.descricao } : {}),
       notes: input.notes ?? null,
       // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
       // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
@@ -1196,7 +1215,115 @@ async function fecharOLaco(
    return todos.filter((id, i) => todos.indexOf(id) === i);
  }
 
- /** O negócio ativo do contato — pela MESMA régua do resto do produto.
+ /** Os rótulos da descrição do evento. Texto do calendário, não de tela. */
+const ROTULOS_DA_DESCRICAO = {
+  atendimento: "Atendimento",
+  etapa: "Etapa",
+  proximaAcao: "Próxima ação",
+  resumo: "Resumo da conversa",
+  observacao: "Observação",
+};
+
+/**
+ * O título e a descrição pelo MODELO DO EVENTO da empresa (PC-044,
+ * `lib/agenda/modelo-do-evento.ts`). `null` = a empresa não gravou modelo, e o
+ * compromisso nasce como sempre. `descricao` ausente = não mexer na descrição.
+ *
+ * Nunca derruba a marcação: se uma leitura falhar, o compromisso nasce com o
+ * que der (no pior caso, o título só com o tipo). Marcar é o que importa; o
+ * formato é acabamento.
+ */
+async function formatoDoEvento(
+  supabase: SB,
+  ctx: HandlerCtx,
+  entrada: {
+    tipo: string;
+    contactId: string | null;
+    descricaoDeQuemMarcou: string | null;
+    /** Há convidado digitado no compromisso (`guest_email`). */
+    convidadoExterno: boolean;
+  },
+): Promise<{ titulo: string; descricao?: string | null } | null> {
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", ctx.organization_id)
+    .maybeSingle();
+  const modelo = lerModeloDoEvento((org as { settings?: unknown } | null)?.settings);
+  if (!modelo) return null;
+
+  const dados: DadosDoEvento = {
+    tipo: entrada.tipo,
+    descricaoDeQuemMarcou: entrada.descricaoDeQuemMarcou,
+  };
+  // ⚠️ QUEM É CONVIDADO RECEBE O EVENTO POR E-MAIL (`sendUpdates=all`): título e
+  // descrição chegam ao cliente ou a quem ele indicou. Nesse caso o modelo NÃO
+  // aplica a descrição (etapa, próxima ação e resumo são internos) e o título
+  // sai sem a etapa. Revisão independente do PR #66.
+  let clienteRecebeOConvite = entrada.convidadoExterno;
+  if (entrada.contactId) {
+    try {
+      const [{ data: contato }, { data: checkpoint }, leadId] = await Promise.all([
+        supabase
+          .from("contacts")
+          .select("name, display_name, phone_number, email")
+          .eq("organization_id", ctx.organization_id)
+          .eq("id", entrada.contactId)
+          .maybeSingle(),
+        supabase
+          .from("lead_checkpoints")
+          .select("next_action, rolling_summary")
+          .eq("organization_id", ctx.organization_id)
+          .eq("contact_id", entrada.contactId)
+          .order("seq", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        leadAtivoDoContato(supabase, ctx, entrada.contactId),
+      ]);
+      const c = contato as {
+        name: string | null;
+        display_name: string | null;
+        phone_number: string | null;
+        email: string | null;
+      } | null;
+      // O contato com e-mail na ficha entra no convite do Google (worker de push).
+      if (c?.email?.trim()) clienteRecebeOConvite = true;
+      dados.nomeDoContato = nomeDoContato(c);
+      dados.telefone = c?.phone_number ?? null;
+      const ck = checkpoint as { next_action: string | null; rolling_summary: string | null } | null;
+      dados.proximaAcao = ck?.next_action ?? null;
+      dados.resumoDaConversa = ck?.rolling_summary ?? null;
+      if (leadId) {
+        const { data: lead } = await supabase
+          .from("crm_leads")
+          .select("crm_stages!crm_leads_stage_id_fkey(name)")
+          .eq("organization_id", ctx.organization_id)
+          .eq("id", leadId)
+          .maybeSingle();
+        const etapa = (lead as { crm_stages?: { name?: string | null } | null } | null)?.crm_stages;
+        dados.etapa = etapa?.name ?? null;
+      }
+    } catch (e) {
+      // Sem saber se o cliente é convidado, erra para o lado seguro.
+      clienteRecebeOConvite = true;
+      logger.warn("[agenda] modelo do evento: leitura dos dados falhou; segue com o que der", {
+        organization_id: ctx.organization_id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  if (clienteRecebeOConvite) {
+    return { titulo: montarTitulo(modelo.titulo, { ...dados, etapa: null }) };
+  }
+  const descricao = montarDescricao(modelo.descricao, dados, ROTULOS_DA_DESCRICAO);
+  return {
+    titulo: montarTitulo(modelo.titulo, dados),
+    ...(modelo.descricao === "nenhuma" ? {} : { descricao }),
+  };
+}
+
+/** O negócio ativo do contato — pela MESMA régua do resto do produto.
  *
  * `resolveActiveLeadForContact` distingue três desfechos que um `limit(2)` não
  * distingue: roteou, `no_open_lead` e `ambiguous_open_leads`. Os dois últimos
