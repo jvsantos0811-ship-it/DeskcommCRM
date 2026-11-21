@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { transportaMensagem } from "@/lib/channels/capabilities";
+import { capabilitiesOf, transportaMensagem } from "@/lib/channels/capabilities";
+import type { ChannelProvider } from "@/lib/channels/types";
 import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
 
 export interface CanalDoLembrete {
@@ -19,11 +20,62 @@ export type MotivoSemRemetente =
   | "canal_fora_da_janela_24h"
   | "sem_canal"
   | "remetente_ambiguo";
+/**
+ * `foraDaJanela` = o canal só serve porque o tipo tem MODELO da Meta
+ * (PC-045): texto livre não sai; quem envia tem de mandar o modelo.
+ */
 export type RemetenteDoLembrete =
-  { canal: CanalDoLembrete; motivo: null } | { canal: null; motivo: MotivoSemRemetente };
+  | { canal: CanalDoLembrete; motivo: null; foraDaJanela?: boolean }
+  | { canal: null; motivo: MotivoSemRemetente };
+
+/**
+ * Provedor que manda modelo aprovado da Meta fora da janela de 24 h — a régua
+ * é a capacidade do canal (`requiresTemplates`), não uma lista de nomes.
+ */
+export function mandaModeloDaMeta(provider: string | null): boolean {
+  if (!provider || !transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ChannelProvider).requiresTemplates === true;
+  } catch {
+    return false;
+  }
+}
 
 /** Um vínculo é autoridade, não preferência: indisponível nunca libera outro número. */
 export function decidirRemetenteDoLembrete(
+  canais: CanalDoLembrete[],
+  canalIndicadoId: string | null,
+  agora: Date,
+  /** PC-045: o tipo tem modelo da Meta — canal oficial fora da janela serve. */
+  comModeloDaMeta = false,
+): RemetenteDoLembrete {
+  const decisao = decidirSoTextoLivre(canais, canalIndicadoId, agora);
+  if (decisao.canal || !comModeloDaMeta || decisao.motivo !== "canal_fora_da_janela_24h") {
+    return decisao;
+  }
+  // Fora da janela: só o canal que manda modelo, e com a MESMA régua de antes —
+  // o indicado não libera outro número, e no automático só um elegível.
+  const operante = (c: CanalDoLembrete) =>
+    c.status === "WORKING" &&
+    !c.archived_at &&
+    c.metadata?.disabled !== true &&
+    transportaMensagem(c.provider) &&
+    mandaModeloDaMeta(c.provider);
+  if (canalIndicadoId) {
+    const canal = canais.find((c) => c.id === canalIndicadoId);
+    return canal && operante(canal)
+      ? { canal, motivo: null, foraDaJanela: true }
+      : { canal: null, motivo: "canal_fora_da_janela_24h" };
+  }
+  const candidatos = canais.filter(operante);
+  if (candidatos.length > 1) return { canal: null, motivo: "remetente_ambiguo" };
+  const unico = candidatos[0];
+  return unico
+    ? { canal: unico, motivo: null, foraDaJanela: true }
+    : { canal: null, motivo: "canal_fora_da_janela_24h" };
+}
+
+function decidirSoTextoLivre(
   canais: CanalDoLembrete[],
   canalIndicadoId: string | null,
   agora: Date,
@@ -55,6 +107,7 @@ export async function resolverRemetenteDoLembrete(
   compromisso: { organization_id: string; contact_id: string; conversation_id?: string | null },
   canalDoTipoId: string | null,
   agora: Date,
+  comModeloDaMeta = false,
 ): Promise<RemetenteDoLembrete> {
   const org = compromisso.organization_id;
   let indicado = canalDoTipoId;
@@ -111,5 +164,5 @@ export async function resolverRemetenteDoLembrete(
       }
     }
   }
-  return decidirRemetenteDoLembrete(canais, indicado, agora);
+  return decidirRemetenteDoLembrete(canais, indicado, agora, comModeloDaMeta);
 }

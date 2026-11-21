@@ -14815,6 +14815,31 @@ export const DICIONARIO: Traducoes = {
   // o AVISO DE RISCO, que fica encostada nela na mesma tela. A irmã ao lado é
   // a "Agenda dos colegas" — mesma página, mesmo piso, mesmo formato de frase.
   "Google Meet com acesso aberto": { es: "Google Meet con acceso abierto" },
+  // PC-044 (fork): como o compromisso aparece na agenda.
+  "Como o compromisso aparece na agenda": { es: "Cómo aparece la cita en la agenda" },
+  "Usar um modelo de título e de descrição": { es: "Usar un modelo de título y de descripción" },
+  "Desligado, o compromisso nasce com o título de quem marcou (ou o nome do tipo de atendimento), como sempre. Ligado, todo compromisso marcado pela IA ou pela equipe segue o modelo abaixo.":
+    { es: "Desactivado, la cita nace con el título de quien la agendó (o el nombre del tipo de atención), como siempre. Activado, toda cita agendada por la IA o por el equipo sigue el modelo de abajo." },
+  "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.":
+    { es: "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (los 4 últimos dígitos) y {etapa}." },
+  "Exemplo:": { es: "Ejemplo:" },
+  "Modelo da Meta para lembrete fora das 24 h (número oficial)": { es: "Plantilla de Meta para el recordatorio fuera de las 24 h (número oficial)" },
+  "Idioma do modelo": { es: "Idioma de la plantilla" },
+  "No número oficial, o lembrete fora das 24 h da última mensagem do cliente só sai como modelo aprovado pela Meta. Sem modelo, esse lembrete é pulado. No corpo do modelo: {{1}} primeiro nome, {{2}} dia, {{3}} hora e {{4}} local. Botões de resposta (por exemplo Confirmo e Preciso remarcar) são do próprio modelo; a resposta do cliente chega na conversa.":
+    { es: "En el número oficial, el recordatorio fuera de las 24 h del último mensaje del cliente solo sale como plantilla aprobada por Meta. Sin plantilla, ese recordatorio se omite. En el cuerpo de la plantilla: {{1}} primer nombre, {{2}} día, {{3}} hora y {{4}} lugar. Los botones de respuesta (por ejemplo Confirmo y Necesito reagendar) son de la propia plantilla; la respuesta del cliente llega a la conversación." },
+  "O nome do modelo da Meta usa só letras minúsculas, números e _.": { es: "El nombre de la plantilla de Meta usa solo minúsculas, números y _." },
+  "Idioma do modelo inválido (ex.: pt_BR).": { es: "Idioma de la plantilla inválido (ej.: pt_BR)." },
+  "Descrição do compromisso": { es: "Descripción de la cita" },
+  "Só o que foi escrito ao marcar (como hoje)": { es: "Solo lo que se escribió al agendar (como hoy)" },
+  "Básica: tipo de atendimento, etapa do funil e a próxima ação anotada pela IA":
+    { es: "Básica: tipo de atención, etapa del embudo y la próxima acción anotada por la IA" },
+  "Completa: a básica mais o resumo da conversa e a observação de quem marcou":
+    { es: "Completa: la básica más el resumen de la conversación y la observación de quien agendó" },
+  "⚠ O resumo da conversa pode ter dado de saúde ou outro dado sensível do cliente. A agenda costuma ser vista por mais gente que o CRM e às vezes fica no celular pessoal: use a completa só se a agenda for restrita a quem atende.":
+    { es: "⚠ El resumen de la conversación puede tener datos de salud u otros datos sensibles del cliente. La agenda suele ser vista por más personas que el CRM y a veces está en el celular personal: usa la completa solo si la agenda es exclusiva de quien atiende." },
+  "O título precisa ter de 1 a 200 caracteres.": { es: "El título necesita tener de 1 a 200 caracteres." },
+  "Com o modelo ligado, o título que alguém digitar ao marcar é trocado pelo modelo. Quando o cliente é convidado do evento (e-mail na ficha ou convidado digitado), ele recebe o convite por e-mail: nesse caso o título sai sem a etapa e a descrição fica só com o que foi escrito ao marcar.":
+    { es: "Con el modelo activado, el título que alguien escriba al agendar se reemplaza por el modelo. Cuando el cliente es invitado del evento (correo en la ficha o invitado escrito), recibe la invitación por correo: en ese caso el título sale sin la etapa y la descripción queda solo con lo que se escribió al agendar." },
   "O Meet da reunião nasce com o acesso aberto": {
     es: "La reunión de Meet nace con el acceso abierto",
   },

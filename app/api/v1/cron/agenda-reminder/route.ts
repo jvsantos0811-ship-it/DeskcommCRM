@@ -171,6 +171,9 @@ interface TipoDoCompromisso {
   reminder_minutes_before: number;
   reminder_extra_offsets_minutes: number[] | null;
   reminder_template_name: string | null;
+  /** PC-045 (9036): modelo aprovado da Meta para fora da janela de 24 h. */
+  reminder_meta_template_name?: string | null;
+  reminder_meta_template_language?: string | null;
   reminder_body: string | null;
   reminder_bodies: Record<string, string> | null;
   location_details: string | null;
@@ -211,6 +214,42 @@ function tipoDe(linha: CompromissoAVencer): TipoDoCompromisso | null {
   const t = linha.calendar_event_types;
   if (!t) return null;
   return Array.isArray(t) ? (t[0] ?? null) : t;
+}
+
+/**
+ * PC-045: os valores do MODELO da Meta do lembrete, por posição do corpo —
+ * {{1}} primeiro nome, {{2}} dia, {{3}} hora, {{4}} local. Variável vazia a
+ * Meta recusa, então o que falta vira um traço curto.
+ */
+export function valoresDoModeloDoLembrete(input: {
+  nomeDoContato: string | null;
+  quando: Date;
+  timezone: string;
+  local: string | null;
+  idioma?: Idioma;
+}): Record<string, string> {
+  const etiqueta = tagDeIdioma(input.idioma ?? IDIOMA_PADRAO);
+  // A Meta recusa variável com quebra de linha, tab ou 4+ espaços (132018):
+  // tudo vira um espaço só, e o tamanho tem teto.
+  const umaLinha = (v: string, teto: number) => v.replace(/\s+/g, " ").trim().slice(0, teto);
+  const primeiro = umaLinha(input.nomeDoContato ?? "", 200).split(" ")[0] ?? "";
+  const dia = new Intl.DateTimeFormat(etiqueta, {
+    timeZone: input.timezone,
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+  }).format(input.quando);
+  const hora = new Intl.DateTimeFormat(etiqueta, {
+    timeZone: input.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(input.quando);
+  return {
+    "1": primeiro || "cliente",
+    "2": dia,
+    "3": hora,
+    "4": umaLinha(input.local ?? "", 300) || "-",
+  };
 }
 
 /**
@@ -537,7 +576,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select(
       "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, " +
-        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
+        "calendar_event_types!inner(name, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_meta_template_name, reminder_meta_template_language, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
@@ -660,6 +699,8 @@ async function handle(req: NextRequest): Promise<Response> {
       linha,
       tipo.reminder_channel_session_id ?? null,
       agora,
+      // PC-045: com modelo da Meta no tipo, o número oficial fora da janela serve.
+      !!tipo.reminder_meta_template_name,
     );
     await atualizarAvisoDeRemetente(admin, org, linha.id, escolha.motivo);
     if (!escolha.canal) {
@@ -674,8 +715,8 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     const canal = escolha.canal;
 
-    const foraDaJanela = await adiarAteAJanelaAbrir(admin, org, canal.id);
-    if (foraDaJanela) {
+    const foraDaJanelaDeDisparo = await adiarAteAJanelaAbrir(admin, org, canal.id);
+    if (foraDaJanelaDeDisparo) {
       pular("fora_da_janela");
       continue;
     }
@@ -759,7 +800,21 @@ async function handle(req: NextRequest): Promise<Response> {
           actor: { type: "webhook_source", id: linha.id },
           requestId: `agenda-reminder:${linha.id}`,
         },
-        { conversation_id: conversaId, type: "text", body: corpo } as Parameters<
+        (escolha.foraDaJanela && tipo.reminder_meta_template_name
+          ? {
+              conversation_id: conversaId,
+              type: "template",
+              template_name: tipo.reminder_meta_template_name,
+              template_language: tipo.reminder_meta_template_language ?? "pt_BR",
+              template_values: valoresDoModeloDoLembrete({
+                nomeDoContato: nomeDoContato(contato),
+                quando: new Date(linha.starts_at),
+                timezone: organizacao?.timezone ?? "America/Sao_Paulo",
+                local: linha.location_details ?? tipo.location_details ?? null,
+                idioma: normalizarIdioma(organizacao?.locale),
+              }),
+            }
+          : { conversation_id: conversaId, type: "text", body: corpo }) as Parameters<
           typeof sendMessageHandler
         >[2],
       );

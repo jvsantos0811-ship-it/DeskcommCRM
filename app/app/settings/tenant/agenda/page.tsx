@@ -5,6 +5,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado, meetAbertoLigado } from "@/lib/schemas/settings";
+import { lerModeloDoEvento } from "@/lib/agenda/modelo-do-evento";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
@@ -68,7 +69,7 @@ export default async function TiposDeAgendamentoPage() {
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_meta_template_name, reminder_meta_template_language, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
       )
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
@@ -149,6 +150,9 @@ export default async function TiposDeAgendamentoPage() {
         // `manager` como a irmã ao lado: é regra da AGENDA e não reescreve
         // dado nenhum. A RPC cobra de novo.
         podeMudarMeetAberto={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
+        // PC-044 (migration 9035): ausente = comportamento de sempre.
+        modeloDoEvento={lerModeloDoEvento(org?.settings)}
+        podeMudarModeloDoEvento={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
       />
     </div>
   );

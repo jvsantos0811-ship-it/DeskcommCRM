@@ -107,6 +107,28 @@ const camposDoTipo = {
   reminder_enabled: z.boolean().optional(),
   reminder_channel_session_id: z.string().uuid().nullish(),
   /**
+   * PC-045 (migration 9036): o MODELO aprovado da Meta para o lembrete fora da
+   * janela de 24 h no número oficial. Vazio/nulo = o degrau fora da janela é
+   * pulado, como sempre. O nome é o do modelo na Meta (minúsculas, números e _).
+   */
+  reminder_meta_template_name: z
+    .string()
+    .trim()
+    .max(512)
+    .nullish()
+    .transform((v) => (v == null || v === "" ? null : v))
+    .refine((v) => v === null || v === undefined || /^[a-z0-9_]{1,512}$/.test(v), {
+      message: "O nome do modelo da Meta usa só letras minúsculas, números e _.",
+    }),
+  reminder_meta_template_language: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((v) => (v == null || v === "" ? null : v))
+    .refine((v) => v === null || v === undefined || /^[a-z]{2,3}(_[A-Z]{2})?$/.test(v), {
+      message: "Idioma do modelo inválido (ex.: pt_BR).",
+    }),
+  /**
    * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
    * PARÁGRAFO ACIMA DE PROPÓSITO.
    *
