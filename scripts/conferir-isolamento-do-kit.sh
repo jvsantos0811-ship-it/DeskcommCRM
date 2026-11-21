@@ -69,7 +69,7 @@ fi
 if [ -z "$release" ]; then
   release="$(cd "$ROOT" && bash -c 'source "$1/_common.sh" >/dev/null 2>&1; ultima_release_estavel' _ "$KIT" || true)"
 fi
-# FORK SEM RELEASE PRÓPRIA (jvsantos0811-ship-it/DeskcommCRM): enquanto este
+# FORK SEM RELEASE PRÓPRIA (leadsalesia/DeskcommCRM): enquanto este
 # repositório não publica a sua, a conferência mede contra a última release do
 # projeto original — é dela que vem o update.sh que as instalações já têm no
 # disco. As tags dessa release (e a v1.63.0) são buscadas lá, não no origin.

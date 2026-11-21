@@ -23,6 +23,25 @@
  * contato (`fn_nascer_lead_da_conversa`). Conversa: pela thread do provedor.
  * Uma página reprocessada depois de uma queda não duplica nada; e "importar de
  * novo" a mesma conexão traz só o que faltou.
+ *
+ * ─── Uma rodada por vez, de verdade (PC-042) ────────────────────────────────
+ *
+ * Com o banco lento, uma página de 100 conversas passou de 3 minutos; o
+ * orçamento só era conferido entre PÁGINAS e o carimbo só era renovado no fim
+ * de cada uma, então o cron do minuto seguinte achou a rodada "perdida" e abriu
+ * outra na mesma página: deadlock, e as duas regravando `contagens` inteiras
+ * (a tela chegou a mostrar 0 mensagens com milhares no banco). Agora:
+ *  - o orçamento é conferido entre CONVERSAS;
+ *  - cada conversa termina com uma gravação que renova o carimbo e guarda onde
+ *    a rodada está dentro da página (`PREFIXO_DA_FEITA`), para a rodada
+ *    seguinte continuar dali sem refazer a página — e conversa longa renova o
+ *    carimbo também entre as páginas de MENSAGENS;
+ *  - rodada que para pelo tempo LIBERA a importação (carimbo vencido), para o
+ *    cron do minuto seguinte continuar sem esperar os 3 minutos de "perdida";
+ *  - toda gravação é condicionada ao carimbo da própria rodada e a um estado
+ *    vivo: se outra rodada pegou a importação, ou alguém a cancelou, a gravação
+ *    não casa linha nenhuma e a rodada para sem escrever mais nada
+ *    (`RodadaPerdeuAImportacao`). Contagens nunca voltam para trás.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -81,6 +100,60 @@ export class ProvedorPediuEspera extends Error {
   }
 }
 
+/**
+ * A gravação não casou a linha: outra rodada pegou a importação (o carimbo
+ * mudou) ou ela não está mais viva (cancelada, concluída). A rodada para sem
+ * escrever — quem tem a importação agora é que grava.
+ */
+export class RodadaPerdeuAImportacao extends Error {
+  constructor() {
+    super("rodada_perdeu_a_importacao");
+  }
+}
+
+/**
+ * Quais conversas da página EM ANDAMENTO já foram feitas: uma chave
+ * `feita_<impressão do id>` por conversa.
+ *
+ * A lista do provedor é ordenada por atividade, e o número segue em uso durante
+ * a importação: conversas sobem para o topo quando recebem mensagem. Retomar por
+ * posição ("depois da 20ª") pularia a conversa não feita que subiu; e refazer a
+ * página a cada mudança de ordem não termina nunca num número movimentado. Por
+ * isso a rodada percorre a página na ordem ATUAL e pula só as conversas já
+ * feitas nela: nada fica de fora, e cada rodada avança.
+ *
+ * Moram em `contagens` porque é a única coluna livre sem migration; são números
+ * (o tipo da coluna) e a tela só lê as chaves que conhece. Saem das contagens
+ * quando a página termina e antes da auditoria final.
+ */
+export const PREFIXO_DA_FEITA = "feita_";
+
+/** FNV-1a de 32 bits: estável, curto, e cabe num número do JSON. */
+export function impressao(texto: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+const chaveDaFeita = (conversaId: string) => `${PREFIXO_DA_FEITA}${impressao(conversaId)}`;
+
+function temFeitas(c: Record<string, number>): boolean {
+  return Object.keys(c).some((k) => k.startsWith(PREFIXO_DA_FEITA));
+}
+
+function limparFeitas(c: Record<string, number>): void {
+  for (const k of Object.keys(c)) if (k.startsWith(PREFIXO_DA_FEITA)) delete c[k];
+}
+
+/** O que a rodada escreveu por último: o carimbo (`atualizada_em`) e o estado. */
+interface Posse {
+  carimbo: string;
+  estado: EstadoDaImportacao;
+}
+
 export interface Dependencias {
   fetch: typeof fetch;
   agora: () => number;
@@ -106,6 +179,8 @@ export async function buscarMensagensDaConversa(
   deps: Dependencias,
   creds: ZernioCredentials,
   conversaId: string,
+  /** Chamado entre as páginas de mensagens: o sinal de vida da rodada. */
+  entrePaginas?: () => Promise<void>,
 ): Promise<{ mensagens: MensagemDoHistorico[]; ignoradas: number }> {
   const mensagens: MensagemDoHistorico[] = [];
   let ignoradas = 0;
@@ -119,6 +194,7 @@ export async function buscarMensagensDaConversa(
     mensagens.push(...pagina.mensagens);
     ignoradas += pagina.ignoradas;
     cursor = pagina.proximoCursor;
+    if (cursor && mensagens.length < TETO_DE_MENSAGENS) await entrePaginas?.();
   } while (cursor && mensagens.length < TETO_DE_MENSAGENS);
   return { mensagens, ignoradas };
 }
@@ -134,38 +210,104 @@ function registrarFalha(imp: Importacao, motivo: string, conversa?: string): voi
   );
 }
 
-async function salvar(admin: Admin, imp: Importacao, extra: Record<string, unknown> = {}): Promise<void> {
-  const { error } = await admin
+/**
+ * Grava o estado da rodada — só se a importação ainda for DESTA rodada (o
+ * carimbo é o que ela escreveu por último) e ainda estiver viva. Renova o
+ * carimbo: é o sinal de vida que impede o cron de abrir uma segunda rodada.
+ */
+async function salvar(
+  admin: Admin,
+  imp: Importacao,
+  posse: Posse,
+  deps: Dependencias,
+  extra: Record<string, unknown> = {},
+  opcoes: { liberar?: boolean } = {},
+): Promise<void> {
+  // Liberar = gravar um carimbo já vencido: a rodada terminou bem e a próxima
+  // pode começar no minuto seguinte, sem esperar os 3 minutos de "perdida".
+  // `atualizada_em` não aparece na tela; quem lê o banco, leia este comentário.
+  const carimbo = new Date(deps.agora() - (opcoes.liberar ? RODADA_PERDIDA_MS + 1_000 : 0)).toISOString();
+  const { data, error } = await admin
     .from("importacoes_de_historico")
     .update({
       estado: imp.estado,
       cursor_conversas: imp.cursor_conversas,
       contagens: imp.contagens,
       falhas: imp.falhas,
-      atualizada_em: new Date().toISOString(),
+      atualizada_em: carimbo,
       ...extra,
     })
     .eq("id", imp.id)
-    .eq("organization_id", imp.organization_id);
+    .eq("organization_id", imp.organization_id)
+    .eq("atualizada_em", posse.carimbo)
+    // Viva — ou no estado final que a PRÓPRIA rodada acabou de gravar (a
+    // conclusão grava duas vezes). Cancelada por outra mão nunca casa.
+    .in("estado", [...new Set<string>([...ESTADOS_VIVOS, posse.estado])])
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(`importacao_nao_salva: ${error.message}`);
+  if (!data) throw new RodadaPerdeuAImportacao();
+  posse.carimbo = carimbo;
+  posse.estado = imp.estado;
+}
+
+/** Só o sinal de vida, com a mesma condição de posse de `salvar`. */
+async function renovar(admin: Admin, imp: Importacao, posse: Posse, deps: Dependencias): Promise<void> {
+  const carimbo = new Date(deps.agora()).toISOString();
+  const { data, error } = await admin
+    .from("importacoes_de_historico")
+    .update({ atualizada_em: carimbo })
+    .eq("id", imp.id)
+    .eq("organization_id", imp.organization_id)
+    .eq("atualizada_em", posse.carimbo)
+    .in("estado", [...new Set<string>([...ESTADOS_VIVOS, posse.estado])])
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(`importacao_nao_salva: ${error.message}`);
+  if (!data) throw new RodadaPerdeuAImportacao();
+  posse.carimbo = carimbo;
 }
 
 /**
  * Pega a importação para esta rodada. Só uma rodada por vez: o `update`
  * condicional é o cadeado — quem não casar a linha (outra rodada acabou de
- * carimbá-la) sai sem nada.
+ * carimbá-la) sai sem nada. O carimbo escrito aqui é a posse da rodada.
  */
-export async function pegarImportacao(admin: Admin, id: string, deps: Dependencias = PADRAO): Promise<Importacao | null> {
+async function pegar(
+  admin: Admin,
+  id: string,
+  deps: Dependencias,
+): Promise<{ imp: Importacao; posse: Posse } | null> {
   const perdida = new Date(deps.agora() - RODADA_PERDIDA_MS).toISOString();
-  const { data } = await admin
+  const carimbo = new Date(deps.agora()).toISOString();
+  // Na fila: sai dela no MESMO update. Enquanto a linha dizia `na_fila`, o
+  // cron seguinte podia pegá-la de novo — a fila não olha o carimbo — e duas
+  // rodadas andavam juntas na primeira página.
+  const daFila = await admin
     .from("importacoes_de_historico")
-    .update({ atualizada_em: new Date(deps.agora()).toISOString() })
+    .update({ atualizada_em: carimbo, estado: "importando" })
     .eq("id", id)
-    .in("estado", [...ESTADOS_VIVOS])
-    .or(`estado.eq.na_fila,atualizada_em.lt.${perdida}`)
+    .eq("estado", "na_fila")
     .select(COLUNAS)
     .maybeSingle();
-  return (data as Importacao | null) ?? null;
+  let imp = (daFila.data as Importacao | null) ?? null;
+  if (!imp) {
+    // Já começada: só se a rodada anterior está sem sinal de vida.
+    const perdidaDeVez = await admin
+      .from("importacoes_de_historico")
+      .update({ atualizada_em: carimbo })
+      .eq("id", id)
+      .in("estado", [...ESTADOS_VIVOS])
+      .lt("atualizada_em", perdida)
+      .select(COLUNAS)
+      .maybeSingle();
+    imp = (perdidaDeVez.data as Importacao | null) ?? null;
+  }
+  return imp ? { imp, posse: { carimbo, estado: imp.estado } } : null;
+}
+
+export async function pegarImportacao(admin: Admin, id: string, deps: Dependencias = PADRAO): Promise<Importacao | null> {
+  return (await pegar(admin, id, deps))?.imp ?? null;
 }
 
 /** As importações que precisam de uma rodada agora. */
@@ -176,7 +318,10 @@ export async function importacoesPendentes(admin: Admin, deps: Dependencias = PA
     .select("id")
     .in("estado", [...ESTADOS_VIVOS])
     .or(`estado.eq.na_fila,atualizada_em.lt.${perdida}`)
-    .order("criada_em", { ascending: true })
+    // Pelo carimbo, não pela criação: a rodada que termina libera a importação
+    // com um carimbo vencido de AGORA, e quem está esperando há mais tempo passa
+    // na frente — duas organizações importando ao mesmo tempo se revezam.
+    .order("atualizada_em", { ascending: true })
     .limit(5);
   return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
 }
@@ -198,6 +343,7 @@ async function importarUmaConversa(
   deps: Dependencias,
   creds: ZernioCredentials,
   imp: Importacao,
+  posse: Posse,
   conversa: ConversaDoHistorico,
   internoCfg: Awaited<ReturnType<typeof lerNumeroInternoDeAviso>>,
 ): Promise<void> {
@@ -224,7 +370,19 @@ async function importarUmaConversa(
     return;
   }
 
-  const { mensagens, ignoradas } = await buscarMensagensDaConversa(deps, creds, conversa.id);
+  // Conversa longa (até 5.000 mensagens) pode passar de 3 minutos sozinha.
+  // Erro de banco no sinal de vida não derruba a conversa: a posse volta a ser
+  // conferida no `salvar` do fim dela. Só a perda da posse para a rodada.
+  const { mensagens, ignoradas } = await buscarMensagensDaConversa(deps, creds, conversa.id, () =>
+    renovar(admin, imp, posse, deps).catch((err: unknown) => {
+      if (err instanceof RodadaPerdeuAImportacao) throw err;
+      logger.warn("[importacao-historico] sinal de vida não gravou", {
+        organization_id: imp.organization_id,
+        importacao_id: imp.id,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }),
+  );
   somar(c, "mensagens_ignoradas", ignoradas);
   if (mensagens.length === 0) {
     somar(c, "conversas_vazias");
@@ -318,7 +476,7 @@ async function importarUmaConversa(
 export interface ResultadoDaRodada {
   estado: EstadoDaImportacao;
   conversas: number;
-  parouPor: "fim" | "tempo" | "espera_do_provedor" | "erro" | "nada";
+  parouPor: "fim" | "tempo" | "espera_do_provedor" | "erro" | "nada" | "perdeu_a_vez";
 }
 
 /**
@@ -331,8 +489,10 @@ export async function rodarImportacao(
   deps: Dependencias = PADRAO,
 ): Promise<ResultadoDaRodada> {
   const inicio = deps.agora();
-  const imp = await pegarImportacao(admin, id, deps);
-  if (!imp) return { estado: "na_fila", conversas: 0, parouPor: "nada" };
+  const pega = await pegar(admin, id, deps);
+  if (!pega) return { estado: "na_fila", conversas: 0, parouPor: "nada" };
+  const { imp, posse } = pega;
+  const acabouOTempo = () => deps.agora() - inicio >= ORCAMENTO_DA_RODADA_MS;
 
   imp.contagens = { ...(imp.contagens ?? {}) };
   imp.falhas = Array.isArray(imp.falhas) ? imp.falhas : [];
@@ -355,12 +515,12 @@ export async function rodarImportacao(
       if (!creds) {
         imp.estado = "falhou";
         registrarFalha(imp, "A conexão não tem a chave do provedor, ou não é mais uma conexão deste tipo.");
-        await salvar(admin, imp, { concluida_em: new Date().toISOString() });
+        await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
         return { estado: imp.estado, conversas, parouPor: "erro" };
       }
       const interno = await lerNumeroInternoDeAviso(admin, imp.organization_id);
 
-      while (deps.agora() - inicio < ORCAMENTO_DA_RODADA_MS) {
+      paginas: while (!acabouOTempo()) {
         const qs = new URLSearchParams({
           accountId: creds.accountId,
           platform: "whatsapp",
@@ -370,28 +530,39 @@ export async function rodarImportacao(
         if (imp.cursor_conversas) qs.set("cursor", imp.cursor_conversas);
         const pagina = lerPaginaDeConversas(await chamarApi(deps, creds, `/v1/inbox/conversations?${qs}`), creds.accountId);
         if (pagina.contaRecusada) throw new ProvedorPediuEspera(pagina.contaRecusada.esperarSegundos);
-        somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
+
+        // Página nova conta quem veio sem identidade; página retomada já contou.
+        if (!temFeitas(imp.contagens)) somar(imp.contagens, "sem_identidade", pagina.semIdentidade);
 
         for (const conversa of pagina.conversas) {
+          // Já feita nesta página (ver `PREFIXO_DA_FEITA`): pula, em qualquer posição.
+          if (imp.contagens[chaveDaFeita(conversa.id)] !== undefined) continue;
+          // O orçamento é conferido entre CONVERSAS: com o banco lento, uma
+          // página inteira passa de minutos.
+          if (acabouOTempo()) break paginas;
           try {
-            await importarUmaConversa(admin, deps, creds, imp, conversa, interno);
+            await importarUmaConversa(admin, deps, creds, imp, posse, conversa, interno);
           } catch (err) {
-            if (err instanceof ProvedorPediuEspera) throw err;
+            if (err instanceof ProvedorPediuEspera || err instanceof RodadaPerdeuAImportacao) throw err;
             somar(imp.contagens, "falhas");
             registrarFalha(imp, err instanceof Error ? err.message : String(err), conversa.id);
           }
           conversas++;
+          imp.contagens[chaveDaFeita(conversa.id)] = 1;
+          // Sinal de vida + progresso, a cada conversa.
+          await salvar(admin, imp, posse, deps);
         }
-        // O cursor anda por PÁGINA: uma queda no meio refaz a página inteira,
-        // e refazer é seguro (ver o cabeçalho).
+
+        // Página feita: o cursor anda e a marca de retomada sai.
+        limparFeitas(imp.contagens);
         imp.cursor_conversas = pagina.proximoCursor;
         if (!pagina.proximoCursor) {
           imp.estado = imp.triagem_ligada && imp.pipeline_id ? "triando" : "concluida";
           break;
         }
-        await salvar(admin, imp);
+        await salvar(admin, imp, posse, deps);
       }
-      await salvar(admin, imp);
+      await salvar(admin, imp, posse, deps);
     }
 
     if (imp.estado === "triando") {
@@ -400,19 +571,29 @@ export async function rodarImportacao(
         const t = await triarLeadsImportados(admin, imp, restante, deps);
         for (const [k, v] of Object.entries(t.contagens)) somar(imp.contagens, k, v);
         if (t.terminou) imp.estado = "concluida";
-        await salvar(admin, imp);
+        await salvar(admin, imp, posse, deps);
       }
     }
 
     if (imp.estado === "concluida") {
-      await concluir(admin, imp);
+      await concluir(admin, imp, posse, deps);
       return { estado: imp.estado, conversas, parouPor: "fim" };
     }
+    // Parou pelo tempo, com tudo gravado: libera para o cron do minuto seguinte.
+    await salvar(admin, imp, posse, deps, {}, { liberar: true });
     return { estado: imp.estado, conversas, parouPor: "tempo" };
   } catch (err) {
+    if (err instanceof RodadaPerdeuAImportacao) {
+      // Outra rodada tem a importação, ou ela foi cancelada: nada a gravar.
+      logger.info("[importacao-historico] rodada perdeu a importação", {
+        organization_id: imp.organization_id,
+        importacao_id: imp.id,
+      });
+      return { estado: imp.estado, conversas, parouPor: "perdeu_a_vez" };
+    }
     if (err instanceof ProvedorPediuEspera) {
       registrarFalha(imp, `O provedor pediu para esperar${err.segundos ? ` ${err.segundos} s` : ""}; a próxima rodada continua.`);
-      await salvar(admin, imp).catch(() => undefined);
+      await salvar(admin, imp, posse, deps).catch(() => undefined);
       return { estado: imp.estado, conversas, parouPor: "espera_do_provedor" };
     }
     logger.error("[importacao-historico] rodada falhou", {
@@ -423,7 +604,7 @@ export async function rodarImportacao(
     // Falha de rede ou do banco no meio: a linha segue viva e a próxima
     // rodada tenta de novo. Só a falta de credencial (acima) encerra.
     registrarFalha(imp, err instanceof Error ? err.message : String(err));
-    await salvar(admin, imp).catch(() => undefined);
+    await salvar(admin, imp, posse, deps).catch(() => undefined);
     return { estado: imp.estado, conversas, parouPor: "erro" };
   }
 }
@@ -433,7 +614,7 @@ export async function rodarImportacao(
  * progresso (uma página refeita conta duas vezes); o que vai para a auditoria
  * é medido.
  */
-async function concluir(admin: Admin, imp: Importacao): Promise<void> {
+async function concluir(admin: Admin, imp: Importacao, posse: Posse, deps: Dependencias): Promise<void> {
   const [{ count: mensagens }, { count: negocios }] = await Promise.all([
     admin
       .from("messages")
@@ -452,7 +633,8 @@ async function concluir(admin: Admin, imp: Importacao): Promise<void> {
     mensagens_no_banco: mensagens ?? 0,
     negocios_no_banco: negocios ?? 0,
   };
-  await salvar(admin, imp, { concluida_em: new Date().toISOString() });
+  limparFeitas(imp.contagens);
+  await salvar(admin, imp, posse, deps, { concluida_em: new Date(deps.agora()).toISOString() });
   await audit({
     action: "lead.imported",
     actorUserId: imp.iniciada_por,
