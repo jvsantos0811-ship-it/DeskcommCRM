@@ -3768,6 +3768,8 @@ export type Database = {
           reminder_extra_offsets_minutes: number[]
           default_price_cents: number | null
           reminder_template_name: string | null
+          reminder_meta_template_name: string | null
+          reminder_meta_template_language: string | null
           requires_confirmation: boolean
           slot_interval_minutes: number | null
           slug: string
@@ -3798,6 +3800,8 @@ export type Database = {
           reminder_extra_offsets_minutes?: number[]
           default_price_cents?: number | null
           reminder_template_name?: string | null
+          reminder_meta_template_name?: string | null
+          reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
           slot_interval_minutes?: number | null
           slug: string
@@ -3828,6 +3832,8 @@ export type Database = {
           reminder_extra_offsets_minutes?: number[]
           default_price_cents?: number | null
           reminder_template_name?: string | null
+          reminder_meta_template_name?: string | null
+          reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
           slot_interval_minutes?: number | null
           slug?: string

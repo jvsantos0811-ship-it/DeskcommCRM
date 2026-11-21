@@ -14823,6 +14823,12 @@ export const DICIONARIO: Traducoes = {
   "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.":
     { es: "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (los 4 últimos dígitos) y {etapa}." },
   "Exemplo:": { es: "Ejemplo:" },
+  "Modelo da Meta para lembrete fora das 24 h (número oficial)": { es: "Plantilla de Meta para el recordatorio fuera de las 24 h (número oficial)" },
+  "Idioma do modelo": { es: "Idioma de la plantilla" },
+  "No número oficial, o lembrete fora das 24 h da última mensagem do cliente só sai como modelo aprovado pela Meta. Sem modelo, esse lembrete é pulado. No corpo do modelo: {{1}} primeiro nome, {{2}} dia, {{3}} hora e {{4}} local. Botões de resposta (por exemplo Confirmo e Preciso remarcar) são do próprio modelo; a resposta do cliente chega na conversa.":
+    { es: "En el número oficial, el recordatorio fuera de las 24 h del último mensaje del cliente solo sale como plantilla aprobada por Meta. Sin plantilla, ese recordatorio se omite. En el cuerpo de la plantilla: {{1}} primer nombre, {{2}} día, {{3}} hora y {{4}} lugar. Los botones de respuesta (por ejemplo Confirmo y Necesito reagendar) son de la propia plantilla; la respuesta del cliente llega a la conversación." },
+  "O nome do modelo da Meta usa só letras minúsculas, números e _.": { es: "El nombre de la plantilla de Meta usa solo minúsculas, números y _." },
+  "Idioma do modelo inválido (ex.: pt_BR).": { es: "Idioma de la plantilla inválido (ej.: pt_BR)." },
   "Descrição do compromisso": { es: "Descripción de la cita" },
   "Só o que foi escrito ao marcar (como hoje)": { es: "Solo lo que se escribió al agendar (como hoy)" },
   "Básica: tipo de atendimento, etapa do funil e a próxima ação anotada pela IA":

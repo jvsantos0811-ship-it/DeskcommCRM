@@ -44,6 +44,9 @@ export interface TipoRow {
   is_active: boolean;
   reminder_enabled: boolean;
   reminder_channel_session_id?: string | null;
+  /** PC-045 (9036). */
+  reminder_meta_template_name?: string | null;
+  reminder_meta_template_language?: string | null;
   reminder_minutes_before: number;
   reminder_extra_offsets_minutes: number[] | null;
   reminder_body: string | null;
@@ -231,6 +234,35 @@ function LembreteDoCompromisso({
           </span>
         ) : null}
       </label>
+      {/* PC-045: o número oficial só manda texto livre dentro da janela de 24 h
+          da última mensagem do cliente; fora dela, só com modelo aprovado. */}
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]">
+        <label className="grid gap-1 text-xs text-text-muted">
+          {t("Modelo da Meta para lembrete fora das 24 h (número oficial)")}
+          <input
+            name="reminder_meta_template_name"
+            disabled={!ligado}
+            defaultValue={tipo.reminder_meta_template_name ?? ""}
+            placeholder="lembrete_consulta"
+            data-testid={`editar-lembrete-modelo-meta-${tipo.id}`}
+            className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-text-muted">
+          {t("Idioma do modelo")}
+          <input
+            name="reminder_meta_template_language"
+            disabled={!ligado}
+            defaultValue={tipo.reminder_meta_template_language ?? "pt_BR"}
+            className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
+          />
+        </label>
+      </div>
+      <span className="text-xs text-text-muted">
+        {t(
+          "No número oficial, o lembrete fora das 24 h da última mensagem do cliente só sai como modelo aprovado pela Meta. Sem modelo, esse lembrete é pulado. No corpo do modelo: {{1}} primeiro nome, {{2}} dia, {{3}} hora e {{4}} local. Botões de resposta (por exemplo Confirmo e Preciso remarcar) são do próprio modelo; a resposta do cliente chega na conversa.",
+        )}
+      </span>
       <input
         type="hidden"
         name="reminder_steps"
@@ -800,6 +832,16 @@ export function TiposDeAgendamentoClient({
                                   ? {
                                       reminder_channel_session_id:
                                         String(dados.get("reminder_channel_session_id") || "") ||
+                                        null,
+                                    }
+                                  : {}),
+                                ...(dados.has("reminder_meta_template_name")
+                                  ? {
+                                      reminder_meta_template_name:
+                                        String(dados.get("reminder_meta_template_name") || "").trim() ||
+                                        null,
+                                      reminder_meta_template_language:
+                                        String(dados.get("reminder_meta_template_language") || "").trim() ||
                                         null,
                                     }
                                   : {}),

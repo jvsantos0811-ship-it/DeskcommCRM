@@ -80,3 +80,72 @@ describe("remetente da reserva, sem depender da ordem do banco", () => {
     expect(decidirRemetenteDoLembrete([], null, agora).motivo).toBe("sem_canal");
   });
 });
+
+describe("PC-045 — fora da janela com modelo da Meta", () => {
+  const oficial = canal("oficial", { provider: CHANNEL_PROVIDER_META });
+
+  it("sem modelo, o canal oficial fora da janela continua recusado (comportamento de sempre)", () => {
+    expect(decidirRemetenteDoLembrete([oficial], null, agora)).toEqual({
+      canal: null,
+      motivo: "canal_fora_da_janela_24h",
+    });
+  });
+
+  it("com modelo, o canal oficial serve e sai marcado fora da janela", () => {
+    const r = decidirRemetenteDoLembrete([oficial], null, agora, true);
+    expect(r.canal?.id).toBe("oficial");
+    expect(r.motivo).toBeNull();
+    expect("foraDaJanela" in r && r.foraDaJanela).toBe(true);
+  });
+
+  it("dentro da janela não muda nada: texto livre, sem marca", () => {
+    const aberto = canal("oficial", {
+      provider: CHANNEL_PROVIDER_META,
+      lastInboundAt: new Date(agora.getTime() - 60 * 60_000).toISOString(),
+    });
+    const r = decidirRemetenteDoLembrete([aberto], null, agora, true);
+    expect(r.canal?.id).toBe("oficial");
+    expect("foraDaJanela" in r ? r.foraDaJanela : undefined).toBeUndefined();
+  });
+
+  it("indicado fora da janela não libera outro número", () => {
+    const outro = canal("outro", { provider: CHANNEL_PROVIDER_META });
+    const parado = canal("parado", { provider: CHANNEL_PROVIDER_META, status: "STOPPED" });
+    expect(decidirRemetenteDoLembrete([parado, outro], "parado", agora, true).canal).toBeNull();
+  });
+
+  it("dois oficiais fora da janela no automático é ambíguo", () => {
+    const b = canal("b", { provider: CHANNEL_PROVIDER_META });
+    expect(decidirRemetenteDoLembrete([oficial, b], null, agora, true)).toEqual({
+      canal: null,
+      motivo: "remetente_ambiguo",
+    });
+  });
+});
+
+import { valoresDoModeloDoLembrete } from "@/app/api/v1/cron/agenda-reminder/route";
+
+describe("PC-045 — valores do modelo do lembrete", () => {
+  it("primeiro nome, dia, hora e local no fuso da organização", () => {
+    const v = valoresDoModeloDoLembrete({
+      nomeDoContato: "Maria da Silva",
+      quando: new Date("2026-11-24T17:30:00Z"),
+      timezone: "America/Sao_Paulo",
+      local: "Rua A, 10",
+    });
+    expect(v["1"]).toBe("Maria");
+    expect(v["3"]).toBe("14:30");
+    expect(v["2"]).toContain("24/11");
+    expect(v["4"]).toBe("Rua A, 10");
+  });
+
+  it("nada vazio: a Meta recusa variável vazia", () => {
+    const v = valoresDoModeloDoLembrete({
+      nomeDoContato: null,
+      quando: new Date("2026-11-24T17:30:00Z"),
+      timezone: "America/Sao_Paulo",
+      local: null,
+    });
+    expect(Object.values(v).every((x) => x.length > 0)).toBe(true);
+  });
+});
