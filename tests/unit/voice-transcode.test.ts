@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -27,7 +30,9 @@ import { describe, expect, it, vi } from "vitest";
  */
 import { extFromMime } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
+import { notaDeVozNoFormatoWhatsapp } from "@/lib/messaging/media/nota-de-voz-config";
 import {
+  ARGS_FORMATO_WHATSAPP,
   VOICE_MIME,
   precisaTranscodificar,
   transcodificarNotaDeVoz,
@@ -136,5 +141,175 @@ describe("o elo que some sem barulho", () => {
     const fonte = readFileSync("app/api/v1/conversations/[id]/media/route.ts", "utf8");
     expect(fonte).toMatch(/media_mime:\s*mimeFinal/);
     expect(fonte).toMatch(/media_size_bytes:\s*buffer\.length/);
+  });
+});
+
+/**
+ * PC-043 — a chave "nota de voz no formato do WhatsApp".
+ *
+ * Medido em 19/11/2026: o Chrome grava opus a 128 kbps em quadros de 60 ms, e a
+ * troca de container guarda isso como está. Pelo WAHA não aparecia (o WAHA
+ * reconverte); pelo canal oficial o arquivo chegava ao cliente "picotado".
+ */
+describe("PC-043: a chave por organização", () => {
+  it("ausente, inválida ou diferente de true = DESLIGADA", () => {
+    expect(notaDeVozNoFormatoWhatsapp(undefined)).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp(null)).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp({})).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp({ nota_de_voz: null })).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp({ nota_de_voz: { formato_whatsapp: "true" } })).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp({ nota_de_voz: { formato_whatsapp: false } })).toBe(false);
+    expect(notaDeVozNoFormatoWhatsapp({ nota_de_voz: { formato_whatsapp: true } })).toBe(true);
+  });
+
+  it("desligada, o ogg do browser segue intacto, como antes", () => {
+    expect(precisaTranscodificar("audio/ogg;codecs=opus")).toBe(false);
+    expect(precisaTranscodificar("audio/ogg;codecs=opus", { formatoWhatsapp: false })).toBe(false);
+  });
+
+  it("ligada, o ogg do browser também passa — o container serve, o conteúdo não", () => {
+    expect(precisaTranscodificar("audio/ogg;codecs=opus", { formatoWhatsapp: true })).toBe(true);
+    expect(precisaTranscodificar("audio/webm;codecs=opus", { formatoWhatsapp: true })).toBe(true);
+  });
+
+  it("ligada, mp3, aac, amr e documento continuam fora", () => {
+    for (const m of ["audio/mpeg", "audio/aac", "audio/amr", "application/pdf"]) {
+      expect(precisaTranscodificar(m, { formatoWhatsapp: true })).toBe(false);
+    }
+  });
+});
+
+describe("PC-043: a reencodagem", () => {
+  /** Dublê que escreve a saída (último argumento), como o ffmpeg faria. */
+  const escreveSaida = (conteudo: string) =>
+    vi.fn(async (args: string[], _cwd: string) => {
+      writeFileSync(args[args.length - 1] ?? "", conteudo);
+    });
+
+  it("os argumentos são os de uma nota de voz: mono, opus de voz a 32 kbps, quadros de 20 ms", () => {
+    const a = [...ARGS_FORMATO_WHATSAPP];
+    const valor = (flag: string) => a[a.indexOf(flag) + 1];
+    expect(valor("-ac")).toBe("1");
+    expect(valor("-c:a")).toBe("libopus");
+    expect(valor("-b:a")).toBe("32k");
+    expect(valor("-application")).toBe("voip");
+    expect(valor("-frame_duration")).toBe("20");
+    expect(valor("-f")).toBe("ogg");
+    expect(a).not.toContain("copy");
+  });
+
+  it("ligada, reencoda e devolve ogg/opus marcado como formato_whatsapp", async () => {
+    const run = escreveSaida("voz");
+    const r = await transcodificarNotaDeVoz(webm, { run }, { formatoWhatsapp: true });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toContain("libopus");
+    expect(r).toMatchObject({ convertido: true, mime: VOICE_MIME, modo: "formato_whatsapp" });
+    expect(r.buffer.toString()).toBe("voz");
+  });
+
+  it("ligada e a reencodagem falhando, cai para a troca de container (o que já funcionava)", async () => {
+    let chamada = 0;
+    const run = vi.fn(async (args: string[], _cwd: string) => {
+      chamada += 1;
+      if (chamada === 1) throw new Error("ffmpeg_exit_1: Unknown encoder 'libopus'");
+      writeFileSync(args[args.length - 1] ?? "", "container");
+    });
+    const r = await transcodificarNotaDeVoz(webm, { run }, { formatoWhatsapp: true });
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toContain("copy");
+    expect(r).toMatchObject({ convertido: true, mime: VOICE_MIME, modo: "container" });
+  });
+
+  it("ligada, ogg com a reencodagem falhando segue o ORIGINAL — já estava no container certo", async () => {
+    const ogg = { buffer: Buffer.from("ogg-do-firefox"), mime: "audio/ogg;codecs=opus" };
+    const run = vi.fn(async () => {
+      throw new Error("ffmpeg_exit_1");
+    });
+    const r = await transcodificarNotaDeVoz(ogg, { run }, { formatoWhatsapp: true });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ convertido: false, modo: "nenhuma", mime: ogg.mime });
+    expect(r.buffer).toBe(ogg.buffer);
+  });
+
+  it("desligada, o caminho é o de antes: só a troca de container", async () => {
+    const run = escreveSaida("container");
+    const r = await transcodificarNotaDeVoz(webm, { run });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toContain("copy");
+    expect(run.mock.calls[0]?.[0]).not.toContain("libopus");
+    expect(r.modo).toBe("container");
+  });
+
+  it("a rota de upload lê a chave da organização e a passa à conversão", () => {
+    const fonte = readFileSync("app/api/v1/conversations/[id]/media/route.ts", "utf8");
+    expect(fonte).toContain("notaDeVozNoFormatoWhatsapp");
+    expect(fonte).toMatch(
+      /transcodificarNotaDeVoz\(\{ buffer: bruto, mime \}, \{\}, \{ formatoWhatsapp \}\)/,
+    );
+    // A org vem da sessão ou do token, nunca do corpo; e só áudio paga a leitura.
+    expect(fonte).toMatch(/lerChaveDaNotaDeVoz\(activeOrg\.orgId\)/);
+    expect(fonte).toMatch(/precisaTranscodificar\(mime, \{ formatoWhatsapp: true \}\)/);
+  });
+});
+
+/**
+ * Com o ffmpeg de verdade, quando a máquina tem um com libopus (a imagem de
+ * produção tem: `apk add ffmpeg`). Gera uma gravação no perfil do Chrome
+ * (opus 128 kbps, quadros de 60 ms, em webm) e confere a saída pelo cabeçalho
+ * do próprio arquivo, sem depender de ffprobe.
+ */
+const temLibopus = (() => {
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-encoders"], { encoding: "utf8" });
+  return r.status === 0 && /libopus/.test(r.stdout ?? "");
+})();
+
+describe.skipIf(!temLibopus)("PC-043: com o ffmpeg de verdade", () => {
+  it("a gravação no perfil do Chrome sai mono, opus, bem menor e em quadros de 20 ms", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pc043-"));
+    try {
+      const entrada = join(dir, "chrome.webm");
+      const g = spawnSync(
+        "ffmpeg",
+        [
+          "-nostdin",
+          "-y",
+          "-loglevel",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=220:sample_rate=48000:duration=6",
+          "-ac",
+          "2",
+          "-c:a",
+          "libopus",
+          "-b:a",
+          "128k",
+          "-frame_duration",
+          "60",
+          "-f",
+          "webm",
+          entrada,
+        ],
+        { encoding: "utf8" },
+      );
+      expect(g.status).toBe(0);
+      const bruto = readFileSync(entrada);
+
+      const r = await transcodificarNotaDeVoz(
+        { buffer: bruto, mime: "audio/webm;codecs=opus" },
+        {},
+        { formatoWhatsapp: true },
+      );
+      expect(r.modo).toBe("formato_whatsapp");
+      expect(r.mime).toBe(VOICE_MIME);
+      expect(r.buffer.subarray(0, 4).toString("latin1")).toBe("OggS");
+      const cabeca = r.buffer.indexOf("OpusHead");
+      expect(cabeca).toBeGreaterThan(0);
+      expect(r.buffer[cabeca + 9]).toBe(1); // canais
+      expect(r.buffer.length).toBeLessThan(bruto.length / 2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
