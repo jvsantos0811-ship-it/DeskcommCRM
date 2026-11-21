@@ -1304,6 +1304,8 @@ async function formatoDoEvento(
         dados.etapa = etapa?.name ?? null;
       }
     } catch (e) {
+      // Sem saber se o cliente é convidado, erra para o lado seguro.
+      clienteRecebeOConvite = true;
       logger.warn("[agenda] modelo do evento: leitura dos dados falhou; segue com o que der", {
         organization_id: ctx.organization_id,
         error: e instanceof Error ? e.message : String(e),
