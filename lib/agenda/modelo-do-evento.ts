@@ -115,18 +115,23 @@ function valorDoCampo(campo: CampoDoTitulo, d: DadosDoEvento): string {
  * separadores que sobram nas pontas ou repetidos também.
  */
 export function montarTitulo(modelo: string, d: DadosDoEvento): string {
-  const preenchido = modelo.replace(/\{([a-z_]+)\}/g, (inteiro, nome: string) =>
+  // "final {final_telefone}" sem telefone: some o par inteiro, e só ele — a
+  // palavra "final" no nome do tipo ("Reunião final") não é tocada.
+  const semFinalVazio = valorDoCampo("final_telefone", d)
+    ? modelo
+    : modelo.replace(/\bfinal\s*\{final_telefone\}/gi, "{final_telefone}");
+  const preenchido = semFinalVazio.replace(/\{([a-z_]+)\}/g, (inteiro, nome: string) =>
     (CAMPOS_DO_TITULO as readonly string[]).includes(nome)
       ? valorDoCampo(nome as CampoDoTitulo, d)
       : inteiro,
   );
+  const SEP = "[-–|·,/:]";
   const arrumado = preenchido
     .replace(/\s+/g, " ")
-    // "final " sem número depois, quando o telefone falta
-    .replace(/\bfinal\s*(?=[-–|·]|$)/gi, "")
     // separador colado em separador ("X –  – Y")
-    .replace(/\s*([-–|·])\s*(?:[-–|·]\s*)+/g, " $1 ")
-    .replace(/^\s*[-–|·]\s*|\s*[-–|·]\s*$/g, "")
+    .replace(new RegExp(`\\s*(${SEP})\\s*(?:${SEP}\\s*)+`, "g"), " $1 ")
+    .replace(new RegExp(`^\\s*${SEP}\\s*|\\s*${SEP}\\s*$`, "g"), "")
+    .replace(/\s+([,:])/g, "$1")
     .trim();
   const titulo = arrumado || limpo(d.tipo);
   return titulo.slice(0, TETO_DO_TITULO);

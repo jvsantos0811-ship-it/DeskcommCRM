@@ -62916,4 +62916,3 @@ comment on column public.channel_sessions.funil_de_entrada_id is
   'Funil onde nasce o card das conversas novas deste número. NULL = funil padrão da empresa. Funil arquivado: o card nasce no padrão e a tela avisa.';
 comment on column public.channel_sessions.etapa_de_entrada_id is
   'Etapa de entrada dentro de funil_de_entrada_id. NULL = primeira etapa aberta do funil.';
-

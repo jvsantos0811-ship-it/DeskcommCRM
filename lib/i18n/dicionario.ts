@@ -14832,6 +14832,8 @@ export const DICIONARIO: Traducoes = {
   "⚠ O resumo da conversa pode ter dado de saúde ou outro dado sensível do cliente. A agenda costuma ser vista por mais gente que o CRM e às vezes fica no celular pessoal: use a completa só se a agenda for restrita a quem atende.":
     { es: "⚠ El resumen de la conversación puede tener datos de salud u otros datos sensibles del cliente. La agenda suele ser vista por más personas que el CRM y a veces está en el celular personal: usa la completa solo si la agenda es exclusiva de quien atiende." },
   "O título precisa ter de 1 a 200 caracteres.": { es: "El título necesita tener de 1 a 200 caracteres." },
+  "Com o modelo ligado, o título que alguém digitar ao marcar é trocado pelo modelo. Quando o cliente é convidado do evento (e-mail na ficha ou convidado digitado), ele recebe o convite por e-mail: nesse caso o título sai sem a etapa e a descrição fica só com o que foi escrito ao marcar.":
+    { es: "Con el modelo activado, el título que alguien escriba al agendar se reemplaza por el modelo. Cuando el cliente es invitado del evento (correo en la ficha o invitado escrito), recibe la invitación por correo: en ese caso el título sale sin la etapa y la descripción queda solo con lo que se escribió al agendar." },
   "O Meet da reunião nasce com o acesso aberto": {
     es: "La reunión de Meet nace con el acceso abierto",
   },

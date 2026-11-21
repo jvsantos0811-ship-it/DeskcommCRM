@@ -150,6 +150,11 @@ export function ModeloDoEventoNaAgenda({
               "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.",
             )}
           </p>
+          <p className="text-xs text-text-muted" data-testid="modelo-do-evento-convidado">
+            {t(
+              "Com o modelo ligado, o título que alguém digitar ao marcar é trocado pelo modelo. Quando o cliente é convidado do evento (e-mail na ficha ou convidado digitado), ele recebe o convite por e-mail: nesse caso o título sai sem a etapa e a descrição fica só com o que foi escrito ao marcar.",
+            )}
+          </p>
           <p className="text-sm" data-testid="modelo-do-evento-exemplo">
             {t("Exemplo:")} <strong>{montarTitulo(titulo || TITULO_SUGERIDO, EXEMPLO)}</strong>
           </p>

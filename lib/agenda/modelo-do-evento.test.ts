@@ -67,6 +67,17 @@ describe("montarTitulo", () => {
     expect(montarTitulo("{primeiro_nome}", { tipo: "Visita" })).toBe("Visita");
   });
 
+  it("a palavra final do nome do tipo fica; só o par sem telefone some", () => {
+    expect(montarTitulo("{tipo} – {primeiro_nome}", { ...DADOS, tipo: "Reunião final" })).toBe(
+      "Reunião final – Maria",
+    );
+    expect(montarTitulo(TITULO_SUGERIDO, { ...DADOS, telefone: null })).toBe("Consulta inicial – Maria");
+  });
+
+  it("vírgula sobrando no fim some", () => {
+    expect(montarTitulo("{tipo}, {primeiro_nome}", { tipo: "Consulta" })).toBe("Consulta");
+  });
+
   it("respeita o teto de 200", () => {
     expect(montarTitulo("x".repeat(300), DADOS).length).toBe(200);
   });

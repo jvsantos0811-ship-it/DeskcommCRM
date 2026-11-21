@@ -413,6 +413,7 @@ async function executarCriacaoDeAgendamento(
     tipo: tipo.name,
     contactId: input.contact_id ?? null,
     descricaoDeQuemMarcou: input.description ?? null,
+    convidadoExterno: !!input.guest_email?.trim(),
   });
 
   // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
@@ -1235,7 +1236,13 @@ const ROTULOS_DA_DESCRICAO = {
 async function formatoDoEvento(
   supabase: SB,
   ctx: HandlerCtx,
-  entrada: { tipo: string; contactId: string | null; descricaoDeQuemMarcou: string | null },
+  entrada: {
+    tipo: string;
+    contactId: string | null;
+    descricaoDeQuemMarcou: string | null;
+    /** Há convidado digitado no compromisso (`guest_email`). */
+    convidadoExterno: boolean;
+  },
 ): Promise<{ titulo: string; descricao?: string | null } | null> {
   const { data: org } = await supabase
     .from("organizations")
@@ -1249,12 +1256,17 @@ async function formatoDoEvento(
     tipo: entrada.tipo,
     descricaoDeQuemMarcou: entrada.descricaoDeQuemMarcou,
   };
+  // ⚠️ QUEM É CONVIDADO RECEBE O EVENTO POR E-MAIL (`sendUpdates=all`): título e
+  // descrição chegam ao cliente ou a quem ele indicou. Nesse caso o modelo NÃO
+  // aplica a descrição (etapa, próxima ação e resumo são internos) e o título
+  // sai sem a etapa. Revisão independente do PR #66.
+  let clienteRecebeOConvite = entrada.convidadoExterno;
   if (entrada.contactId) {
     try {
       const [{ data: contato }, { data: checkpoint }, leadId] = await Promise.all([
         supabase
           .from("contacts")
-          .select("name, display_name, phone_number")
+          .select("name, display_name, phone_number, email")
           .eq("organization_id", ctx.organization_id)
           .eq("id", entrada.contactId)
           .maybeSingle(),
@@ -1268,7 +1280,14 @@ async function formatoDoEvento(
           .maybeSingle(),
         leadAtivoDoContato(supabase, ctx, entrada.contactId),
       ]);
-      const c = contato as { name: string | null; display_name: string | null; phone_number: string | null } | null;
+      const c = contato as {
+        name: string | null;
+        display_name: string | null;
+        phone_number: string | null;
+        email: string | null;
+      } | null;
+      // O contato com e-mail na ficha entra no convite do Google (worker de push).
+      if (c?.email?.trim()) clienteRecebeOConvite = true;
       dados.nomeDoContato = nomeDoContato(c);
       dados.telefone = c?.phone_number ?? null;
       const ck = checkpoint as { next_action: string | null; rolling_summary: string | null } | null;
@@ -1292,6 +1311,9 @@ async function formatoDoEvento(
     }
   }
 
+  if (clienteRecebeOConvite) {
+    return { titulo: montarTitulo(modelo.titulo, { ...dados, etapa: null }) };
+  }
   const descricao = montarDescricao(modelo.descricao, dados, ROTULOS_DA_DESCRICAO);
   return {
     titulo: montarTitulo(modelo.titulo, dados),
