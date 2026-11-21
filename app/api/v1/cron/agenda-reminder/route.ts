@@ -229,7 +229,10 @@ export function valoresDoModeloDoLembrete(input: {
   idioma?: Idioma;
 }): Record<string, string> {
   const etiqueta = tagDeIdioma(input.idioma ?? IDIOMA_PADRAO);
-  const primeiro = (input.nomeDoContato ?? "").trim().split(/\s+/)[0] ?? "";
+  // A Meta recusa variável com quebra de linha, tab ou 4+ espaços (132018):
+  // tudo vira um espaço só, e o tamanho tem teto.
+  const umaLinha = (v: string, teto: number) => v.replace(/\s+/g, " ").trim().slice(0, teto);
+  const primeiro = umaLinha(input.nomeDoContato ?? "", 200).split(" ")[0] ?? "";
   const dia = new Intl.DateTimeFormat(etiqueta, {
     timeZone: input.timezone,
     weekday: "long",
@@ -245,7 +248,7 @@ export function valoresDoModeloDoLembrete(input: {
     "1": primeiro || "cliente",
     "2": dia,
     "3": hora,
-    "4": (input.local ?? "").trim() || "-",
+    "4": umaLinha(input.local ?? "", 300) || "-",
   };
 }
 
@@ -712,8 +715,8 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     const canal = escolha.canal;
 
-    const foraDaJanela = await adiarAteAJanelaAbrir(admin, org, canal.id);
-    if (foraDaJanela) {
+    const foraDaJanelaDeDisparo = await adiarAteAJanelaAbrir(admin, org, canal.id);
+    if (foraDaJanelaDeDisparo) {
       pular("fora_da_janela");
       continue;
     }

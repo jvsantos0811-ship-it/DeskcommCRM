@@ -139,6 +139,17 @@ describe("PC-045 — valores do modelo do lembrete", () => {
     expect(v["4"]).toBe("Rua A, 10");
   });
 
+  it("quebra de linha e espaços viram um espaço só (a Meta recusa, erro 132018)", () => {
+    const v = valoresDoModeloDoLembrete({
+      nomeDoContato: "  Maria\n da Silva",
+      quando: new Date("2026-11-24T17:30:00Z"),
+      timezone: "America/Sao_Paulo",
+      local: "Rua A, 10\n\tSala     3",
+    });
+    expect(v["1"]).toBe("Maria");
+    expect(v["4"]).toBe("Rua A, 10 Sala 3");
+  });
+
   it("nada vazio: a Meta recusa variável vazia", () => {
     const v = valoresDoModeloDoLembrete({
       nomeDoContato: null,
