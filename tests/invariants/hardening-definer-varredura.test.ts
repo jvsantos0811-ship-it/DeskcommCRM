@@ -229,6 +229,17 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "meetAbertoLigado (lib/schemas/settings.ts), sem nenhuma exposição.",
   },
   {
+    fn: "fn_definir_modelo_do_evento_agenda(uuid,jsonb)",
+    razao:
+      "app/actions/settings/definirModeloDoEventoDaAgenda.ts chama por rpc com o " +
+      "createClient da SESSÃO, e a própria função reconfere auth.uid(), manager, " +
+      "suporte de escrita e MFA comprovado antes de gravar — a mesma guarda da irmã " +
+      "fn_definir_google_meet_acesso_aberto acima. Só escreve (ou apaga, com null) a " +
+      "chave de topo organizations.settings.modelo_do_evento_agenda, validando título " +
+      "1–200 e o nível da descrição; devolve {modelo,mudou}. Leitura: lerModeloDoEvento " +
+      "(lib/agenda/modelo-do-evento.ts).",
+  },
+  {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
     razao:
       "app/actions/settings/definirClientePelaAgenda.ts chama com createClient da sessão; " +
