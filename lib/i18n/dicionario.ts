@@ -14815,6 +14815,23 @@ export const DICIONARIO: Traducoes = {
   // o AVISO DE RISCO, que fica encostada nela na mesma tela. A irmã ao lado é
   // a "Agenda dos colegas" — mesma página, mesmo piso, mesmo formato de frase.
   "Google Meet com acesso aberto": { es: "Google Meet con acceso abierto" },
+  // PC-044 (fork): como o compromisso aparece na agenda.
+  "Como o compromisso aparece na agenda": { es: "Cómo aparece la cita en la agenda" },
+  "Usar um modelo de título e de descrição": { es: "Usar un modelo de título y de descripción" },
+  "Desligado, o compromisso nasce com o título de quem marcou (ou o nome do tipo de atendimento), como sempre. Ligado, todo compromisso marcado pela IA ou pela equipe segue o modelo abaixo.":
+    { es: "Desactivado, la cita nace con el título de quien la agendó (o el nombre del tipo de atención), como siempre. Activado, toda cita agendada por la IA o por el equipo sigue el modelo de abajo." },
+  "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.":
+    { es: "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (los 4 últimos dígitos) y {etapa}." },
+  "Exemplo:": { es: "Ejemplo:" },
+  "Descrição do compromisso": { es: "Descripción de la cita" },
+  "Só o que foi escrito ao marcar (como hoje)": { es: "Solo lo que se escribió al agendar (como hoy)" },
+  "Básica: tipo de atendimento, etapa do funil e a próxima ação anotada pela IA":
+    { es: "Básica: tipo de atención, etapa del embudo y la próxima acción anotada por la IA" },
+  "Completa: a básica mais o resumo da conversa e a observação de quem marcou":
+    { es: "Completa: la básica más el resumen de la conversación y la observación de quien agendó" },
+  "⚠ O resumo da conversa pode ter dado de saúde ou outro dado sensível do cliente. A agenda costuma ser vista por mais gente que o CRM e às vezes fica no celular pessoal: use a completa só se a agenda for restrita a quem atende.":
+    { es: "⚠ El resumen de la conversación puede tener datos de salud u otros datos sensibles del cliente. La agenda suele ser vista por más personas que el CRM y a veces está en el celular personal: usa la completa solo si la agenda es exclusiva de quien atiende." },
+  "O título precisa ter de 1 a 200 caracteres.": { es: "El título necesita tener de 1 a 200 caracteres." },
   "O Meet da reunião nasce com o acesso aberto": {
     es: "La reunión de Meet nace con el acceso abierto",
   },

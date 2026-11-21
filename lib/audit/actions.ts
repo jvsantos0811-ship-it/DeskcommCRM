@@ -673,6 +673,7 @@ export const AUDIT_ACTIONS = [
   // 0648). Risco é parte do desenho — quem tiver o link entra sem pedir —, então
   // "quando foi que ligaram isso?" é a primeira pergunta depois de um incidente.
   "agenda.meet_acesso_aberto_alterado",
+  "agenda.modelo_do_evento_alterado",
   // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o
   // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
   // enviou: a que varreu e não achou ninguém a avisar não é mutação.

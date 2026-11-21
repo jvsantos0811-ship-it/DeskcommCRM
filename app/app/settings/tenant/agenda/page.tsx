@@ -5,6 +5,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { clientePelaAgendaLigado, colegasPodemMexerNaAgendaLigado, meetAbertoLigado } from "@/lib/schemas/settings";
+import { lerModeloDoEvento } from "@/lib/agenda/modelo-do-evento";
 import { listSelectableChannels } from "@/lib/channels/selectable";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
@@ -149,6 +150,9 @@ export default async function TiposDeAgendamentoPage() {
         // `manager` como a irmã ao lado: é regra da AGENDA e não reescreve
         // dado nenhum. A RPC cobra de novo.
         podeMudarMeetAberto={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
+        // PC-044 (migration 9035): ausente = comportamento de sempre.
+        modeloDoEvento={lerModeloDoEvento(org?.settings)}
+        podeMudarModeloDoEvento={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
       />
     </div>
   );
