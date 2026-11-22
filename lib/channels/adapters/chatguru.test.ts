@@ -8,6 +8,8 @@ const { resolver } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+// A guarda de DNS é do repo e tem teste próprio; aqui o que se mede é o pedido.
+vi.mock("@/lib/automation/outbound-ip", () => ({ assertDestinoResolvidoSeguro: async () => {} }));
 vi.mock("../atendimento-externo/credenciais", async (original) => ({
   ...((await original()) as Record<string, unknown>),
   resolverCredenciais: (...args: unknown[]) => resolver(...args),
@@ -114,6 +116,26 @@ describe("adapter do canal dentro da plataforma (PC-047)", () => {
       nota: null,
     });
     expect(chamadas).toHaveLength(0);
+  });
+
+  it("mídia recebida: sem seguir redirecionamento e com teto de tamanho (SSRF)", async () => {
+    const pedidos: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        pedidos.push(init);
+        return new Response("x", { status: 200, headers: { "content-length": String(500 * 1024 * 1024) } });
+      }),
+    );
+    await expect(
+      chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "https://arquivos.exemplo.com.br/a.ogg" }),
+    ).rejects.toThrow(/exceeds/);
+    expect(pedidos[0]?.redirect).toBe("error");
+    // Endereço interno é recusado antes de qualquer pedido.
+    await expect(
+      chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "http://169.254.169.254/latest" }),
+    ).rejects.toThrow();
+    expect(pedidos).toHaveLength(1);
   });
 
   it("a IA só executa ação LIBERADA na tela, pela chave", async () => {

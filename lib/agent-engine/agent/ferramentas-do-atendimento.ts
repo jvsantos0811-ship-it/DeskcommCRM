@@ -18,6 +18,7 @@
  *
  * As duas são MUTANTES (ficam fora de `READ_ONLY_TOOLS`) e devolvem erro de
  * ENSINO ao modelo quando a plataforma recusa, nunca exceção que derrube o turno.
+ * Cada ação roda no máximo UMA vez por turno.
  */
 import { z } from 'zod';
 
@@ -70,6 +71,9 @@ export function registrarFerramentasDoAtendimento(
   if (acoes.acoes.length === 0) return;
 
   const chaves = acoes.acoes.map((a) => a.chave) as [string, ...string[]];
+  // Uma execução por ação por turno: o modelo repetir a chamada não pode mandar
+  // o mesmo modelo da Meta (ou mover o card) duas vezes.
+  const executadas = new Set<string>();
   const lista = acoes.acoes.map((a) => `- ${a.chave}: ${a.nome}. Quando usar: ${a.quandoUsar}`).join('\n');
   rawTools[FERRAMENTA_ACAO] = tool({
     description:
@@ -84,8 +88,12 @@ export function registrarFerramentasDoAtendimento(
       if (!parsed.success) {
         return erroDeEnsino('invalid_input', `mande \`acao\` com uma destas chaves: ${chaves.join(', ')}.`);
       }
+      if (executadas.has(parsed.data.acao)) {
+        return { ok: true, status: 'ja_executada_neste_turno', acao: parsed.data.acao };
+      }
       try {
         await acoes.executar(parsed.data.acao);
+        executadas.add(parsed.data.acao);
         return { ok: true, status: 'executada', acao: parsed.data.acao };
       } catch (err) {
         log.warn('ação na plataforma do canal falhou — o turno segue', { error: motivoCurto(err) });

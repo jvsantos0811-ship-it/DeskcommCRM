@@ -27,7 +27,7 @@
  */
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
-import type { FetchedMedia } from "@/lib/messaging/media/types";
+import { MAX_MEDIA_BYTES, MediaTooLargeError, type FetchedMedia } from "@/lib/messaging/media/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { chamarApi } from "../atendimento-externo/api";
@@ -116,6 +116,11 @@ export const chatguruAdapter: ChannelAdapter = {
    * pública (sem credencial nossa no pedido) — mesmo assim passa pelas duas
    * guardas de destino do repo: um POST com `http://169.254.169.254/...` não
    * pode fazer o servidor buscar metadado de nuvem.
+   *
+   * `redirect: "error"`: as guardas julgam só o PRIMEIRO endereço, e um link
+   * que redirecionasse para a rede interna passaria por elas (os bytes iriam
+   * para o Storage e apareceriam na Inbox). E há teto de tamanho, lido em
+   * pedaços — o mesmo desenho do adapter social.
    */
   async fetchInboundMedia(input: ChannelTenantScope & {
     sessionRef: string;
@@ -124,11 +129,32 @@ export const chatguruAdapter: ChannelAdapter = {
   }): Promise<FetchedMedia> {
     assertSafeOutboundUrl(input.url);
     await assertDestinoResolvidoSeguro(new URL(input.url).hostname);
-    const res = await fetch(input.url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(input.url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`chatguru_media_failed: ${res.status} ${res.statusText}`.trim());
-    const buffer = Buffer.from(await res.arrayBuffer());
+    if (Number(res.headers.get("content-length") ?? 0) > MAX_MEDIA_BYTES) {
+      await res.body?.cancel();
+      throw new MediaTooLargeError();
+    }
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("chatguru_media_failed: corpo vazio");
+    const pedacos: Uint8Array[] = [];
+    let tamanho = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        tamanho += value.byteLength;
+        if (tamanho > MAX_MEDIA_BYTES) {
+          await reader.cancel();
+          throw new MediaTooLargeError();
+        }
+        pedacos.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
     const mime = res.headers.get("content-type")?.split(";")[0]?.trim() || input.hintMime || "application/octet-stream";
-    return { buffer, mime };
+    return { buffer: Buffer.concat(pedacos), mime };
   },
 
   async aoPassarParaAEquipe(input): Promise<void> {

@@ -128,6 +128,11 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
 
   const celularBruto = texto(corpo.celular);
   const conteudo = texto(corpo.texto_mensagem);
+  const tipoDeclarado = tipoDaMensagem(texto(corpo.tipo_mensagem));
+
+  // Áudio ou figurinha sem link nem descrição: não há o que ler, e 400 só faria
+  // a plataforma reentregar para sempre. Fica no arquivo do webhook com o motivo.
+  if (celularBruto && !conteudo && tipoDeclarado !== "text") return { ok: true, ignorar: "midia_sem_link" };
 
   const faltando: string[] = [];
   if (!celularBruto) faltando.push("celular");
@@ -143,7 +148,7 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
   if (celular.length > 15) return { ok: true, ignorar: "grupo_ou_endereco_nao_suportado" };
   if (celular.length < 10) return { ok: true, ignorar: "numero_fora_do_formato" };
 
-  const tipo = tipoDaMensagem(texto(corpo.tipo_mensagem));
+  const tipo = tipoDeclarado;
   const midiaUrl = tipo === "text" ? null : urlHttps(conteudo!);
 
   return {

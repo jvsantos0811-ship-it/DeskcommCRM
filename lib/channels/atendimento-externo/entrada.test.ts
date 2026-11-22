@@ -84,6 +84,10 @@ describe("leitura do POST", () => {
     if (!semLink.ok || !("entrada" in semLink)) throw new Error("devia ler");
     expect(semLink.entrada.tipo).toBe("text");
     expect(semLink.entrada.texto).toBe("foto do laudo");
+
+    // Áudio sem link nem descrição: 200 com motivo, não 400 (a plataforma reentregaria para sempre).
+    const vazio = lerEntrada(corpo({ tipo_mensagem: "ptt", texto_mensagem: "" }));
+    expect(vazio).toEqual({ ok: true, ignorar: "midia_sem_link" });
   });
 
   it("link do chat fora do domínio da plataforma não entra", () => {

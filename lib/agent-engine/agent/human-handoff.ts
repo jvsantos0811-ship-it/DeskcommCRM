@@ -301,6 +301,7 @@ export async function performHumanHandoff(
   // Só quando a IA SAI da conversa: com a IA seguindo na fila (item 7b), a
   // plataforma tem de continuar entregando. E nunca derruba a passagem — ela já
   // aconteceu no CRM; o desfecho ruim vira log, sem o texto da conversa.
+  let passagemNaoChegouAoCanal = false;
   if (opts.iaSegueNaFila !== true) {
     await guardServiceEffect();
     const noCanal = await avisarCanalDaPassagem(db, {
@@ -309,6 +310,7 @@ export async function performHumanHandoff(
       nota: notaDaPassagemNoCanal(opts.reason, opts.conversationSummary),
     });
     if (noCanal.desfecho === 'falhou') {
+      passagemNaoChegouAoCanal = true;
       opts.log.warn('handoff: a plataforma do canal não recebeu a passagem — a do CRM vale', {
         motivo: noCanal.motivo.slice(0, 200),
       });
@@ -413,7 +415,14 @@ export async function performHumanHandoff(
           'Handoff humano solicitado — assumir a conversa',
           opts.passagem?.idioma ?? (await idiomaDaOrganizacao(db, ids.tenantId, opts.log)),
         ),
-      await corpoDaCentral(db, ids.tenantId, opts),
+      // A equipe que trabalha DENTRO da plataforma do canal não lê log: se a
+      // passagem não chegou lá, o aviso diz, para alguém devolver o chat à mão.
+      passagemNaoChegouAoCanal
+        ? `${await corpoDaCentral(db, ids.tenantId, opts)}\n\n${traduzir(
+            'A plataforma de atendimento não recebeu a passagem: devolva o chat à equipe por lá.',
+            opts.passagem?.idioma ?? (await idiomaDaOrganizacao(db, ids.tenantId, opts.log)),
+          )}`
+        : await corpoDaCentral(db, ids.tenantId, opts),
       ids.conversationId,
     ],
   );

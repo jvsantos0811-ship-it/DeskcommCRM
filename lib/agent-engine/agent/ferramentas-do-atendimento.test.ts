@@ -41,6 +41,11 @@ describe('ferramentas do atendimento', () => {
     const fora = await acao.execute({ acao: 'dlg_livre' }, {} as never);
     expect(fora.ok).toBe(false);
     expect(executar).toHaveBeenCalledTimes(1);
+
+    // Repetir no mesmo turno não dispara de novo (modelo da Meta em dobro, card movido duas vezes).
+    const repetida = await acao.execute({ acao: 'etiquetar' }, {} as never);
+    expect(repetida).toEqual({ ok: true, status: 'ja_executada_neste_turno', acao: 'etiquetar' });
+    expect(executar).toHaveBeenCalledTimes(1);
   });
 
   it('a plataforma recusar vira erro de ENSINO, nunca exceção que derrube o turno', async () => {
@@ -49,7 +54,7 @@ describe('ferramentas do atendimento', () => {
       tools,
       acoesFalsas({
         anotar: vi.fn(async () => {
-          throw new Error('chatguru_400: recusado');
+          throw new Error('plataforma_400: recusado');
         }),
       }),
       log,

@@ -62,6 +62,8 @@ export async function chamarApi(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: corpo.toString(),
+      // A chave vai no corpo: um redirecionamento não pode levá-la a outro host.
+      redirect: "error",
       signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
     });
   } catch (err) {

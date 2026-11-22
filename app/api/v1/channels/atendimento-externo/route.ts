@@ -62,7 +62,8 @@ const conectarSchema = z.object({
   account_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
   phone_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
   api_key: z.string().trim().regex(CHAVE_VALIDA),
-  display_name: z.string().trim().min(1).max(80).optional(),
+  /** Como a equipe chama esta conexão; vazio = mantém o que já tem (ou a marca). */
+  apelido: z.string().trim().min(1).max(80).optional(),
 });
 
 const patchSchema = z.union([
@@ -146,8 +147,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const existente = await buscarSessaoDoAtendimentoExterno(admin, orgId);
-  // O nome só batiza a conexão; depois dela o nome é do operador.
-  const displayName = parsed.data.display_name || existente?.displayName || ATENDIMENTO_EXTERNO_LABEL;
+  // O apelido só batiza a conexão; depois dela o nome é do operador (Renomear),
+  // e trocar a credencial não o apaga.
+  const apelidoDaConexao = parsed.data.apelido ?? (existente?.displayName ? existente.displayName : ATENDIMENTO_EXTERNO_LABEL);
 
   const { error, channelSessionId } = await salvarSessaoDoAtendimentoExterno(admin, {
     organizationId: orgId,
@@ -157,7 +159,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     phoneId: parsed.data.phone_id,
     chaveCifrada,
     segredoCifradoNovo: segredoCifrado,
-    displayName,
+    displayName: apelidoDaConexao,
     userId: authz.user.id,
     requestId,
   });
@@ -188,7 +190,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  return ok({ connected: true, display_name: displayName }, { requestId });
+  return ok({ connected: true, apelido: apelidoDaConexao }, { requestId });
 }
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {

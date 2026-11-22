@@ -29,7 +29,7 @@ interface Registro {
   corpo?: Record<string, unknown>;
 }
 
-function gravador(opcoes: { erroNoInsert?: { code: string; message: string } } = {}) {
+function gravador(opcoes: { erroNoInsert?: { code: string; message: string }; eco?: boolean } = {}) {
   const registros: Registro[] = [];
   const rpcs: { nome: string; params: Record<string, unknown> }[] = [];
   const admin = {
@@ -46,6 +46,9 @@ function gravador(opcoes: { erroNoInsert?: { code: string; message: string } } =
         if (tabela === "messages" && reg.op === "insert") {
           return opcoes.erroNoInsert ? { data: null, error: opcoes.erroNoInsert } : { data: { id: "msg-1" }, error: null };
         }
+        if (tabela === "messages" && reg.op === "select") {
+          return { data: opcoes.eco ? { id: "saida-1" } : null, error: null };
+        }
         if (tabela === "conversations" && reg.op === "select") {
           return { data: { provider_conversation_id: null, metadata: { outra_marca: true }, updated_at: "t0" }, error: null };
         }
@@ -53,6 +56,8 @@ function gravador(opcoes: { erroNoInsert?: { code: string; message: string } } =
       };
       const b: Record<string, unknown> = {
         select: () => b,
+        gte: () => b,
+        limit: () => b,
         eq: (k: string, v: unknown) => {
           reg.filtros[k] = v;
           return b;
@@ -136,6 +141,16 @@ describe("ingestão do canal dentro da plataforma — tudo escopado pela organiz
     });
     expect(String(msg?.corpo?.external_id)).toMatch(/^ext_[0-9a-f]{40}$/);
     expect(efeitos).toHaveBeenCalledWith(admin, expect.objectContaining({ organizationId: ORG_A, channelSessionId: "sess-a" }));
+  });
+
+  it("o eco da própria resposta não entra como se fosse o cliente", async () => {
+    const { admin, registros } = gravador({ eco: true });
+    const r = await ingestAtendimentoExterno(admin, entrada(), { organizationId: ORG_A, channelSessionId: "sess-a" });
+    expect(r).toEqual({ status: "ignored", reason: "eco_do_proprio_envio" });
+    expect(registros.some((x) => x.tabela === "messages" && x.op === "insert")).toBe(false);
+    const consultaDoEco = registros.find((x) => x.tabela === "messages" && x.op === "select");
+    expect(consultaDoEco?.filtros).toMatchObject({ organization_id: ORG_A, conversation_id: "conversa-a", direction: "outbound" });
+    expect(efeitos).not.toHaveBeenCalled();
   });
 
   it("reentrega (23505) é 'duplicate' e não acorda o agente de novo", async () => {

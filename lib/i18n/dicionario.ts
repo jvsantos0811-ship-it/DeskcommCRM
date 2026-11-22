@@ -17905,6 +17905,7 @@ export const DICIONARIO: Traducoes = {
   "Este número da plataforma já está conectado em outra empresa desta instalação.": { es: "Este número de la plataforma ya está conectado en otra empresa de esta instalación." },
   "Confira os campos: algum valor está fora do formato.": { es: "Revise los campos: algún valor está fuera del formato." },
   "Conecte a conta antes de configurar.": { es: "Conecte la cuenta antes de configurar." },
+  "A plataforma de atendimento não recebeu a passagem: devolva o chat à equipe por lá.": { es: "La plataforma de atención no recibió el traspaso: devuelva el chat al equipo desde allí." },
 };
 
 /**

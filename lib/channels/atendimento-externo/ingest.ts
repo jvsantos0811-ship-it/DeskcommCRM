@@ -135,6 +135,29 @@ async function anotarLink(
     .eq("updated_at", atual.updated_at);
 }
 
+const JANELA_DO_ECO_MS = 10 * 60_000;
+
+async function ehEcoDoProprioEnvio(
+  admin: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  texto: string,
+): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
+  const { data, error } = await admin
+    .from("messages")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    .eq("body", texto)
+    .gte("created_at", desde)
+    .limit(1)
+    .maybeSingle();
+  // Na dúvida, entra: perder a mensagem do cliente é pior que um eco raro.
+  return !error && data !== null;
+}
+
 export async function ingestAtendimentoExterno(
   admin: SupabaseClient,
   e: EntradaDoAtendimentoExterno,
@@ -186,6 +209,17 @@ export async function ingestAtendimentoExterno(
   }
 
   await anotarConversa(admin, orgId, conversationId as string, e);
+
+  // ─── O eco do próprio envio não é o cliente falando ───────────────────────
+  //
+  // O POST não diz se a mensagem foi recebida ou enviada. Se o diálogo da
+  // plataforma também disparar nas mensagens que SAEM, a resposta da IA voltaria
+  // como se fosse do cliente — e a IA passaria a conversar consigo mesma,
+  // gastando a cada volta. Texto idêntico a uma saída desta conversa nos últimos
+  // minutos é tratado como eco e não entra.
+  if (!e.midiaUrl && (await ehEcoDoProprioEnvio(admin, orgId, conversationId as string, e.texto))) {
+    return { status: "ignored", reason: "eco_do_proprio_envio" };
+  }
 
   const agora = new Date().toISOString();
   const { data: inserida, error: erroInsert } = await admin
