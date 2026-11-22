@@ -58622,10 +58622,13 @@ alter table public.crm_contracts
   add constraint crm_contracts_status_check
   check (status = any (array['rascunho', 'enviado', 'assinado', 'recusado', 'expirado', 'cancelado']::text[]));
 
+-- O vocabulário FINAL do provedor mora aqui, num bloco só (a 9037 acrescentou
+-- `autentique`): re-aplicar no update.sh um bloco antigo com o conjunto menor
+-- falharia num banco que já tem contrato pela Autentique.
 alter table public.crm_contracts drop constraint if exists crm_contracts_provedor_assinatura_check;
 alter table public.crm_contracts
   add constraint crm_contracts_provedor_assinatura_check
-  check (provedor_assinatura = any (array['manual', 'zapsign']::text[]));
+  check (provedor_assinatura = any (array['manual', 'zapsign', 'autentique']::text[]));
 
 -- O aviso do serviço acha o contrato pelo id do documento NO SERVIÇO.
 create index if not exists crm_contracts_documento_no_servico_idx
@@ -62965,10 +62968,8 @@ alter table public.assinatura_eletronica_contas
   add constraint assinatura_eletronica_contas_provedor_check
   check (provedor = any (array['zapsign', 'autentique']::text[]));
 
-alter table public.crm_contracts drop constraint if exists crm_contracts_provedor_assinatura_check;
-alter table public.crm_contracts
-  add constraint crm_contracts_provedor_assinatura_check
-  check (provedor_assinatura = any (array['manual', 'zapsign', 'autentique']::text[]));
+-- `crm_contracts_provedor_assinatura_check` com `autentique`: no bloco da 9027
+-- acima (uma constraint, um bloco — tests/unit/baseline-constraint-reconstruida).
 
 alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_encrypted bytea;
 alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_iv bytea;
