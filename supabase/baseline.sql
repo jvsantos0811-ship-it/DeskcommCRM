@@ -62952,3 +62952,27 @@ comment on column public.calendar_event_types.reminder_meta_template_name is
   'PC-045: nome do modelo APROVADO da Meta para o lembrete fora da janela de 24 h (número oficial). Corpo: {{1}} nome, {{2}} dia, {{3}} hora, {{4}} local. NULL = o degrau fora da janela é pulado, como sempre.';
 comment on column public.calendar_event_types.reminder_meta_template_language is
   'PC-045: idioma do modelo da Meta (ex.: pt_BR). NULL = pt_BR.';
+
+-- ---- assinatura eletrônica pela Autentique: vocabulário e o segredo do aviso cadastrado no painel (migration 9037) ----
+-- 9037: assinatura eletrônica pela Autentique (PC-046).
+--
+-- Nenhum gatilho, nenhuma função: só vocabulário e três colunas anuláveis.
+-- Desligado de fábrica: nada muda para quem não escolher a Autentique em
+-- Configurações › Assinatura eletrônica.
+
+alter table public.assinatura_eletronica_contas drop constraint if exists assinatura_eletronica_contas_provedor_check;
+alter table public.assinatura_eletronica_contas
+  add constraint assinatura_eletronica_contas_provedor_check
+  check (provedor = any (array['zapsign', 'autentique']::text[]));
+
+alter table public.crm_contracts drop constraint if exists crm_contracts_provedor_assinatura_check;
+alter table public.crm_contracts
+  add constraint crm_contracts_provedor_assinatura_check
+  check (provedor_assinatura = any (array['manual', 'zapsign', 'autentique']::text[]));
+
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_encrypted bytea;
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_iv bytea;
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_tag bytea;
+
+comment on column public.assinatura_eletronica_contas.aviso_hmac_encrypted is
+  'PC-046 (migration 9037): o segredo do endpoint do aviso gerado pelo serviço no painel dele (Autentique), cifrado em AES-GCM com a chave da instalação. Confere o HMAC SHA-256 do aviso. NULL = ainda não colado (ou serviço que cadastra o aviso pela API).';

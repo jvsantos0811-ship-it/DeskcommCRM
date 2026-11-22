@@ -36,7 +36,7 @@
     { "id": "acompanhar", "lane": "api", "col": 10, "type": "service", "label": "aplicarAvisoDoServico → aplicarSituacao" },
     { "id": "contas", "lane": "data", "col": 5, "type": "database", "label": "assinatura_eletronica_contas (chave cifrada, só servidor)" },
     { "id": "modelos", "lane": "data", "col": 6, "type": "database", "label": "contrato_modelos (versão + aprovado pelo advogado)" },
-    { "id": "servico_externo", "lane": "saida", "col": 4, "type": "external", "label": "Serviço de assinatura (ZapSign)" },
+    { "id": "servico_externo", "lane": "saida", "col": 4, "type": "external", "label": "Serviço de assinatura (ZapSign ou Autentique)" },
     { "id": "casos", "lane": "saida", "col": 5, "type": "database", "label": "agent_cases (tipo contrato)" },
     { "id": "ganho", "lane": "saida", "col": 6, "type": "service", "label": "confirmarAssinatura (etapa de ganho + tag)" },
     { "id": "ferramenta_ia", "lane": "api", "col": 11, "type": "service", "label": "Turno da IA: enviar_contrato · reclamacao_do_contrato · situação do contrato" },

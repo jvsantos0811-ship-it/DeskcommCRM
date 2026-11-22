@@ -167,6 +167,7 @@ export function criarServicoZapsign(cred: CredencialDoServico, busca: BuscaHttp 
 
   return {
     id: "zapsign",
+    cadastroDoAviso: "pela_api",
 
     async testarConexao() {
       await chamar("GET", "/api/v1/docs/?page=1");

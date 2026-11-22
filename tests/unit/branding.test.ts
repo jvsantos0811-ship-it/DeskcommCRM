@@ -996,6 +996,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint de TESTE do mesmo serviço de assinatura (sem validade jurídica): o escritório escolhe \"Teste\" na tela e prova o fluxo inteiro antes de usar a chave de produção.",
   },
+  "api.autentique.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint GraphQL do serviço de assinatura Autentique (`lib/contratos/assinatura/autentique.ts`, PC-046): é para onde o contrato vai quando o escritório escolhe a Autentique em Configurações › Assinatura eletrônica, com o token dele. Teste e produção usam o MESMO endereço (o teste é o argumento `sandbox`).",
+  },
+  "autentique.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "domínio do mesmo serviço, usado só para decidir se o download do PDF assinado leva o token da API (vai apenas para a própria Autentique, nunca para outro domínio). Destino da credencial, não marca.",
+  },
   "cloud.datafyapi.com.br": {
     categoria: "FORNECEDOR",
     motivo:

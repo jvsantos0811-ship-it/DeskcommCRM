@@ -1,7 +1,7 @@
 /**
  * A CAMADA DE ASSINATURA ELETRÔNICA (PC-030, item 1) — a interface única.
  *
- * Cada serviço (ZapSign hoje; Clicksign, D4Sign e Autentique um por vez, cada
+ * Cada serviço (ZapSign e Autentique hoje; Clicksign e D4Sign um por vez, cada
  * um só depois de passar nos critérios com a conta de teste dele) é um
  * adaptador desta interface. Quem usa — o envio do contrato, o aviso do
  * serviço, a tela de Configurações — fala só com ela.
@@ -96,8 +96,19 @@ export class ErroDoServico extends Error {
   }
 }
 
+/**
+ * Como o endereço do aviso chega ao serviço:
+ *  - `pela_api`: `registrarAviso` cadastra o endereço, com um segredo NOSSO num
+ *    cabeçalho (ZapSign);
+ *  - `no_painel`: o serviço não tem rota para cadastrar o aviso (Autentique): o
+ *    gerente cola o endereço no painel do serviço, e o aviso prova a origem pela
+ *    assinatura HMAC que o próprio serviço calcula sobre o corpo.
+ */
+export type CadastroDoAviso = "pela_api" | "no_painel";
+
 export interface ServicoDeAssinatura {
   readonly id: ProvedorEletronicoId;
+  readonly cadastroDoAviso: CadastroDoAviso;
   /** Confere a credencial com uma leitura barata. Lança `ErroDoServico`. */
   testarConexao(): Promise<void>;
   criarPedido(pedido: PedidoDeAssinatura): Promise<PedidoCriado>;

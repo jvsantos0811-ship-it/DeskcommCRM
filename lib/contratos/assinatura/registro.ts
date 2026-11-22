@@ -8,7 +8,13 @@
  */
 import type { ProvedorEletronicoId } from "@/lib/contratos/vocabulario";
 
-import type { AvisoDoServico, BuscaHttp, CredencialDoServico, ServicoDeAssinatura } from "./servico";
+import {
+  assinaturaDoAvisoConfere,
+  CABECALHO_DO_AVISO_DA_AUTENTIQUE,
+  criarServicoAutentique,
+  lerAvisoDaAutentique,
+} from "./autentique";
+import type { AvisoDoServico, BuscaHttp, CadastroDoAviso, CredencialDoServico, ServicoDeAssinatura } from "./servico";
 import { criarServicoZapsign, lerAvisoDaZapsign } from "./zapsign";
 
 export function servicoDeAssinatura(
@@ -19,6 +25,18 @@ export function servicoDeAssinatura(
   switch (id) {
     case "zapsign":
       return criarServicoZapsign(cred, busca);
+    case "autentique":
+      return criarServicoAutentique(cred, busca);
+  }
+}
+
+/** Como o aviso de cada serviço é cadastrado — sem precisar abrir a chave. */
+export function cadastroDoAviso(id: ProvedorEletronicoId): CadastroDoAviso {
+  switch (id) {
+    case "zapsign":
+      return "pela_api";
+    case "autentique":
+      return "no_painel";
   }
 }
 
@@ -27,5 +45,24 @@ export function lerAvisoDoServico(id: ProvedorEletronicoId, corpo: unknown): Avi
   switch (id) {
     case "zapsign":
       return lerAvisoDaZapsign(corpo);
+    case "autentique":
+      return lerAvisoDaAutentique(corpo);
+  }
+}
+
+/**
+ * A prova de origem do aviso cadastrado NO PAINEL do serviço (`no_painel`): a
+ * assinatura que o próprio serviço calcula sobre o corpo bruto. Para os
+ * serviços `pela_api` a prova é o segredo nosso no cabeçalho, conferido na rota.
+ */
+export function avisoDoPainelConfere(
+  id: ProvedorEletronicoId,
+  a: { corpoBruto: string; cabecalhos: Headers; segredos: ReadonlyArray<string | null> },
+): boolean {
+  switch (id) {
+    case "zapsign":
+      return false;
+    case "autentique":
+      return assinaturaDoAvisoConfere(a.corpoBruto, a.cabecalhos.get(CABECALHO_DO_AVISO_DA_AUTENTIQUE), a.segredos);
   }
 }

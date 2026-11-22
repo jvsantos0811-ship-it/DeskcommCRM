@@ -99,5 +99,7 @@ export function provedorDeAssinatura(id: ProvedorDeAssinaturaId): ProvedorDeAssi
       return MANUAL;
     case "zapsign":
       return eletronico("zapsign");
+    case "autentique":
+      return eletronico("autentique");
   }
 }

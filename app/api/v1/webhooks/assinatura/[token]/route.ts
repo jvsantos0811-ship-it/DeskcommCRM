@@ -25,6 +25,13 @@
  * documento mudou; a situação é relida no serviço com a credencial da
  * organização e aplicada por `lib/contratos/acompanhar.ts` (assinado,
  * recusado, expirado, visto). O mesmo aviso repetido não muda nada.
+ *
+ * PC-046: serviço cujo aviso é cadastrado NO PAINEL dele (Autentique) não
+ * aceita cabeçalho nosso. Ali a prova de origem é a assinatura HMAC SHA-256 que
+ * o próprio serviço calcula sobre o corpo BRUTO (`x-autentique-signature`),
+ * conferida com o segredo do endpoint colado na tela (e, como reserva, com o
+ * token da API). Sem assinatura que confira: nada muda, e a recusa fica
+ * registrada — igual ao segredo errado das outras portas.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -39,8 +46,13 @@ import { registrarRecusaPeloSupabase } from "@/lib/leads/trava-da-ia";
 import { HEADER_SEGREDO_DA_ASSINATURA, segredoConfere } from "@/lib/leads/assinatura-webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aplicarAvisoDoServico } from "@/lib/contratos/acompanhar";
-import { contaDoCaminhoDoAviso, type LinhaDaConta } from "@/lib/contratos/assinatura/conta";
-import { lerAvisoDoServico } from "@/lib/contratos/assinatura/registro";
+import {
+  abrirChave,
+  abrirSegredoDoAviso,
+  contaDoCaminhoDoAviso,
+  type LinhaDaConta,
+} from "@/lib/contratos/assinatura/conta";
+import { avisoDoPainelConfere, cadastroDoAviso, lerAvisoDoServico } from "@/lib/contratos/assinatura/registro";
 import { ErroDoServico } from "@/lib/contratos/assinatura/servico";
 import { ehProvedorEletronico } from "@/lib/contratos/vocabulario";
 
@@ -79,7 +91,13 @@ export async function POST(
   if (!c) {
     // PC-030: não é a porta genérica — pode ser a do serviço de assinatura.
     const conta = await contaDoCaminhoDoAviso(admin, token).catch(() => null);
-    if (!conta || !conta.ativo || !conta.aviso_segredo_sha256) return fail("not_found", "Not found.", 404, { requestId });
+    if (!conta || !conta.ativo || !ehProvedorEletronico(conta.provedor)) {
+      return fail("not_found", "Not found.", 404, { requestId });
+    }
+    // Aviso cadastrado pela API tem o segredo NOSSO; sem ele, a porta não existe.
+    if (cadastroDoAviso(conta.provedor) === "pela_api" && !conta.aviso_segredo_sha256) {
+      return fail("not_found", "Not found.", 404, { requestId });
+    }
     return avisoDoServico(req, admin, conta, requestId);
   }
   if (!c.ativo) return fail("not_found", "Not found.", 404, { requestId });
@@ -181,11 +199,32 @@ async function avisoDoServico(
     });
     return fail(codigo, motivo, status, { requestId });
   };
-  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "")) {
+  if (!ehProvedorEletronico(conta.provedor)) return fail("not_found", "Not found.", 404, { requestId });
+  const provedor = conta.provedor;
+  // O corpo BRUTO: o HMAC do serviço é sobre os bytes que chegaram, e
+  // reserializar o JSON mudaria os bytes. Teto de 256 KB (aviso é pequeno).
+  const corpoBruto = await req.text().catch(() => "");
+  if (corpoBruto.length > 256 * 1024) {
+    return recusar("payload_invalido", "Aviso do serviço de assinatura grande demais: ignorado.", 413);
+  }
+  const origemConfere =
+    cadastroDoAviso(provedor) === "no_painel"
+      ? avisoDoPainelConfere(provedor, {
+          corpoBruto,
+          cabecalhos: req.headers,
+          segredos: [abrirSegredoDoAviso(conta), abrirChave(conta)],
+        })
+      : segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "");
+  if (!origemConfere) {
     return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
   }
-  const bruto: unknown = await req.json().catch(() => null);
-  const aviso = ehProvedorEletronico(conta.provedor) ? lerAvisoDoServico(conta.provedor, bruto) : null;
+  let bruto: unknown = null;
+  try {
+    bruto = corpoBruto ? (JSON.parse(corpoBruto) as unknown) : null;
+  } catch {
+    bruto = null;
+  }
+  const aviso = lerAvisoDoServico(provedor, bruto);
   if (!aviso) {
     return recusar("payload_invalido", "Aviso do serviço de assinatura com formato inválido: ignorado.", 422);
   }
