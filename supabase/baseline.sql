@@ -58636,10 +58636,13 @@ alter table public.crm_contracts
   add constraint crm_contracts_status_check
   check (status = any (array['rascunho', 'enviado', 'assinado', 'recusado', 'expirado', 'cancelado']::text[]));
 
+-- O vocabulário FINAL do provedor mora aqui, num bloco só (a 9037 acrescentou
+-- `autentique`): re-aplicar no update.sh um bloco antigo com o conjunto menor
+-- falharia num banco que já tem contrato pela Autentique.
 alter table public.crm_contracts drop constraint if exists crm_contracts_provedor_assinatura_check;
 alter table public.crm_contracts
   add constraint crm_contracts_provedor_assinatura_check
-  check (provedor_assinatura = any (array['manual', 'zapsign']::text[]));
+  check (provedor_assinatura = any (array['manual', 'zapsign', 'autentique']::text[]));
 
 -- O aviso do serviço acha o contrato pelo id do documento NO SERVIÇO.
 create index if not exists crm_contracts_documento_no_servico_idx
@@ -62967,6 +62970,27 @@ comment on column public.calendar_event_types.reminder_meta_template_name is
 comment on column public.calendar_event_types.reminder_meta_template_language is
   'PC-045: idioma do modelo da Meta (ex.: pt_BR). NULL = pt_BR.';
 
+-- ---- assinatura eletrônica pela Autentique: vocabulário e o segredo do aviso cadastrado no painel (migration 9037) ----
+-- 9037: assinatura eletrônica pela Autentique (PC-046).
+--
+-- Nenhum gatilho, nenhuma função: só vocabulário e três colunas anuláveis.
+-- Desligado de fábrica: nada muda para quem não escolher a Autentique em
+-- Configurações › Assinatura eletrônica.
+
+alter table public.assinatura_eletronica_contas drop constraint if exists assinatura_eletronica_contas_provedor_check;
+alter table public.assinatura_eletronica_contas
+  add constraint assinatura_eletronica_contas_provedor_check
+  check (provedor = any (array['zapsign', 'autentique']::text[]));
+
+-- `crm_contracts_provedor_assinatura_check` com `autentique`: no bloco da 9027
+-- acima (uma constraint, um bloco — tests/unit/baseline-constraint-reconstruida).
+
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_encrypted bytea;
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_iv bytea;
+alter table public.assinatura_eletronica_contas add column if not exists aviso_hmac_tag bytea;
+
+comment on column public.assinatura_eletronica_contas.aviso_hmac_encrypted is
+  'PC-046 (migration 9037): o segredo do endpoint do aviso gerado pelo serviço no painel dele (Autentique), cifrado em AES-GCM com a chave da instalação. Confere o HMAC SHA-256 do aviso. NULL = ainda não colado (ou serviço que cadastra o aviso pela API).';
 
 -- ---- canal ChatGuru (migration 9038) ----
 -- As colunas e os ramos dos CHECKs de provider e do arquivo de webhook moram nos

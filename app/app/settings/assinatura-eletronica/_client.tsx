@@ -16,7 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { copyToClipboard } from "@/lib/clipboard";
 import type { ContaNaTela } from "@/lib/contratos/assinatura/conta";
+import type { AvisoAoSalvar } from "@/lib/contratos/assinatura/configurar";
 import { VARIAVEIS_DO_SISTEMA } from "@/lib/contratos/modelo-do-contrato";
 import type { ModeloNaTela } from "@/lib/contratos/modelos-servidor";
 
@@ -69,7 +71,7 @@ function FormularioDoServico({
 }) {
   const t = useT();
   const qc = useQueryClient();
-  const ids = { provedor: useId(), chave: useId(), prazo: useId(), ambiente: useId() };
+  const ids = { provedor: useId(), chave: useId(), prazo: useId(), ambiente: useId(), endereco: useId(), segredo: useId() };
 
   const [provedor, setProvedor] = useState(String(conta?.provedor ?? "zapsign"));
   const [ambiente, setAmbiente] = useState<"teste" | "producao">(conta?.ambiente ?? "teste");
@@ -77,10 +79,16 @@ function FormularioDoServico({
   const [aprovacao, setAprovacao] = useState(conta?.aprovacao_da_equipe ?? false);
   const [prazo, setPrazo] = useState(conta?.prazo_para_assinar_dias ?? 7);
   const [ativo, setAtivo] = useState(conta?.ativo ?? true);
+  const [segredoDoAviso, setSegredoDoAviso] = useState("");
+  // PC-046: a Autentique não cadastra o aviso pela API — o gerente cola o
+  // endereço no painel dela e traz o segredo do endpoint para cá.
+  const avisoNoPainel = provedor === "autentique";
+  // O endereço e o segredo guardado só valem para o serviço que está salvo.
+  const contaDesteServico = conta && conta.provedor === provedor ? conta : null;
 
   const salvar = useMutation({
     mutationFn: () =>
-      apiClient.put<{ data: { conta: ContaNaTela; aviso: "cadastrado" | "sem_endereco_publico" | "falhou" } }>(
+      apiClient.put<{ data: { conta: ContaNaTela; aviso: AvisoAoSalvar } }>(
         "/api/v1/settings/assinatura-eletronica",
         {
           provedor,
@@ -89,13 +97,17 @@ function FormularioDoServico({
           aprovacao_da_equipe: aprovacao,
           prazo_para_assinar_dias: prazo,
           ativo,
+          ...(avisoNoPainel && segredoDoAviso.trim() ? { segredo_do_aviso: segredoDoAviso.trim() } : {}),
         },
       ),
     onSuccess: (r) => {
       setChave("");
+      setSegredoDoAviso("");
       void qc.invalidateQueries({ queryKey: CHAVE_DA_CONTA });
       const aviso = r.data?.aviso;
       if (aviso === "cadastrado") toast.success(t("Assinatura eletrônica salva e conectada."));
+      else if (aviso === "falta_colar_no_painel")
+        toast.info(t("Salvo. Agora cadastre o endereço do aviso no painel da Autentique e cole aqui o segredo que ela mostrar."));
       else if (aviso === "sem_endereco_publico")
         toast.warning(t("Salvo. Esta instalação não tem endereço público com https: o serviço não consegue avisar quando o cliente assina."));
       else toast.warning(t("Salvo, mas o serviço não aceitou o aviso de assinatura. Tente salvar de novo em alguns minutos."));
@@ -198,6 +210,70 @@ function FormularioDoServico({
         </div>
       </div>
 
+      {avisoNoPainel ? (
+        <div className="space-y-3 rounded-md border border-border p-3" data-testid="aviso-no-painel">
+          <div>
+            <h3 className="text-sm font-medium">{t("Aviso de assinatura (cadastrar na Autentique)")}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "A Autentique não deixa o CRM cadastrar o aviso sozinho. No painel dela, na parte de webhooks da API, crie um endpoint com o endereço abaixo, marque os eventos de documento e de assinatura e cole aqui o segredo que ela mostrar.",
+              )}
+            </p>
+          </div>
+          {contaDesteServico?.endereco_do_aviso ? (
+            <div className="space-y-1">
+              <Label htmlFor={ids.endereco}>{t("Endereço do aviso")}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={ids.endereco}
+                  readOnly
+                  value={contaDesteServico.endereco_do_aviso}
+                  onFocus={(e) => e.currentTarget.select()}
+                  data-testid="aviso-endereco"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    const copiou = await copyToClipboard(contaDesteServico.endereco_do_aviso ?? "");
+                    if (copiou) toast.success(t("Endereço copiado."));
+                    else toast.error(t("Não consegui copiar. Selecione o endereço e copie à mão."));
+                  }}
+                  data-testid="aviso-copiar"
+                >
+                  {t("Copiar")}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("Este endereço é secreto: só cole no painel da Autentique.")}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground" data-testid="aviso-salve-primeiro">
+              {contaDesteServico
+                ? t("Esta instalação não tem endereço público com https: o serviço não consegue avisar quando o cliente assina.")
+                : t("Salve primeiro com o token da API da Autentique: o endereço do aviso aparece aqui.")}
+            </p>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor={ids.segredo}>{t("Segredo do endpoint (mostrado pela Autentique)")}</Label>
+            <Input
+              id={ids.segredo}
+              type="password"
+              autoComplete="off"
+              value={segredoDoAviso}
+              onChange={(e) => setSegredoDoAviso(e.target.value)}
+              placeholder={contaDesteServico?.tem_segredo_do_aviso ? `${t("Guardado")} — ${t("deixe em branco para manter")}` : ""}
+              disabled={!contaDesteServico}
+              data-testid="aviso-segredo"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("É com ele que o CRM confere que o aviso veio mesmo da Autentique. Fica guardado cifrado.")}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => salvar.mutate()} disabled={salvar.isPending || carregando} data-testid="assinatura-salvar">
           {salvar.isPending ? t("Testando e salvando...") : t("Salvar")}
@@ -206,7 +282,9 @@ function FormularioDoServico({
           <span className="text-xs text-muted-foreground">
             {conta.aviso_registrado_em
               ? t("Conectado: o serviço avisa o CRM quando o cliente assina.")
-              : t("O aviso de assinatura ainda não foi cadastrado no serviço.")}
+              : conta.cadastro_do_aviso === "no_painel"
+                ? t("Falta cadastrar o aviso no painel da Autentique e colar o segredo aqui.")
+                : t("O aviso de assinatura ainda não foi cadastrado no serviço.")}
           </span>
         ) : null}
       </div>
