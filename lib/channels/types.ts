@@ -9,7 +9,14 @@ import type { OutboundMedia } from "@/lib/waha/media-send";
 
 export type { OutboundMedia };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  | "chatguru";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -433,6 +440,48 @@ export interface ChannelAdapter {
    */
   checkHealth?(input: ChannelTenantScope & { sessionRef: string }): Promise<ChannelHealth>;
 
+  /**
+   * O lado do CANAL de uma passagem para a equipe.
+   *
+   * Existe porque há canal em que a conversa mora DENTRO de outra plataforma de
+   * atendimento (a IA responde dentro do sistema que o escritório já usa). Lá,
+   * silenciar a IA no CRM não basta: o chat continua marcado como "da IA" na
+   * plataforma, a equipe não vê que é a vez dela, e a plataforma continua
+   * entregando cada mensagem para a IA. Este método faz a outra metade —
+   * devolve o chat à equipe do jeito que a plataforma entende.
+   *
+   * OPCIONAL como os demais: canal cuja conversa vive só no CRM não implementa,
+   * e quem chama (`lib/channels/passagem-no-canal.ts`) testa a presença do
+   * método em vez de perguntar QUAL provider é.
+   *
+   * LANÇA quando o transporte recusa. Quem chama engole e registra: a passagem
+   * no CRM já aconteceu, e falhar aqui não pode desfazê-la nem derrubar o turno.
+   *
+   * `nota` é um texto curto para a equipe (o resumo da passagem), ou `null`.
+   * Nunca carrega credencial; quem decide o que vai nele é quem chama.
+   */
+  aoPassarParaAEquipe?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string;
+    nota: string | null;
+  }): Promise<void>;
+
+  /**
+   * As ações que a IA pode executar NA PLATAFORMA do canal durante o turno —
+   * anotar para a equipe e disparar ações que o operador liberou na tela.
+   *
+   * `null` = o canal não oferece nada neste momento (sem credencial, sem ação
+   * liberada). OPCIONAL pelo mesmo motivo de `aoPassarParaAEquipe`: quem monta
+   * as ferramentas do turno testa a presença do método.
+   *
+   * A lista de ações é FECHADA pelo operador: a IA escolhe uma das chaves que
+   * a tela gravou, nunca um identificador livre da plataforma.
+   */
+  acoesDoAtendimento?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string;
+  }): Promise<AcoesDoAtendimento | null>;
+
   /** Grupos do número. Ausente = o canal não lista grupos. */
   listGroups?(input: { sessionRef: string }): Promise<ChannelGroup[]>;
 
@@ -496,6 +545,21 @@ export interface ChannelAdapter {
 }
 
 /** O que o transporte respondeu quando perguntamos se está de pé. */
+/**
+ * O que a IA pode fazer na plataforma do canal, já amarrado ao chat do turno.
+ * Ver `ChannelAdapter.acoesDoAtendimento`.
+ */
+export interface AcoesDoAtendimento {
+  /** Como a plataforma se chama para quem lê — entra na descrição da ferramenta. */
+  rotulo: string;
+  /** As ações liberadas pelo operador. Vazia = só a anotação. */
+  acoes: readonly { chave: string; nome: string; quandoUsar: string }[];
+  /** Anotação interna no chat: a equipe vê, o cliente não. LANÇA se o transporte recusar. */
+  anotar(texto: string): Promise<void>;
+  /** Executa a ação liberada `chave`. LANÇA se a chave não existir ou o transporte recusar. */
+  executar(chave: string): Promise<void>;
+}
+
 export interface ChannelHealth {
   /** Deu para perguntar? `false` = transporte inalcançável, não canal caído. */
   reachable: boolean;

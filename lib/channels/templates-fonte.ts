@@ -47,6 +47,9 @@ const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // Parceiro Graph-compatível: os modelos são os da Cloud API, servidos por uma
   // rota própria (host/token do parceiro).
   datafy: "graph",
+  // O modelo da Meta mora no ChatGuru e sai por um diálogo dele (PC-047): não
+  // há catálogo que o CRM liste para este canal.
+  chatguru: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */

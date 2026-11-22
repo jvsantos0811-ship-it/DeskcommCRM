@@ -55,6 +55,7 @@ import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import type { DesfechoDoAviso } from './aviso-de-escalacao';
 
 import type { Logger } from '../obs/logger';
+import { avisarCanalDaPassagem } from '@/lib/channels/passagem-no-canal';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import { findForbiddenKey, zodIssuesSummary } from './lead-state';
 import type { DeclaracaoDoTurno } from './declaracao';
@@ -291,6 +292,36 @@ export async function performHumanHandoff(
   await guardServiceEffect();
   await cancelPendingCronsForLead(db, ids.tenantId, ids.leadId);
 
+  // (c1) O LADO DO CANAL (PC-047). Há canal em que a conversa mora dentro de
+  // outra plataforma de atendimento: lá o chat seguiria "com a IA", a equipe
+  // não veria que é a vez dela e a plataforma continuaria entregando cada
+  // mensagem para cá. O adapter que souber devolve o chat à equipe do jeito da
+  // plataforma; os outros canais respondem `sem_acao` sem fazer nada.
+  //
+  // Só quando a IA SAI da conversa: com a IA seguindo na fila (item 7b), a
+  // plataforma tem de continuar entregando. E nunca derruba a passagem — ela já
+  // aconteceu no CRM; o desfecho ruim vira log, sem o texto da conversa.
+  let passagemNaoChegouAoCanal = false;
+  if (opts.iaSegueNaFila !== true) {
+    await guardServiceEffect();
+    const noCanal = await avisarCanalDaPassagem(db, {
+      organizationId: ids.tenantId,
+      conversationId: ids.conversationId,
+      nota: notaDaPassagemNoCanal(opts.reason, opts.conversationSummary),
+    });
+    if (noCanal.desfecho === 'falhou') {
+      passagemNaoChegouAoCanal = true;
+      opts.log.warn('handoff: a plataforma do canal não recebeu a passagem — a do CRM vale', {
+        motivo: noCanal.motivo.slice(0, 200),
+      });
+    } else if (noCanal.desfecho === 'nao_verificado') {
+      // Só log: sem saber o canal, não dá para afirmar nada na Central.
+      opts.log.warn('handoff: canal da conversa não verificado para a passagem', {
+        motivo: noCanal.motivo.slice(0, 200),
+      });
+    }
+  }
+
   // (c2) A LINHA DE FATO. Vem antes do aviso porque o aviso REMETE a ela: o
   // corpo da Central diz "abra a conversa para ver o contexto", e o contexto é
   // esta linha. Não deduplica — uma passagem é uma passagem, e duas seguidas são
@@ -389,7 +420,14 @@ export async function performHumanHandoff(
           'Handoff humano solicitado — assumir a conversa',
           opts.passagem?.idioma ?? (await idiomaDaOrganizacao(db, ids.tenantId, opts.log)),
         ),
-      await corpoDaCentral(db, ids.tenantId, opts),
+      // A equipe que trabalha DENTRO da plataforma do canal não lê log: se a
+      // passagem não chegou lá, o aviso diz, para alguém devolver o chat à mão.
+      passagemNaoChegouAoCanal
+        ? `${await corpoDaCentral(db, ids.tenantId, opts)}\n\n${traduzir(
+            'A plataforma de atendimento não recebeu a passagem: devolva o chat à equipe por lá.',
+            opts.passagem?.idioma ?? (await idiomaDaOrganizacao(db, ids.tenantId, opts.log)),
+          )}`
+        : await corpoDaCentral(db, ids.tenantId, opts),
       ids.conversationId,
     ],
   );
@@ -433,6 +471,20 @@ export async function performHumanHandoff(
     motivo_codigo: opts.passagem?.motivoCodigo ?? 'nao_declarado',
     origem: opts.passagem?.origem ?? 'nao_declarada',
   });
+}
+
+/**
+ * O texto que a equipe lê NA PLATAFORMA do canal quando a IA passa o chat
+ * (PC-047): o porquê e o resumo que a passagem já montou para a Central. Vai
+ * para o sistema do próprio escritório, de onde a conversa veio; nunca para log.
+ */
+export function notaDaPassagemNoCanal(motivo: string, resumo: string): string {
+  const partes = ['[IA] Atendimento passado para a equipe.'];
+  const porque = motivo.trim();
+  if (porque) partes.push(`Motivo: ${porque.slice(0, 300)}`);
+  const contexto = resumo.trim();
+  if (contexto) partes.push(contexto.slice(0, 1_500));
+  return partes.join('\n');
 }
 
 /**

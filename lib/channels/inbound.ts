@@ -20,7 +20,10 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
+import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
+import { phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -86,7 +89,13 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
-  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+  return (
+    provider === CHANNEL_PROVIDER_ZERNIO ||
+    provider === CHANNEL_PROVIDER_SOCIAL ||
+    // A IA dentro da plataforma de atendimento (PC-047): a "chave" é a própria
+    // conexão — sem uma sessão gravada pela tela, não há token que chegue aqui.
+    provider === CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO
+  );
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
@@ -96,6 +105,10 @@ export function verifyInboundWebhookSignature(provider: string, raw: string, hea
   if (provider === CHANNEL_PROVIDER_DATAFY) {
     return verifyGraphPartnerSignature(raw, headers.get(HEADER_ASSINATURA), headers.get(HEADER_TIMESTAMP), secret);
   }
+  // A plataforma de atendimento não assina o POST: o que prova a origem é o
+  // SEGREDO da conexão, que vem no caminho da URL (a rota aninhada o põe no
+  // cabeçalho) ou direto no cabeçalho. Ver `atendimento-externo/entrada.ts`.
+  if (provider === CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO) return segredoConfere(headers, secret);
   return verifyZernioSignature(raw, headers.get("x-zernio-signature"), secret);
 }
 
@@ -132,6 +145,16 @@ export function verifyInboundWebhookSignature(provider: string, raw: string, hea
 export async function inboundPayloadBelongsToSession(admin: SupabaseClient, input: InboundWebhookInput): Promise<boolean> {
   if (input.session.provider === CHANNEL_PROVIDER_SOCIAL) {
     return socialPayloadBelongsToSession(admin, input.session.organization_id, input.session.id, input.rawBody);
+  }
+  if (input.session.provider === CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO) {
+    // A conta da plataforma pode ter mais de um número (o oficial e o por QR),
+    // e um diálogo mal configurado entregaria os chats dos dois. Só entra o do
+    // número DESTA conexão. Corpo sem `phone_id` passa: o segredo já diz de
+    // quem é a entrega, e recusar por ausência cegaria uma conta de um número só.
+    const doCorpo = phoneIdDoCorpo(input.rawBody);
+    if (doCorpo === null) return true;
+    const daSessao = await phoneIdDaSessao(admin, input.session.organization_id, input.session.id);
+    return daSessao !== null && daSessao === doCorpo;
   }
   if (input.session.provider === CHANNEL_PROVIDER_ZERNIO) {
     const { evento, conta: contaDoEvento } = cabecalhoDoEventoZernio(input.rawBody);
@@ -194,6 +217,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO:
+      return atendimentoExternoInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -454,4 +479,41 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * Entrada da plataforma de atendimento (ChatGuru, PC-047): o "POST PARA URL"
+ * de um diálogo, uma mensagem por POST.
+ *
+ * Fail-closed: sem o segredo certo, nada entra (conferido de novo aqui porque
+ * esta função também é chamada fora da rota). A organização e a sessão vêm do
+ * token do caminho; o corpo só diz quem escreveu e o quê.
+ */
+async function atendimentoExternoInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "bad_secret" };
+  }
+
+  const leitura = lerEntrada(input.rawBody);
+  if (!leitura.ok) {
+    if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+  if ("ignorar" in leitura) return { ok: true, body: { status: "ignored", reason: leitura.ignorar } };
+
+  const r = await ingestAtendimentoExterno(admin, leitura.entrada, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+  });
+  // Falha de ESCRITA sobe como exceção: a rota responde 500 e a plataforma
+  // reentrega — o evento era bom, nós é que não gravamos.
+  if (r.status === "failed") throw new Error(`ingestao_falhou: ${r.reason}`.slice(0, 200));
+  return { ok: true, body: { ...r } };
 }

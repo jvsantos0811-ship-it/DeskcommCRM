@@ -68,6 +68,8 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
+import { linkExternoDaConversa } from "@/lib/channels/atendimento-externo/link";
+import { rotuloDoTipoDeCanal } from "@/lib/channels/conversa-nova";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -149,6 +151,13 @@ export function ConversationHeader({
    * canais (#2383). `null` quando não há canal, e aí o badge não existe.
    */
   const rotuloCanal = rotuloDoCanalDaConversa(conversation.channel_sessions, t);
+  /**
+   * PC-047: a conversa que mora DENTRO de outra plataforma de atendimento traz
+   * o link do chat lá. Só aparece quando há link conferido (https, domínio da
+   * plataforma) — nos outros canais `metadata` não tem a chave e nada muda.
+   */
+  const linkExterno = linkExternoDaConversa(conversation.metadata);
+  const plataformaExterna = rotuloDoTipoDeCanal(conversation.channel_sessions?.provider ?? null);
   const phone = c?.phone_number ? phoneForDisplay(c.phone_number) : null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
@@ -305,6 +314,17 @@ export function ConversationHeader({
           >
             <span className="truncate">{rotuloCanal}</span>
           </Badge>
+        )}
+        {linkExterno && (
+          <a
+            href={linkExterno}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 rounded-sm text-[11px] font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="link-externo-da-conversa"
+          >
+            {plataformaExterna ? `${t("Abrir em")} ${plataformaExterna}` : t("Abrir na plataforma de origem")}
+          </a>
         )}
         <SelosEscondidos
           janela={

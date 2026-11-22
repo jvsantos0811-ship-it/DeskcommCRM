@@ -38,7 +38,11 @@ import { logger } from "@/lib/logger";
 // o webhook com um token ESTÁTICO no cabeçalho — é a credencial inteira, não uma
 // assinatura. A rota de cobrança nem grava cabeçalho; isto é o cinto para quando
 // alguém apontar o aviso do Asaas para uma rota de canal.
-const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"];
+// `x-webhook-segredo` (PC-047): a plataforma de atendimento não assina o POST, e
+// o segredo da conexão viaja no caminho; a rota aninhada o põe neste cabeçalho
+// para a conferência do canal. É a credencial inteira da entrada — gravá-la no
+// arquivo a deixaria legível a qualquer membro da organização por 90 dias.
+const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token", "x-webhook-segredo"];
 
 /**
  * Cabeçalhos sanitizados.

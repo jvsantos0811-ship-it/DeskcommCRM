@@ -229,7 +229,10 @@ import {
   tipoDeEnvio,
 } from '../guardrails/before-send';
 import { isStatusSendable } from '../../channels/meta/template-binding';
-import { capabilitiesOf } from '@/lib/channels/capabilities';
+import { capabilitiesOf, transportaMensagem } from '@/lib/channels/capabilities';
+import { getAdapter } from '@/lib/channels';
+import { acoesDoAtendimentoNoTurno } from '@/lib/channels/passagem-no-canal';
+import { registrarFerramentasDoAtendimento } from './ferramentas-do-atendimento';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano, manterDigitando } from './atraso-humano';
 import { instrucaoDeBolhas, sendInBubbles, splitForSend } from './split-message';
@@ -5345,6 +5348,18 @@ async function executarTurnoDoAgente(
         : await loadChannelProvider(pool, tenantId, input.channelSessionId);
     if (!capabilitiesOf(provider).requiresTemplates) {
       delete rawTools.send_template;
+    }
+
+    // PC-047: a conversa que mora DENTRO de outra plataforma de atendimento ganha
+    // as ferramentas de anotar para a equipe e de executar uma ação liberada na
+    // tela. Só quando o canal sabe (presença do método, nunca o nome do canal) e
+    // nunca no preview, que não fala com plataforma nenhuma.
+    if (!preview && transportaMensagem(provider) && getAdapter(provider).acoesDoAtendimento) {
+      const acoes = await acoesDoAtendimentoNoTurno(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+      });
+      if (acoes) registrarFerramentasDoAtendimento(rawTools, acoes, runLog);
     }
   }
 

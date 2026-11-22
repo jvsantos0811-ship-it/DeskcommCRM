@@ -37,4 +37,22 @@ describe("o arquivo do webhook nunca guarda credencial no cabeçalho", () => {
     // Controle: a assinatura fica — é o que permite reconferir depois.
     expect(guardados["x-hub-signature-256"]).toBe("sha256=abc");
   });
+
+  it("⭐ o segredo da entrada que viaja no caminho (PC-047) também não entra", async () => {
+    const { admin, linhas } = adminQueGuarda();
+    // Importado do módulo do canal: se o nome do cabeçalho mudar lá, este teste
+    // continua medindo o cabeçalho de verdade, não uma cópia velha da string.
+    const { HEADER_DO_SEGREDO } = await import("./atendimento-externo/entrada");
+    const headers = new Headers({ [HEADER_DO_SEGREDO]: "f".repeat(64), "content-type": "application/json" });
+    await abrirArquivoDoWebhook(admin, {
+      organizationId: "org",
+      channelSessionId: "sessao",
+      provider: "chatguru",
+      rawBody: "{}",
+      headers,
+    });
+    const guardados = linhas[0]?.headers as Record<string, string>;
+    expect(guardados).not.toHaveProperty(HEADER_DO_SEGREDO);
+    expect(guardados["content-type"]).toBe("application/json");
+  });
 });

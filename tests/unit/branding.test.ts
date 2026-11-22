@@ -1006,6 +1006,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "domínio do mesmo serviço, usado só para decidir se o download do PDF assinado leva o token da API (vai apenas para a própria Autentique, nunca para outro domínio). Destino da credencial, não marca.",
   },
+  "chatguru.app": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "domínio da plataforma de atendimento em que a IA trabalha por dentro (PC-047): a API v1 da conta é `https://<servidor>.chatguru.app/api/v1` (`lib/channels/atendimento-externo/credenciais.ts`) e o link do chat que a Inbox mostra só é aceito se for desse domínio (`atendimento-externo/link.ts`). O operador escolhe só o subdomínio da conta dele; o domínio é fixo de propósito, para a chave nunca ir a outro host.",
+  },
   "cloud.datafyapi.com.br": {
     categoria: "FORNECEDOR",
     motivo:
