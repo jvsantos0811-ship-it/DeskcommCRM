@@ -30,9 +30,11 @@ export type StatusDoContrato = (typeof STATUS_DO_CONTRATO)[number];
  * entram UM POR VEZ, cada um só depois de passar nos critérios com a conta de
  * teste dele: aqui, no CHECK da coluna (migration nova) e no registro de
  * `lib/contratos/assinatura/registro.ts` — nos três, ou o par acima reprova.
- * Ordem combinada: ZapSign → Clicksign → D4Sign → Autentique.
+ * Ordem combinada: ZapSign → Clicksign → D4Sign → Autentique. A Autentique
+ * furou a fila (PC-046, 22/11/2026): o PC-030 manda começar pelo serviço que
+ * um escritório cliente já usa, e o primeiro a pedir usa a Autentique.
  */
-export const PROVEDORES_DE_ASSINATURA = ["manual", "zapsign"] as const;
+export const PROVEDORES_DE_ASSINATURA = ["manual", "zapsign", "autentique"] as const;
 export type ProvedorDeAssinaturaId = (typeof PROVEDORES_DE_ASSINATURA)[number];
 
 /** Os serviços de assinatura eletrônica (todo provedor menos o `manual`). */
@@ -45,6 +47,7 @@ export type ProvedorEletronicoId = Exclude<ProvedorDeAssinaturaId, "manual">;
 export const NOME_DO_PROVEDOR: Record<ProvedorDeAssinaturaId, string> = {
   manual: "Envio manual",
   zapsign: "ZapSign",
+  autentique: "Autentique",
 };
 
 export function ehProvedorEletronico(id: string): id is ProvedorEletronicoId {

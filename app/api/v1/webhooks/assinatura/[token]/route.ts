@@ -25,6 +25,13 @@
  * documento mudou; a situação é relida no serviço com a credencial da
  * organização e aplicada por `lib/contratos/acompanhar.ts` (assinado,
  * recusado, expirado, visto). O mesmo aviso repetido não muda nada.
+ *
+ * PC-046: serviço cujo aviso é cadastrado NO PAINEL dele (Autentique) não
+ * aceita cabeçalho nosso. Ali a prova de origem é a assinatura HMAC SHA-256 que
+ * o próprio serviço calcula sobre o corpo BRUTO (`x-autentique-signature`),
+ * conferida com o segredo do endpoint colado na tela (e, como reserva, com o
+ * token da API). Sem assinatura que confira: nada muda, e a recusa fica
+ * registrada — igual ao segredo errado das outras portas.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -37,10 +44,16 @@ import { audit } from "@/lib/audit";
 import { confirmarAssinatura, dataDeAssinaturaValida } from "@/lib/leads/assinatura-confirmada";
 import { registrarRecusaPeloSupabase } from "@/lib/leads/trava-da-ia";
 import { HEADER_SEGREDO_DA_ASSINATURA, segredoConfere } from "@/lib/leads/assinatura-webhook";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aplicarAvisoDoServico } from "@/lib/contratos/acompanhar";
-import { contaDoCaminhoDoAviso, type LinhaDaConta } from "@/lib/contratos/assinatura/conta";
-import { lerAvisoDoServico } from "@/lib/contratos/assinatura/registro";
+import {
+  abrirChave,
+  abrirSegredoDoAviso,
+  contaDoCaminhoDoAviso,
+  type LinhaDaConta,
+} from "@/lib/contratos/assinatura/conta";
+import { avisoDoPainelConfere, cadastroDoAviso, lerAvisoDoServico } from "@/lib/contratos/assinatura/registro";
 import { ErroDoServico } from "@/lib/contratos/assinatura/servico";
 import { ehProvedorEletronico } from "@/lib/contratos/vocabulario";
 
@@ -79,7 +92,13 @@ export async function POST(
   if (!c) {
     // PC-030: não é a porta genérica — pode ser a do serviço de assinatura.
     const conta = await contaDoCaminhoDoAviso(admin, token).catch(() => null);
-    if (!conta || !conta.ativo || !conta.aviso_segredo_sha256) return fail("not_found", "Not found.", 404, { requestId });
+    if (!conta || !conta.ativo || !ehProvedorEletronico(conta.provedor)) {
+      return fail("not_found", "Not found.", 404, { requestId });
+    }
+    // Aviso cadastrado pela API tem o segredo NOSSO; sem ele, a porta não existe.
+    if (cadastroDoAviso(conta.provedor) === "pela_api" && !conta.aviso_segredo_sha256) {
+      return fail("not_found", "Not found.", 404, { requestId });
+    }
     return avisoDoServico(req, admin, conta, requestId);
   }
   if (!c.ativo) return fail("not_found", "Not found.", 404, { requestId });
@@ -181,12 +200,56 @@ async function avisoDoServico(
     });
     return fail(codigo, motivo, status, { requestId });
   };
-  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "")) {
+  if (!ehProvedorEletronico(conta.provedor)) return fail("not_found", "Not found.", 404, { requestId });
+  const provedor = conta.provedor;
+  const noPainel = cadastroDoAviso(provedor) === "no_painel";
+  // Porta do aviso cadastrado pela API: o segredo NOSSO no cabeçalho, conferido
+  // antes de ler o corpo (como sempre foi).
+  if (!noPainel && !segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "")) {
     return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
   }
-  const bruto: unknown = await req.json().catch(() => null);
-  const aviso = ehProvedorEletronico(conta.provedor) ? lerAvisoDoServico(conta.provedor, bruto) : null;
+  // Aviso é pequeno: teto de 256 KB, pelo cabeçalho antes de ler e pelos bytes depois.
+  const TETO = 256 * 1024;
+  if (Number(req.headers.get("content-length") ?? 0) > TETO) {
+    return recusar("payload_invalido", "Aviso do serviço de assinatura grande demais: ignorado.", 413);
+  }
+  // Os BYTES que chegaram: o HMAC do serviço é sobre eles, e decodificar ou
+  // reserializar o JSON poderia mudá-los.
+  const corpoBruto = Buffer.from(await req.arrayBuffer().catch(() => new ArrayBuffer(0)));
+  if (corpoBruto.length > TETO) {
+    return recusar("payload_invalido", "Aviso do serviço de assinatura grande demais: ignorado.", 413);
+  }
+  if (
+    noPainel &&
+    !avisoDoPainelConfere(provedor, {
+      corpoBruto,
+      cabecalhos: req.headers,
+      segredos: [abrirSegredoDoAviso(conta), abrirChave(conta)],
+    })
+  ) {
+    return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
+  }
+  let bruto: unknown = null;
+  try {
+    bruto = corpoBruto.length > 0 ? (JSON.parse(corpoBruto.toString("utf8")) as unknown) : null;
+  } catch {
+    bruto = null;
+  }
+  const aviso = lerAvisoDoServico(provedor, bruto);
   if (!aviso) {
+    // Evento autêntico do serviço que não aponta documento (ex.: um evento de
+    // membro da conta): não é para nós, e responder erro só faria o serviço
+    // reenviar. A origem já foi conferida acima.
+    const tipo = (bruto as { event?: { type?: unknown } } | null)?.event?.type;
+    if (noPainel && typeof tipo === "string") {
+      // Rastro para o teste no sandbox: se os eventos de assinatura não trazem
+      // o documento, o "visto" e a recusa só chegam pelo `document.*`.
+      logger.info("[assinatura] aviso do painel sem documento", {
+        organization_id: conta.organization_id,
+        evento: tipo.slice(0, 60),
+      });
+      return ok({ aplicado: false, motivo: "evento_sem_documento", evento: tipo.slice(0, 60) }, { requestId });
+    }
     return recusar("payload_invalido", "Aviso do serviço de assinatura com formato inválido: ignorado.", 422);
   }
   try {
@@ -197,6 +260,11 @@ async function avisoDoServico(
     });
     return ok({ evento: aviso.evento, ...desfecho }, { requestId });
   } catch (err) {
+    if (err instanceof ErroDoServico && err.codigo === "nao_encontrado") {
+      // O serviço não acha mais o documento (apagado lá): tentar de novo não
+      // muda nada. O contrato fica como está; a equipe decide pelo card.
+      return ok({ evento: aviso.evento, aplicado: false, motivo: "documento_nao_encontrado" }, { requestId });
+    }
     if (err instanceof ErroDoServico) {
       // O serviço fora (ou a chave trocada): 503 faz o serviço tentar de novo.
       return fail("servico_indisponivel", "Serviço de assinatura indisponível agora.", 503, { requestId });

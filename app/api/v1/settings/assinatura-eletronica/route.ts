@@ -5,7 +5,9 @@
  * PUT /api/v1/settings/assinatura-eletronica — grava serviço, ambiente, chave
  *     (opcional: sem ela fica a guardada), aprovação da equipe e prazo. A chave
  *     é testada no serviço ANTES de gravar, e o aviso (webhook) é cadastrado
- *     com segredo novo (`lib/contratos/assinatura/configurar.ts`).
+ *     com segredo novo (`lib/contratos/assinatura/configurar.ts`). Serviço com
+ *     o aviso cadastrado no painel dele (Autentique, PC-046): a tela mostra o
+ *     endereço e recebe de volta o segredo do endpoint (`segredo_do_aviso`).
  *
  * PC-030, item 1: "credenciais por organização, guardadas como segredo,
  * cadastradas numa tela de Configurações › Integrações › Assinatura
@@ -37,6 +39,9 @@ const corpoSchema = z
     aprovacao_da_equipe: z.boolean(),
     prazo_para_assinar_dias: z.number().int().min(1).max(60),
     ativo: z.boolean(),
+    // PC-046: o segredo que o serviço gerou para o endpoint do aviso, no painel
+    // dele (Autentique). Ausente = mantém o guardado.
+    segredo_do_aviso: z.string().trim().min(8).max(500).optional(),
   })
   .strict();
 
@@ -47,7 +52,7 @@ export async function GET(): Promise<Response> {
   const linha = await lerLinhaDaConta(createAdminClient(), authz.org.orgId);
   return ok(
     {
-      conta: linha ? contaParaATela(linha) : null,
+      conta: linha ? contaParaATela(linha, env.NEXT_PUBLIC_APP_URL) : null,
       servicos: PROVEDORES_ELETRONICOS.map((id) => ({ id, nome: NOME_DO_PROVEDOR[id] })),
     },
     { requestId },
@@ -90,6 +95,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       provedor: entrada.provedor,
       ambiente: entrada.ambiente,
       trocou_chave: r.trocouChave,
+      trocou_segredo_do_aviso: Boolean(entrada.segredo_do_aviso),
       aprovacao_da_equipe: entrada.aprovacao_da_equipe,
       prazo_para_assinar_dias: entrada.prazo_para_assinar_dias,
       ativo: entrada.ativo,
