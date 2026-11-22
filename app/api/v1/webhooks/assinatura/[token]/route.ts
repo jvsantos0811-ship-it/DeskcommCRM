@@ -44,6 +44,7 @@ import { audit } from "@/lib/audit";
 import { confirmarAssinatura, dataDeAssinaturaValida } from "@/lib/leads/assinatura-confirmada";
 import { registrarRecusaPeloSupabase } from "@/lib/leads/trava-da-ia";
 import { HEADER_SEGREDO_DA_ASSINATURA, segredoConfere } from "@/lib/leads/assinatura-webhook";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aplicarAvisoDoServico } from "@/lib/contratos/acompanhar";
 import {
@@ -241,6 +242,12 @@ async function avisoDoServico(
     // reenviar. A origem já foi conferida acima.
     const tipo = (bruto as { event?: { type?: unknown } } | null)?.event?.type;
     if (noPainel && typeof tipo === "string") {
+      // Rastro para o teste no sandbox: se os eventos de assinatura não trazem
+      // o documento, o "visto" e a recusa só chegam pelo `document.*`.
+      logger.info("[assinatura] aviso do painel sem documento", {
+        organization_id: conta.organization_id,
+        evento: tipo.slice(0, 60),
+      });
       return ok({ aplicado: false, motivo: "evento_sem_documento", evento: tipo.slice(0, 60) }, { requestId });
     }
     return recusar("payload_invalido", "Aviso do serviço de assinatura com formato inválido: ignorado.", 422);
