@@ -153,6 +153,16 @@ describe("ingestão do canal dentro da plataforma — tudo escopado pela organiz
     expect(efeitos).not.toHaveBeenCalled();
   });
 
+  it("frase curta repetida pelo cliente NÃO é tratada como eco", async () => {
+    const { admin, registros } = gravador({ eco: true });
+    const r = await ingestAtendimentoExterno(admin, entrada({ texto_mensagem: "Bom dia!" }), {
+      organizationId: ORG_A,
+      channelSessionId: "sess-a",
+    });
+    expect(r.status).toBe("ingested");
+    expect(registros.some((x) => x.tabela === "messages" && x.op === "select")).toBe(false);
+  });
+
   it("reentrega (23505) é 'duplicate' e não acorda o agente de novo", async () => {
     const { admin } = gravador({ erroNoInsert: { code: "23505", message: "duplicate key" } });
     const r = await ingestAtendimentoExterno(admin, entrada(), { organizationId: ORG_A, channelSessionId: "sess-a" });

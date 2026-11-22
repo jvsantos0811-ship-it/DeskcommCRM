@@ -33,7 +33,15 @@ export interface ConsultaPg {
 export type DesfechoDaPassagemNoCanal =
   | { desfecho: "sem_acao" }
   | { desfecho: "feito" }
-  | { desfecho: "falhou"; motivo: string };
+  /** O canal SABE passar e a plataforma recusou (ou não respondeu a tempo). */
+  | { desfecho: "falhou"; motivo: string }
+  /**
+   * Nem deu para saber qual é o canal (a consulta falhou, ou o banco ainda não
+   * tem as colunas). Distinto de `falhou` de propósito: dizer na Central que "a
+   * plataforma não recebeu a passagem" a uma empresa que nem usa plataforma
+   * seria mandar alguém procurar o que não existe.
+   */
+  | { desfecho: "nao_verificado"; motivo: string };
 
 const TEMPO_LIMITE_MS = 15_000;
 
@@ -112,8 +120,14 @@ export async function avisarCanalDaPassagem(
   db: ConsultaPg,
   input: { organizationId: string; conversationId: string; nota: string | null },
 ): Promise<DesfechoDaPassagemNoCanal> {
+  let canal: CanalDaConversa | null;
   try {
-    const canal = await canalDaConversa(db, input.organizationId, input.conversationId);
+    canal = await canalDaConversa(db, input.organizationId, input.conversationId);
+  } catch (err) {
+    const motivo = err instanceof Error ? err.message : "erro_desconhecido";
+    return { desfecho: "nao_verificado", motivo: motivo.slice(0, 300) };
+  }
+  try {
     if (!canal?.adapter.aoPassarParaAEquipe) return { desfecho: "sem_acao" };
     if (!canal.recipient) return { desfecho: "falhou", motivo: "conversa_sem_endereco_no_canal" };
     await comTeto(

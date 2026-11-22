@@ -94,7 +94,8 @@ describe("passagem no canal", () => {
   it("banco fora do ar não derruba quem chama", async () => {
     const quebrado = { query: vi.fn(async () => Promise.reject(new Error("conexão caiu"))) };
     const r = await avisarCanalDaPassagem(quebrado, { organizationId: ORG, conversationId: "c-1", nota: null });
-    expect(r).toEqual({ desfecho: "falhou", motivo: "conexão caiu" });
+    // Sem saber qual é o canal, não afirma que "a plataforma não recebeu".
+    expect(r).toEqual({ desfecho: "nao_verificado", motivo: "conexão caiu" });
     expect(await acoesDoAtendimentoNoTurno(quebrado, { organizationId: ORG, conversationId: "c-1" })).toBeNull();
   });
 });

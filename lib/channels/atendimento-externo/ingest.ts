@@ -136,6 +136,11 @@ async function anotarLink(
 }
 
 const JANELA_DO_ECO_MS = 10 * 60_000;
+/**
+ * Abaixo disto não é eco, é conversa: "Bom dia!", "Perfeito", "Sim" o cliente
+ * repete de verdade, e engolir a resposta dele seria pior que um eco curto.
+ */
+const ECO_MINIMO = 20;
 
 async function ehEcoDoProprioEnvio(
   admin: SupabaseClient,
@@ -217,7 +222,11 @@ export async function ingestAtendimentoExterno(
   // como se fosse do cliente — e a IA passaria a conversar consigo mesma,
   // gastando a cada volta. Texto idêntico a uma saída desta conversa nos últimos
   // minutos é tratado como eco e não entra.
-  if (!e.midiaUrl && (await ehEcoDoProprioEnvio(admin, orgId, conversationId as string, e.texto))) {
+  if (
+    !e.midiaUrl &&
+    e.texto.length >= ECO_MINIMO &&
+    (await ehEcoDoProprioEnvio(admin, orgId, conversationId as string, e.texto))
+  ) {
     return { status: "ignored", reason: "eco_do_proprio_envio" };
   }
 

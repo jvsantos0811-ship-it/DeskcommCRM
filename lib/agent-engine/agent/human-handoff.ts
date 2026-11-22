@@ -314,6 +314,11 @@ export async function performHumanHandoff(
       opts.log.warn('handoff: a plataforma do canal não recebeu a passagem — a do CRM vale', {
         motivo: noCanal.motivo.slice(0, 200),
       });
+    } else if (noCanal.desfecho === 'nao_verificado') {
+      // Só log: sem saber o canal, não dá para afirmar nada na Central.
+      opts.log.warn('handoff: canal da conversa não verificado para a passagem', {
+        motivo: noCanal.motivo.slice(0, 200),
+      });
     }
   }
 
