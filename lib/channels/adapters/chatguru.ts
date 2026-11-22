@@ -39,6 +39,7 @@ import {
 import type {
   AcoesDoAtendimento,
   ChannelAdapter,
+  ChannelHealth,
   ChannelTenantScope,
   OutboundEnvelope,
   RecipientInput,
@@ -75,6 +76,29 @@ export const chatguruAdapter: ChannelAdapter = {
 
   isConfigured(): boolean {
     return true;
+  },
+
+  /**
+   * A plataforma não tem rota de "estou de pé" nem de "quem sou eu": qualquer
+   * chamada de teste poderia ser lida como recusa por motivo que não é a chave
+   * (e abriria aviso falso na Central a cada rodada do vigia). O que dá para
+   * afirmar sem mentir é se a credencial está gravada e decifra — sem ela a
+   * conexão não envia nada, e isso é FAILED de verdade. Recusa da plataforma
+   * aparece em cada mensagem (`chatguru_<código>`), onde o operador olha.
+   */
+  async checkHealth(input: ChannelTenantScope & { sessionRef: string }): Promise<ChannelHealth> {
+    try {
+      const creds = await resolverCredenciais(createAdminClient(), {
+        organizationId: input.organizationId,
+        phoneId: input.sessionRef,
+      });
+      return creds
+        ? { reachable: true, status: "WORKING", detail: null }
+        : { reachable: true, status: "FAILED", detail: "sem_credencial_para_a_conexao" };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "erro_desconhecido";
+      return { reachable: false, status: null, detail: detail.slice(0, 200) };
+    }
   },
 
   codes: {

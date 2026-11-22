@@ -83,6 +83,18 @@ describe("adapter do canal dentro da plataforma (PC-047)", () => {
     expect(chamadas).toHaveLength(0);
   });
 
+  it("saúde: credencial gravada = de pé; sem credencial = FAILED (sem chamar a plataforma)", async () => {
+    resolver.mockResolvedValueOnce(creds());
+    expect(await chatguruAdapter.checkHealth!({ organizationId: ORG, sessionRef: "fone_teste" })).toEqual({
+      reachable: true,
+      status: "WORKING",
+      detail: null,
+    });
+    resolver.mockResolvedValueOnce(null);
+    expect((await chatguruAdapter.checkHealth!({ organizationId: ORG, sessionRef: "fone_teste" })).status).toBe("FAILED");
+    expect(chamadas).toHaveLength(0);
+  });
+
   it("grupo não tem endereço neste canal", () => {
     expect(
       chatguruAdapter.resolveRecipient({ isGroup: true, groupChatId: "g", phoneNumber: "+5500900000001", waIdentity: null }),
