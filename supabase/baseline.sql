@@ -9355,14 +9355,24 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
+-- chatguru (migration 9038, canal ChatGuru — PC-047) — colunas do provider em
+-- que a IA atende dentro do ChatGuru do escritório, nullable (a de config tem
+-- default) e antes das constraints que as referenciam.
+alter table public.channel_sessions
+  add column if not exists chatguru_servidor text,
+  add column if not exists chatguru_account_id text,
+  add column if not exists chatguru_phone_id text,
+  add column if not exists chatguru_api_key_encrypted bytea,
+  add column if not exists chatguru_config jsonb not null default '{}'::jsonb;
+
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'chatguru' (9038)
+  -- somados AQUI — UM bloco só por constraint (não duplicar drop+add por migration).
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'chatguru'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9375,7 +9385,8 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    (provider = 'chatguru'   and chatguru_phone_id     is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -14537,7 +14548,10 @@ alter table public.webhook_events_log
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
-    'stripe', 'asaas'
+    'stripe', 'asaas',
+    -- (migration 9038) o canal ChatGuru (PC-047): a entrada por token arquiva o
+    -- corpo cru do "POST PARA URL" antes de conferir o segredo.
+    'chatguru'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -62952,3 +62966,37 @@ comment on column public.calendar_event_types.reminder_meta_template_name is
   'PC-045: nome do modelo APROVADO da Meta para o lembrete fora da janela de 24 h (número oficial). Corpo: {{1}} nome, {{2}} dia, {{3}} hora, {{4}} local. NULL = o degrau fora da janela é pulado, como sempre.';
 comment on column public.calendar_event_types.reminder_meta_template_language is
   'PC-045: idioma do modelo da Meta (ex.: pt_BR). NULL = pt_BR.';
+
+
+-- ---- canal ChatGuru (migration 9038) ----
+-- As colunas e os ramos dos CHECKs de provider e do arquivo de webhook moram nos
+-- blocos únicos dessas constraints, acima (regra "uma constraint, um bloco").
+-- Aqui fica o que é só deste canal: os comentários das colunas e o índice único
+-- do phone_id entre ativos, com a dedup que torna a primeira passada idempotente
+-- num banco que já tenha linhas repetidas (mesmo desenho da 0387).
+comment on column public.channel_sessions.chatguru_phone_id is
+  'phone_id do número no ChatGuru (canal PC-047). É o sessionRef deste canal. Espelhado em lib/channels/session-ref.ts.';
+comment on column public.channel_sessions.chatguru_api_key_encrypted is
+  'API key do ChatGuru, cifrada por fn_encrypt_oauth. Nunca volta à tela depois de gravada.';
+comment on column public.channel_sessions.chatguru_config is
+  'Escolhas do operador para o canal ChatGuru (diálogo de transferência, campo da IA, ações da IA). Schema em lib/channels/atendimento-externo/config.ts.';
+
+with ativos as (
+  select id,
+         row_number() over (
+           partition by chatguru_phone_id
+           order by created_at desc nulls last, id desc
+         ) as posicao
+    from public.channel_sessions
+   where archived_at is null
+     and chatguru_phone_id is not null
+)
+update public.channel_sessions s
+   set chatguru_phone_id = s.chatguru_phone_id || '-conflito-' || s.id::text
+  from ativos a
+ where a.id = s.id
+   and a.posicao > 1;
+
+create unique index if not exists channel_sessions_chatguru_phone_id_ativo_unique
+  on public.channel_sessions (chatguru_phone_id)
+  where archived_at is null and chatguru_phone_id is not null;

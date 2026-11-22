@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
+import { ATENDIMENTO_EXTERNO_LABEL } from "@/lib/channels/atendimento-externo/credenciais";
 import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -40,6 +41,7 @@ export default async function ConnectionsPage() {
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}
+        atendimentoExterno={{ label: ATENDIMENTO_EXTERNO_LABEL }}
       />
     </div>
   );

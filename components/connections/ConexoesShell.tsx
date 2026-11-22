@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { RedesSociaisClient } from "./RedesSociaisClient";
+import { CanalAtendimentoExternoClient } from "./CanalAtendimentoExternoClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
@@ -43,6 +44,7 @@ export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
   graphParceiro = null,
+  atendimentoExterno = null,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -53,6 +55,13 @@ export function ConexoesShell({
    * O rótulo vem do servidor porque a tela não pode nomear provider.
    */
   graphParceiro?: { label: string } | null;
+  /**
+   * A IA atendendo DENTRO da plataforma de atendimento que o escritório já usa
+   * (PC-047). Aba sempre disponível para quem administra; nada muda na
+   * organização até alguém conectar a conta nela. O rótulo vem do servidor
+   * porque a tela não pode nomear provider. `null` = a aba não é montada.
+   */
+  atendimentoExterno?: { label: string } | null;
 }) {
   const t = useT();
   const router = useRouter();
@@ -71,7 +80,9 @@ export function ConexoesShell({
             ? "voz"
             : abaParam === "graph" && graphParceiro
               ? "graph"
-              : "numeros";
+              : abaParam === "externo" && atendimentoExterno
+                ? "externo"
+                : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -108,6 +119,7 @@ export function ConexoesShell({
         <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
+        {atendimentoExterno && <TabsTrigger value="externo">{atendimentoExterno.label}</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">
@@ -122,6 +134,12 @@ export function ConexoesShell({
       <TabsContent value="voz" className="mt-0">
         <CanalVozClient wacallsConfigured={wacallsConfigured} />
       </TabsContent>
+
+      {atendimentoExterno && (
+        <TabsContent value="externo" className="mt-0">
+          <CanalAtendimentoExternoClient />
+        </TabsContent>
+      )}
 
       {graphParceiro && (
         <TabsContent value="graph" className="mt-0">

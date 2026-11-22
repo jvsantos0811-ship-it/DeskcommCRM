@@ -110,6 +110,38 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     costPerMessage: true,
     alteraMensagemEnviada: false,
   },
+  // A IA atende DENTRO do ChatGuru do escritório (PC-047): a conversa mora lá,
+  // a equipe responde lá, e o número (oficial pela Gupshup ou por QR) é do
+  // ChatGuru. O CRM não fala com o WhatsApp — fala com a API do ChatGuru, que
+  // enfileira e entrega.
+  //
+  //  - `freeformOutsideWindow: false`. O número que a IA atende é o OFICIAL da
+  //    conta (é por ele que o escritório anuncia), e fora da janela de 24h a
+  //    Meta recusa texto livre também por trás do ChatGuru. Errar para o lado
+  //    da janela fechada custa um turno que não fala; errar para o outro lado
+  //    custa uma resposta que nunca chega, com o operador achando que saiu.
+  //  - `requiresTemplates: false` + `canManageTemplates: false`. O modelo da
+  //    Meta mora no ChatGuru e sai por um DIÁLOGO dele (`dialog_execute`), não
+  //    por uma API de modelos que o CRM alcance. Fora da janela, quem fala é a
+  //    equipe ou uma ação liberada na tela — não um `send_template` do CRM.
+  //  - `banRisk: false`. Quem cuida do número é o ChatGuru; o warm-up e o cap
+  //    diário daqui contariam a partir da conexão NO CRM e travariam a IA nos
+  //    primeiros dias de uma conta que já fala há anos. A cortesia (janela de
+  //    resposta, domingo, fuso) continua armada, como em todo canal.
+  //  - `minIntervalMs: 1200`. A API enfileira; espaçar as bolhas evita que duas
+  //    partes da mesma resposta cheguem fora de ordem.
+  //  - `groups: "none"`. Mensagem de grupo não vira lead (PC-047, "não fazer").
+  chatguru: {
+    freeformOutsideWindow: false,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 1200,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: true,
+    alteraMensagemEnviada: false,
+  },
 };
 
 /**
@@ -134,6 +166,8 @@ export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** A IA atendendo dentro de outra plataforma de atendimento (ChatGuru, PC-047). */
+export const CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO: ChannelProvider = "chatguru";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -158,6 +192,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "chatguru",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
