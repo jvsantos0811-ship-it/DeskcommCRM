@@ -201,31 +201,48 @@ async function avisoDoServico(
   };
   if (!ehProvedorEletronico(conta.provedor)) return fail("not_found", "Not found.", 404, { requestId });
   const provedor = conta.provedor;
-  // O corpo BRUTO: o HMAC do serviço é sobre os bytes que chegaram, e
-  // reserializar o JSON mudaria os bytes. Teto de 256 KB (aviso é pequeno).
-  const corpoBruto = await req.text().catch(() => "");
-  if (corpoBruto.length > 256 * 1024) {
+  const noPainel = cadastroDoAviso(provedor) === "no_painel";
+  // Porta do aviso cadastrado pela API: o segredo NOSSO no cabeçalho, conferido
+  // antes de ler o corpo (como sempre foi).
+  if (!noPainel && !segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "")) {
+    return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
+  }
+  // Aviso é pequeno: teto de 256 KB, pelo cabeçalho antes de ler e pelos bytes depois.
+  const TETO = 256 * 1024;
+  if (Number(req.headers.get("content-length") ?? 0) > TETO) {
     return recusar("payload_invalido", "Aviso do serviço de assinatura grande demais: ignorado.", 413);
   }
-  const origemConfere =
-    cadastroDoAviso(provedor) === "no_painel"
-      ? avisoDoPainelConfere(provedor, {
-          corpoBruto,
-          cabecalhos: req.headers,
-          segredos: [abrirSegredoDoAviso(conta), abrirChave(conta)],
-        })
-      : segredoConfere(req.headers.get(HEADER_SEGREDO_DA_ASSINATURA), conta.aviso_segredo_sha256 ?? "");
-  if (!origemConfere) {
+  // Os BYTES que chegaram: o HMAC do serviço é sobre eles, e decodificar ou
+  // reserializar o JSON poderia mudá-los.
+  const corpoBruto = Buffer.from(await req.arrayBuffer().catch(() => new ArrayBuffer(0)));
+  if (corpoBruto.length > TETO) {
+    return recusar("payload_invalido", "Aviso do serviço de assinatura grande demais: ignorado.", 413);
+  }
+  if (
+    noPainel &&
+    !avisoDoPainelConfere(provedor, {
+      corpoBruto,
+      cabecalhos: req.headers,
+      segredos: [abrirSegredoDoAviso(conta), abrirChave(conta)],
+    })
+  ) {
     return recusar("segredo_invalido", "Aviso do serviço de assinatura com segredo inválido: ignorado.", 401);
   }
   let bruto: unknown = null;
   try {
-    bruto = corpoBruto ? (JSON.parse(corpoBruto) as unknown) : null;
+    bruto = corpoBruto.length > 0 ? (JSON.parse(corpoBruto.toString("utf8")) as unknown) : null;
   } catch {
     bruto = null;
   }
   const aviso = lerAvisoDoServico(provedor, bruto);
   if (!aviso) {
+    // Evento autêntico do serviço que não aponta documento (ex.: um evento de
+    // membro da conta): não é para nós, e responder erro só faria o serviço
+    // reenviar. A origem já foi conferida acima.
+    const tipo = (bruto as { event?: { type?: unknown } } | null)?.event?.type;
+    if (noPainel && typeof tipo === "string") {
+      return ok({ aplicado: false, motivo: "evento_sem_documento", evento: tipo.slice(0, 60) }, { requestId });
+    }
     return recusar("payload_invalido", "Aviso do serviço de assinatura com formato inválido: ignorado.", 422);
   }
   try {
@@ -236,6 +253,11 @@ async function avisoDoServico(
     });
     return ok({ evento: aviso.evento, ...desfecho }, { requestId });
   } catch (err) {
+    if (err instanceof ErroDoServico && err.codigo === "nao_encontrado") {
+      // O serviço não acha mais o documento (apagado lá): tentar de novo não
+      // muda nada. O contrato fica como está; a equipe decide pelo card.
+      return ok({ evento: aviso.evento, aplicado: false, motivo: "documento_nao_encontrado" }, { requestId });
+    }
     if (err instanceof ErroDoServico) {
       // O serviço fora (ou a chave trocada): 503 faz o serviço tentar de novo.
       return fail("servico_indisponivel", "Serviço de assinatura indisponível agora.", 503, { requestId });

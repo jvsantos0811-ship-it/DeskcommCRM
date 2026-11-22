@@ -138,6 +138,15 @@ describe("Autentique — criar o pedido", () => {
     expect(segunda.operations.variables.document).not.toHaveProperty("deadline_at");
   });
 
+  it("aviso do prazo COM o documento criado: segue com ele, sem segunda tentativa (nada duplicado)", async () => {
+    const s = servidor([
+      { status: 200, corpo: { errors: [{ message: "Campo prazo ignorado no seu plano" }], data: CRIADO.data } },
+    ]);
+    const r = await criarServicoAutentique({ chave: "token-12345678", ambiente: "teste" }, s.busca).criarPedido(PEDIDO);
+    expect(r.documentoId).toBe(CRIADO.data.createDocument.id);
+    expect(s.chamadas).toHaveLength(1);
+  });
+
   it("outro dado recusado NÃO é tentado de novo", async () => {
     const s = servidor([{ status: 200, corpo: { errors: [{ message: "Insufficient credits" }], data: null } }]);
     await expect(
@@ -146,13 +155,23 @@ describe("Autentique — criar o pedido", () => {
     expect(s.chamadas).toHaveLength(1);
   });
 
-  it("sem documento ou sem link de volta, recusa", async () => {
+  it("sem link de volta, recusa e apaga o documento órfão (melhor esforço)", async () => {
     const s = servidor([
       { status: 200, corpo: { data: { createDocument: { id: "a1b2c3d4e5f6", signatures: [] } } } },
+      { status: 200, corpo: { data: { deleteDocument: true } } },
     ]);
     await expect(
       criarServicoAutentique({ chave: "token-12345678", ambiente: "teste" }, s.busca).criarPedido(PEDIDO),
     ).rejects.toMatchObject({ codigo: "resposta_inesperada" });
+    expect(JSON.parse(String(s.chamadas[1]!.init?.body)).query).toContain('deleteDocument(id: "a1b2c3d4e5f6")');
+  });
+
+  it("sem documento de volta, recusa", async () => {
+    const s = servidor([{ status: 200, corpo: { data: { createDocument: { signatures: [] } } } }]);
+    await expect(
+      criarServicoAutentique({ chave: "token-12345678", ambiente: "teste" }, s.busca).criarPedido(PEDIDO),
+    ).rejects.toMatchObject({ codigo: "resposta_inesperada" });
+    expect(s.chamadas).toHaveLength(1);
   });
 
   it("erro do GraphQL dentro do HTTP 200 vira o código certo, sem ecoar o corpo", async () => {
@@ -322,6 +341,15 @@ describe("Autentique — a situação, pura", () => {
     ).toBe("assinado");
   });
 
+  it("⭐ `signed` ou `rejected` vazios (sem data) NÃO viram assinado nem recusado", () => {
+    expect(situacaoDaAutentique({ signatures: [sig({ signed: {}, rejected: {} })] }, agora).estado).toBe("enviado");
+    expect(
+      situacaoDaAutentique({ signatures: [sig({ signed: { created_at: null }, rejected: { created_at: "" } })] }, agora).estado,
+    ).toBe("enviado");
+    // "Visto" segue tolerante: só mostra que abriu o link.
+    expect(situacaoDaAutentique({ signatures: [sig({ viewed: {} })] }, agora).estado).toBe("visualizado");
+  });
+
   it("a assinatura do dono do documento (sem ação SIGN) não conta", () => {
     const r = situacaoDaAutentique(
       { signatures: [{ public_id: "dono", action: null, signed: { created_at: "2026-11-22 08:00:00" } }, sig({})] },
@@ -337,6 +365,7 @@ describe("Autentique — a situação, pura", () => {
   it("datas: sem fuso é horário de Brasília; ISO passa; lixo é nulo", () => {
     expect(dataDaAutentique("2026-11-22 10:00:00")).toBe("2026-11-22T13:00:00.000Z");
     expect(dataDaAutentique("2026-11-22T10:00:00Z")).toBe("2026-11-22T10:00:00.000Z");
+    expect(dataDaAutentique("2026-11-22 10:00:00.123")).toBe("2026-11-22T13:00:00.123Z");
     expect(dataDaAutentique("ontem")).toBeNull();
     expect(prazoDaAutentique("2026-11-29")).toBe("2026-11-30T02:59:59.999Z");
     expect(prazoDaAutentique("29/11/2026")).toBeNull();
@@ -377,6 +406,7 @@ describe("Autentique — o aviso e a assinatura dele", () => {
     const corpo = '{"event":{"type":"document.finished","data":{"id":"doc-0000-aaaa"}}}';
     const assinatura = createHmac("sha256", "segredo-do-endpoint").update(corpo).digest("hex");
     expect(assinaturaDoAvisoConfere(corpo, assinatura, ["segredo-do-endpoint"])).toBe(true);
+    expect(assinaturaDoAvisoConfere(Buffer.from(corpo, "utf8"), assinatura, ["segredo-do-endpoint"])).toBe(true);
     expect(assinaturaDoAvisoConfere(corpo, assinatura.toUpperCase(), [null, "segredo-do-endpoint"])).toBe(true);
     expect(assinaturaDoAvisoConfere(corpo, `sha256=${assinatura}`, ["outro", "segredo-do-endpoint"])).toBe(true);
     expect(assinaturaDoAvisoConfere(corpo, assinatura, ["outro"])).toBe(false);

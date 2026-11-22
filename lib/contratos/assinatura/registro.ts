@@ -57,7 +57,7 @@ export function lerAvisoDoServico(id: ProvedorEletronicoId, corpo: unknown): Avi
  */
 export function avisoDoPainelConfere(
   id: ProvedorEletronicoId,
-  a: { corpoBruto: string; cabecalhos: Headers; segredos: ReadonlyArray<string | null> },
+  a: { corpoBruto: Buffer; cabecalhos: Headers; segredos: ReadonlyArray<string | null> },
 ): boolean {
   switch (id) {
     case "zapsign":

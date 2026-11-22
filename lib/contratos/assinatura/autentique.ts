@@ -88,12 +88,20 @@ const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() 
 export function dataDaAutentique(v: unknown): string | null {
   const s = texto(v);
   if (!s) return null;
-  const semFuso = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/.exec(s);
+  const semFuso = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?)$/.exec(s);
   const d = semFuso ? new Date(`${semFuso[1]}T${semFuso[2]}-03:00`) : new Date(s);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Abriu o link: qualquer objeto basta (só serve para mostrar "visto"). */
 const aconteceu = (e: EventoDaAutentique | null | undefined): boolean => Boolean(e && typeof e === "object");
+/**
+ * Assinou ou recusou: só com DATA válida. Um `signed: {}` ou
+ * `{ created_at: null }` para quem ainda não assinou marcaria o contrato como
+ * assinado e o negócio como ganho — e a documentação não diz como vem o vazio.
+ */
+const comData = (e: EventoDaAutentique | null | undefined): boolean =>
+  Boolean(e && typeof e === "object" && dataDaAutentique(e.created_at));
 const acaoDe = (s: AssinaturaDaAutentique): string => (texto(s.action?.name) ?? "").toUpperCase();
 
 /**
@@ -112,10 +120,10 @@ function quemAssina(doc: DocumentoDaAutentique): AssinaturaDaAutentique[] {
 /** Lê a situação da resposta da query `document`. Pura. */
 export function situacaoDaAutentique(doc: DocumentoDaAutentique, agora: Date = new Date()): SituacaoNoServico {
   const alvo = quemAssina(doc);
-  const recusa = alvo.find((s) => aconteceu(s.rejected));
-  const todosAssinaram = alvo.length > 0 && alvo.every((s) => aconteceu(s.signed));
+  const recusa = alvo.find((s) => comData(s.rejected));
+  const todosAssinaram = alvo.length > 0 && alvo.every((s) => comData(s.signed));
   const vistas = alvo
-    .filter((s) => aconteceu(s.viewed) || aconteceu(s.signed))
+    .filter((s) => aconteceu(s.viewed) || comData(s.signed))
     .map((s) => dataDaAutentique(s.viewed?.created_at) ?? dataDaAutentique(s.signed?.created_at) ?? agora.toISOString())
     .sort();
   const assinaturas = alvo
@@ -168,7 +176,7 @@ export function lerAvisoDaAutentique(corpo: unknown): AvisoDoServico | null {
  * o gerente colou e, como reserva, o token da API). Pura.
  */
 export function assinaturaDoAvisoConfere(
-  corpoBruto: string,
+  corpoBruto: string | Buffer,
   cabecalho: string | null,
   segredos: ReadonlyArray<string | null>,
 ): boolean {
@@ -178,7 +186,10 @@ export function assinaturaDoAvisoConfere(
   let confere = false;
   for (const segredo of segredos) {
     if (!segredo) continue;
-    const esperada = createHmac("sha256", segredo).update(corpoBruto, "utf8").digest();
+    const hmac = createHmac("sha256", segredo);
+    if (typeof corpoBruto === "string") hmac.update(corpoBruto, "utf8");
+    else hmac.update(corpoBruto);
+    const esperada = hmac.digest();
     // Sem atalho: todo segredo é comparado, para o tempo não dizer qual bateu.
     if (esperada.length === recebidaBytes.length && timingSafeEqual(esperada, recebidaBytes)) confere = true;
   }
@@ -221,7 +232,8 @@ function assinaturaDoSignatario(lista: unknown, nome: string): AssinaturaDaAuten
   const todas = (Array.isArray(lista) ? lista : []).filter(
     (s): s is AssinaturaDaAutentique => Boolean(s) && typeof s === "object",
   );
-  const sign = todas.filter((s) => acaoDe(s) === "SIGN" || acaoDe(s) === "");
+  const comAcao = todas.filter((s) => acaoDe(s) === "SIGN");
+  const sign = comAcao.length > 0 ? comAcao : todas.filter((s) => acaoDe(s) === "");
   const normal = (v: unknown) => (texto(v) ?? "").toLocaleLowerCase("pt-BR");
   return sign.find((s) => normal(s.name) === normal(nome)) ?? (sign.length === 1 ? sign[0]! : null);
 }
@@ -280,7 +292,11 @@ export function criarServicoAutentique(cred: CredencialDoServico, busca: BuscaHt
         .map((e) => (e && typeof e === "object" ? texto((e as { message?: unknown }).message) : null) ?? "")
         .join(" | ");
       const codigo = codigoDoErroDaAutentique(mensagem);
-      if (codigo !== "credencial_invalida" && /deadline/i.test(mensagem)) {
+      if (codigo !== "credencial_invalida" && /deadline|prazo/i.test(mensagem)) {
+        // O documento pode ter nascido mesmo com o aviso do prazo: nesse caso
+        // segue com ele, para a nova tentativa não criar um duplicado.
+        const criado = (j.data as { createDocument?: { id?: unknown } } | null | undefined)?.createDocument;
+        if (criado && texto(criado.id)) return j.data as Record<string, unknown>;
         throw new ErroDoServico("dado_recusado", FRASE_DO_PRAZO_RECUSADO, resposta.status);
       }
       throw new ErroDoServico(codigo, FRASE_DO_ERRO[codigo], resposta.status);
@@ -363,6 +379,9 @@ export function criarServicoAutentique(cred: CredencialDoServico, busca: BuscaHt
         link = texto((r.createLinkToSignature as { short_link?: unknown } | null)?.short_link);
       }
       if (!link || !link.startsWith("https://")) {
+        // Sem link o cliente não assina: o documento órfão sai da Autentique
+        // (melhor esforço) para não ficar contando no plano nem confundindo a equipe.
+        await chamar(consulta(`mutation { deleteDocument(id: "${documentoId}") }`)).catch(() => null);
         throw new ErroDoServico("resposta_inesperada", "A Autentique criou o pedido sem devolver o link de assinatura.");
       }
       return { documentoId, linkAssinatura: link };

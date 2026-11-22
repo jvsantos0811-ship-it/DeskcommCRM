@@ -120,8 +120,9 @@ export async function salvarContaDeAssinatura(
   let avisoId: string | null = mesmoServico ? (atual?.aviso_id_no_servico ?? null) : null;
   let avisoEm: string | null = mesmoServico ? (atual?.aviso_registrado_em ?? null) : null;
   // O caminho do aviso deste serviço: o mesmo entre salvamentos (o serviço já o
-  // conhece), novo só na primeira vez.
-  const token = atual?.aviso_path_token ?? randomBytes(24).toString("base64url");
+  // conhece); novo na primeira vez e na troca de serviço — o endpoint do serviço
+  // anterior, se ficou cadastrado lá, não acha mais porta aqui.
+  const token = (mesmoServico ? atual?.aviso_path_token : null) ?? randomBytes(24).toString("base64url");
   let segredoSha256: string | null = mesmoServico ? (atual?.aviso_segredo_sha256 ?? null) : null;
   // O segredo do aviso cadastrado no painel (PC-046): o novo colado, ou o
   // guardado se o serviço é o mesmo. Trocar de serviço o descarta.
