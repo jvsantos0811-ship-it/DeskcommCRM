@@ -1104,14 +1104,21 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     // a consultar de novo, em vez de depender de a IA lembrar o dono. Sem isso,
     // num tipo com rodízio a nova consulta mostraria a agenda de quem é a vez e
     // a remarcação seria recusada de novo, em laço.
+    // A leitura é um extra: se ela falhar, a recusa original volta como está —
+    // recusa é resposta, nunca exceção que derruba o turno.
     if ((r as { motivo?: string }).motivo === "agenda_horario_indisponivel") {
-      const { data: atual } = await ctx.supabase
-        .from("calendar_appointments")
-        .select("owner_user_id")
-        .eq("organization_id", ctx.organizationId)
-        .eq("id", input.appointment_id)
-        .maybeSingle();
-      const dono = (atual as { owner_user_id?: string | null } | null)?.owner_user_id ?? null;
+      let dono: string | null = null;
+      try {
+        const { data: atual } = await ctx.supabase
+          .from("calendar_appointments")
+          .select("owner_user_id")
+          .eq("organization_id", ctx.organizationId)
+          .eq("id", input.appointment_id)
+          .maybeSingle();
+        dono = (atual as { owner_user_id?: string | null } | null)?.owner_user_id ?? null;
+      } catch {
+        dono = null;
+      }
       if (dono) {
         return {
           ...(r as Record<string, unknown>),
