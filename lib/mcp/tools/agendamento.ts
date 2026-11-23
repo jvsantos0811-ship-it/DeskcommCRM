@@ -182,8 +182,9 @@ const horariosLivresShape = {
     .uuid()
     .optional()
     .describe(
-      "de quem é a agenda. Para REMARCAR, passe SEMPRE o owner_user_id do compromisso que vai mudar " +
-        "(ele volta na marcação e em `crm_list_appointments`): o horário novo tem de ser da mesma pessoa. " +
+      "de quem é a agenda. Para REMARCAR, passe SEMPRE o dono do compromisso que vai mudar: o " +
+        "`owner_user_id` que voltou em `compromisso` na marcação, ou o `atendente_id` de " +
+        "`crm_list_appointments`. O horário novo tem de ser da mesma pessoa. " +
         "Ausente = o responsável do tipo, ou a pessoa da vez quando o tipo tem rodízio.",
     ),
   limite: z
@@ -1078,15 +1079,16 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     "continua um só e o lembrete é refeito sozinho. Se você cancelar e marcar, o cliente recebe " +
     "dois avisos contraditórios e a linha do tempo dele passa a contar que ele desistiu e voltou — " +
     "o que não aconteceu. " +
-    "Confirme o horário novo com `crm_find_free_slots` antes, passando o `owner_user_id` do compromisso " +
+    "Confirme o horário novo com `crm_find_free_slots` antes, passando em `owner_user_id` o dono do " +
+    "compromisso (o `owner_user_id` da marcação ou o `atendente_id` de `crm_list_appointments`) " +
     "(o horário novo é da MESMA pessoa; sem ele, num tipo com rodízio a consulta mostra a agenda de " +
     "outra pessoa e a remarcação é recusada): horário indisponível é recusado.",
   inputSchema: remarcarShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    semDerrubarOTurno("remarcado", async () => {
+  handler: async (input, ctx) => {
+    const r = await semDerrubarOTurno("remarcado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
@@ -1097,7 +1099,31 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
         },
       );
       return { remarcado: true, compromisso: compromissoComHorarioLocal(r) };
-    }),
+    });
+    // PC-052: horário recusado na remarcação — o servidor diz DE QUEM é a agenda
+    // a consultar de novo, em vez de depender de a IA lembrar o dono. Sem isso,
+    // num tipo com rodízio a nova consulta mostraria a agenda de quem é a vez e
+    // a remarcação seria recusada de novo, em laço.
+    if ((r as { motivo?: string }).motivo === "agenda_horario_indisponivel") {
+      const { data: atual } = await ctx.supabase
+        .from("calendar_appointments")
+        .select("owner_user_id")
+        .eq("organization_id", ctx.organizationId)
+        .eq("id", input.appointment_id)
+        .maybeSingle();
+      const dono = (atual as { owner_user_id?: string | null } | null)?.owner_user_id ?? null;
+      if (dono) {
+        return {
+          ...(r as Record<string, unknown>),
+          owner_user_id: dono,
+          mensagem:
+            "esse horário não está livre na agenda de quem tem este compromisso. Chame `crm_find_free_slots` " +
+            `com owner_user_id "${dono}" e ofereça um dos horários que voltarem.`,
+        };
+      }
+    }
+    return r;
+  },
 };
 
 const cancelarShape = {

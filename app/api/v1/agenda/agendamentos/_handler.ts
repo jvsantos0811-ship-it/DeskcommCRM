@@ -493,7 +493,9 @@ async function executarCriacaoDeAgendamento(
       created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
       source: ctx.actor.type === "user" ? "ui" : "mcp",
     })
-    .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url")
+    // `owner_user_id` volta para a IA (PC-052): é com ele que uma remarcação
+    // consulta a agenda da MESMA pessoa.
+    .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url, owner_user_id")
     .single();
   if (erroInsert) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);

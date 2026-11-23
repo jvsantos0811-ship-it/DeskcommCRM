@@ -7,10 +7,9 @@ import { listaDoRodizio, ordemDaVez, ordemDoRodizio } from "./rodizio";
 // O rodízio lê a equipe pelo client ADMIN quando há service role (RLS do
 // atendente). Aqui o banco é o dublê: desliga o admin para a leitura cair nele.
 vi.mock("@/lib/audit", async (original) => ({
-  ...(await original<typeof import("@/lib/audit")>()),
+  ...(await original<Record<string, unknown>>()),
   isServiceRoleConfigured: () => false,
 }));
-
 
 describe("rodízio de responsáveis (PC-052)", () => {
   const maria = "11111111-1111-4111-8111-111111111111";
