@@ -74,6 +74,7 @@ import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-co
 import { diaLocalISO, instanteDe } from "./fuso";
 import { horariosLivres, type ExcecaoDeData, type Slot } from "./horarios-livres";
 import { lerJornadaDoBanco } from "./jornada";
+import { listaDoRodizio, ordemDoRodizio } from "./rodizio";
 import {
   agendaExternaNuncaLida,
   ocupadosDoDono,
@@ -128,6 +129,13 @@ export interface ParametrosDaConsulta {
 export type ResultadoDaConsulta =
   | {
       ok: true;
+      /**
+       * De QUEM são estes horários. Com rodízio (PC-052) não é quem chamou nem
+       * o padrão do tipo: quem marca a partir desta lista usa este dono.
+       * Opcional no tipo só para quem monta o resultado à mão (testes); a
+       * consulta real sempre preenche.
+       */
+      donoId?: string;
       slots: Slot[];
       fusoDaRegra: string;
       /** DECISÃO 1.1: "não publiquei" e "não tenho vaga" não podem chegar como a mesma lista vazia. */
@@ -188,7 +196,7 @@ export async function horariosLivresDaOrg(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id",
+      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, rotation_owner_user_ids",
     )
     .eq("organization_id", organizationId)
     .eq(params.eventTypeSlug ? "slug" : "id", params.eventTypeSlug ?? params.eventTypeId ?? "")
@@ -223,6 +231,25 @@ export async function horariosLivresDaOrg(
     };
   }
 
+  // PC-052 — RODÍZIO. Sem responsável escolhido por quem chamou e com lista de
+  // rodízio no tipo, a vez decide; quem não tiver horário na janela cede a vez à
+  // próxima da lista (`lib/agenda/rodizio.ts`). A remarcação nunca passa por
+  // aqui sem dono: ela chama com o dono do compromisso que sai.
+  if (!params.ownerUserId) {
+    const ordem = await ordemDoRodizio(supabase, organizationId, tipo.id, tipo.rotation_owner_user_ids);
+    if (ordem.length > 0) {
+      let daVez: ResultadoDaConsulta | null = null;
+      for (const dono of ordem) {
+        const r = await horariosDoDono(supabase, organizationId, params, tipo, dono);
+        if (r.ok && r.slots.length > 0) return r;
+        daVez ??= r;
+      }
+      // Ninguém da lista tem horário: devolve a resposta da DA VEZ (vazia ou a
+      // recusa nomeada dela), que é a que explica ao operador o que falta.
+      return daVez as ResultadoDaConsulta;
+    }
+  }
+
   const donoId = params.ownerUserId ?? tipo.default_owner_user_id;
   if (!donoId) {
     // Sem dono não há jornada, e sem jornada não há horário. Lista vazia aqui
@@ -235,6 +262,30 @@ export async function horariosLivresDaOrg(
       motivoParaCliente: `Ainda não há um responsável definido para "${tipo.name}". ${NAO_OFERECA}`,
     };
   }
+
+  return horariosDoDono(supabase, organizationId, params, tipo, donoId);
+}
+
+/** As colunas do tipo que a consulta usa — as do `select` de `horariosLivresDaOrg`. */
+interface TipoDaConsulta {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  buffer_before_minutes: number;
+  buffer_after_minutes: number;
+  minimum_notice_minutes: number;
+  slot_interval_minutes: number | null;
+  booking_window_days: number;
+}
+
+/** Os horários livres de UM responsável, já decidido (por quem chamou, pelo padrão do tipo ou pelo rodízio). */
+async function horariosDoDono(
+  supabase: SupabaseClient,
+  organizationId: string,
+  params: ParametrosDaConsulta,
+  tipo: TipoDaConsulta,
+  donoId: string,
+): Promise<ResultadoDaConsulta> {
 
   const { data: disponibilidade, error: erroDisp } = await supabase
     .from("attendant_availability")
@@ -381,6 +432,7 @@ export async function horariosLivresDaOrg(
   }
   return {
     ok: true,
+    donoId,
     googleCoberturaParcial,
     slots,
     fusoDaRegra: leitura.jornada.timezone,
@@ -1067,6 +1119,8 @@ export interface TipoDeAtendimento {
   ativo: boolean;
   /** Sem dono não há jornada, e sem jornada não há horário (`sem_responsavel`). */
   donoPadraoId: string | null;
+  /** PC-052: rodízio de responsáveis, na ordem da vez. Vazio/ausente = sem rodízio. */
+  rodizioIds?: string[];
   /**
    * Os quatro números da grade. Eles NÃO vão ao modelo — `horariosLivresDaOrg`
    * já os aplicou antes de devolver os horários, e repassá-los convidaria a IA a
@@ -1128,7 +1182,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1160,6 +1214,7 @@ export async function listaTiposDeAtendimento(
       precisaConfirmacao: Boolean(t.requires_confirmation),
       ativo: Boolean(t.is_active),
       donoPadraoId: t.default_owner_user_id === null ? null : String(t.default_owner_user_id),
+      rodizioIds: listaDoRodizio(t.rotation_owner_user_ids),
       bufferAntesMin: Number(t.buffer_before_minutes),
       bufferDepoisMin: Number(t.buffer_after_minutes),
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),

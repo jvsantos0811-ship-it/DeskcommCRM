@@ -29,7 +29,12 @@ const ID_DE_DIALOGO = /^[A-Za-z0-9_-]{4,64}$/;
 /** Nome de campo personalizado como a plataforma aceita em `field__<nome>`. */
 const NOME_DE_CAMPO = /^[A-Za-z0-9_]{1,40}$/;
 
-export const MAXIMO_DE_ACOES = 5;
+/**
+ * Quantas ações do ChatGuru a IA pode executar. Era 5 (PC-047); o PC-052 subiu
+ * para 15 porque cada ETIQUETA da plataforma é um diálogo, e um SDR etiqueta
+ * origem, assunto e desfecho — com 5 não cabiam nem as origens.
+ */
+export const MAXIMO_DE_ACOES = 15;
 
 const acaoSchema = z.object({
   nome: z.string().trim().min(2).max(60),

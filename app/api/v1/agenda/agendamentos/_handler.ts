@@ -31,6 +31,7 @@ import {
 } from "@/lib/agenda/aviso-do-compromisso";
 import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
 import { colide } from "@/lib/agenda/horarios-livres";
+import { listaDoRodizio } from "@/lib/agenda/rodizio";
 import {
   atividadeDaTransicao,
   autorParaTimeline,
@@ -299,6 +300,36 @@ export async function marcarAgendamentoHandler(
   return desfecho.resposta;
 }
 
+/**
+ * PC-052 — o dono pelo RODÍZIO do tipo, quando quem marca não escolheu ninguém.
+ *
+ * A mesma régua da consulta (`horariosLivresDaOrg` sem dono): a da vez primeiro,
+ * e quem não tem ESTE horário livre cede à próxima da lista. Sem rodízio no tipo
+ * (ou sem ninguém livre no horário) devolve `null`, e quem chama segue para o
+ * responsável padrão — que `exigeHorarioLivre` confere logo depois, como sempre.
+ */
+async function donoPeloRodizio(
+  supabase: SB,
+  ctx: HandlerCtx,
+  args: { tipoId: string; lista: unknown; inicio: Date; fim: Date },
+): Promise<string | null> {
+  const lista = listaDoRodizio(args.lista);
+  if (lista.length === 0) return null;
+  const consulta = await horariosLivresDaOrg(supabase, ctx.organization_id, {
+    eventTypeId: args.tipoId,
+    de: args.inicio,
+    ate: args.fim,
+    agora: new Date(),
+  });
+  if (consulta.ok && consulta.donoId && consulta.slots.some((s) => s.inicio.getTime() === args.inicio.getTime())) {
+    return consulta.donoId;
+  }
+  // Ninguém da lista está livre NESTE horário: segue com a primeira da lista,
+  // para `exigeHorarioLivre` recusar pelo motivo certo ("horário indisponível")
+  // em vez de "sem responsável", que mandaria o operador consertar o tipo.
+  return lista[0] ?? null;
+}
+
 async function executarCriacaoDeAgendamento(
   supabase: SB,
   ctx: HandlerCtx,
@@ -309,7 +340,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details",
+      "id, name, is_active, duration_minutes, default_owner_user_id, rotation_owner_user_ids, requires_confirmation, location_kind, location_details",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -322,7 +353,15 @@ async function executarCriacaoDeAgendamento(
     throw new ApiError(422, "agenda_tipo_desativado", undefined, ctx.requestId, `"${tipo.name}" está desativado.`);
   }
 
-  const donoId = input.owner_user_id ?? tipo.default_owner_user_id;
+  const donoId =
+    input.owner_user_id ??
+    (await donoPeloRodizio(supabase, ctx, {
+      tipoId: tipo.id,
+      lista: (tipo as { rotation_owner_user_ids?: unknown }).rotation_owner_user_ids,
+      inicio,
+      fim: new Date(inicio.getTime() + tipo.duration_minutes * 60_000),
+    })) ??
+    tipo.default_owner_user_id;
   if (!donoId) {
     throw new ApiError(
       422,

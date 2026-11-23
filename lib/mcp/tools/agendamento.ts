@@ -249,6 +249,10 @@ function payloadDeHorarios(
     // evitar.
     total_de_horarios: slotsDoPeriodo.length,
     ha_mais: slotsDoPeriodo.length > escolhidos.length,
+    // PC-052: de QUEM são estes horários. Com rodízio no tipo não é o
+    // responsável padrão: marcar com este `owner_user_id` garante que o horário
+    // escolhido fica com a mesma pessoa cuja agenda foi oferecida.
+    ...(consulta.donoId ? { owner_user_id: consulta.donoId } : {}),
     fuso_da_regra: consulta.fusoDaRegra,
     /** false = o atendente NÃO publicou jornada. Diferente de "sem vaga" (DECISÃO 1.1). */
     publicou_horarios: consulta.publicouHorarios,
@@ -973,7 +977,11 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       // agenda confirmou como livre.
       startsAt: achado.inicio.toISOString(),
       contactId: input.contact_id,
-      ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
+      // PC-052: sem dono pedido, marca com quem a CONSULTA achou livre — com
+      // rodízio no tipo pode não ser o responsável padrão.
+      ...((input.owner_user_id ?? consulta.donoId) !== undefined
+        ? { ownerUserId: input.owner_user_id ?? consulta.donoId }
+        : {}),
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.guest_email !== undefined ? { guestEmail: input.guest_email } : {}),
