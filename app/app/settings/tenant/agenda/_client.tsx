@@ -40,6 +40,8 @@ export interface TipoRow {
   location_kind: string;
   location_details: string | null;
   default_owner_user_id: string | null;
+  /** PC-052 (9039): rodízio de responsáveis, na ordem da vez. */
+  rotation_owner_user_ids?: string[];
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
@@ -807,6 +809,12 @@ export function TiposDeAgendamentoClient({
                         // voltar — que é o laço de retorno correto.
                         default_owner_user_id:
                           String(dados.get("default_owner_user_id") ?? "") || null,
+                        // PC-052: caixa desmarcada some do FormData, então a lista
+                        // vazia é a escolha "sem rodízio" e vai como [] (o
+                        // servidor grava nulo), nunca omitida.
+                        rotation_owner_user_ids: dados
+                          .getAll("rotation_owner_user_ids")
+                          .map((v) => String(v)),
                         // Caixa desmarcada não aparece no `FormData` — daí a
                         // comparação, e não um `Boolean(...)` do valor ausente.
                         // Vazio é uma ESCOLHA (voltar a digitar na hora), e
@@ -896,6 +904,28 @@ export function TiposDeAgendamentoClient({
                       ))}
                     </select>
                   </label>
+                  <fieldset
+                    className="flex flex-col gap-1 text-xs text-text-muted"
+                    data-testid={`editar-rodizio-${tipo.id}`}
+                  >
+                    <legend>{t("Rodízio entre")}</legend>
+                    {pessoas.map((p) => (
+                      <label key={p.id} className="flex items-center gap-2 text-sm text-text">
+                        <input
+                          type="checkbox"
+                          name="rotation_owner_user_ids"
+                          value={p.id}
+                          defaultChecked={(tipo.rotation_owner_user_ids ?? []).includes(p.id)}
+                        />
+                        {p.nome}
+                      </label>
+                    ))}
+                    <span>
+                      {t(
+                        "Com pessoas marcadas, a vez alterna entre elas a cada marcação sem responsável escolhido (com uma só, ela atende todas); quem não tiver horário passa a vez. Ninguém marcado: vale quem atende.",
+                      )}
+                    </span>
+                  </fieldset>
                   <label className="flex flex-col gap-1 text-xs text-text-muted">
                     {t("Preço padrão")}
                     <input

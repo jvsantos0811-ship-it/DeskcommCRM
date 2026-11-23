@@ -181,6 +181,9 @@ export function AgendaClient({
   // coisas para manter em sincronia. Quando `remarcandoId` está preenchido, a
   // confirmação vira PATCH em vez de POST.
   const [remarcandoId, setRemarcandoId] = React.useState<string | null>(null);
+  // PC-052: de quem é o compromisso que está sendo remarcado. Guardado no clique
+  // porque a lista de compromissos nasce mais abaixo, depois da consulta de horários.
+  const [remarcandoDonoId, setRemarcandoDonoId] = React.useState<string | null>(null);
   // CANCELAR pede motivo, e o motivo é obrigatório na rota. Não é burocracia: é
   // o que a equipe lê ao ver o horário vago.
   const [cancelandoId, setCancelandoId] = React.useState<string | null>(null);
@@ -348,7 +351,15 @@ export function AgendaClient({
   // 422 porque ninguém está em `attendant_availability`).
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
     marcando && tipo
-      ? { event_type_id: tipo.id, de: janelaDeBusca.de, ate: janelaDeBusca.ate }
+      ? {
+          event_type_id: tipo.id,
+          de: janelaDeBusca.de,
+          ate: janelaDeBusca.ate,
+          // PC-052: remarcar é com a MESMA pessoa. Sem o dono, num tipo com
+          // rodízio a grade mostraria a agenda de quem é a vez, e a rota
+          // confere a de quem já tem o compromisso.
+          ...(remarcandoId && remarcandoDonoId ? { owner_user_id: remarcandoDonoId } : {}),
+        }
       : null,
   );
 
@@ -1112,6 +1123,7 @@ export function AgendaClient({
         // DELETE não tocam o Google. Só a IA conseguia remarcar ou cancelar.
         onRemarcar={(id) => {
           setRemarcandoId(id);
+          setRemarcandoDonoId(agendamentos.find((a) => a.id === id)?.responsavelId ?? null);
           setMarcando(true);
         }}
         onCancelar={(id) => {

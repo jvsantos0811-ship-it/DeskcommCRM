@@ -3771,6 +3771,7 @@ export type Database = {
           reminder_meta_template_name: string | null
           reminder_meta_template_language: string | null
           requires_confirmation: boolean
+          rotation_owner_user_ids: string[] | null
           slot_interval_minutes: number | null
           slug: string
           updated_at: string
@@ -3803,6 +3804,7 @@ export type Database = {
           reminder_meta_template_name?: string | null
           reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
+          rotation_owner_user_ids?: string[] | null
           slot_interval_minutes?: number | null
           slug: string
           updated_at?: string
@@ -3835,6 +3837,7 @@ export type Database = {
           reminder_meta_template_name?: string | null
           reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
+          rotation_owner_user_ids?: string[] | null
           slot_interval_minutes?: number | null
           slug?: string
           updated_at?: string

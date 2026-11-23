@@ -79,7 +79,7 @@ interface Escrita {
   filtros: Record<string, unknown>;
 }
 
-function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = []) {
+function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = [], membros: string[] = []) {
   const escritas: Escrita[] = [];
 
   function builder() {
@@ -135,6 +135,24 @@ function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = [])
 
   vi.mocked(createAdminClient).mockReturnValue({
     from: (tabela: string) => {
+      if (tabela === "user_organizations") {
+        // PC-052: a conferência do rodízio. Só devolve quem está em `membros`
+        // E foi pedido no `.in()` — e prova que a leitura filtra a organização.
+        let pedidos: unknown[] = [];
+        let orgFiltrada: unknown = null;
+        const u = {
+          select: () => u,
+          eq(k: string, v: unknown) { if (k === "organization_id") orgFiltrada = v; return u; },
+          is: () => u,
+          in(_k: string, v: unknown[]) { pedidos = v; return u; },
+          then: (resolve: (v: unknown) => unknown) =>
+            Promise.resolve({
+              data: orgFiltrada === ORG ? membros.filter((m) => pedidos.includes(m)).map((user_id) => ({ user_id })) : [],
+              error: null,
+            }).then(resolve),
+        };
+        return u;
+      }
       if (tabela === "channel_sessions") {
         const filtros: Record<string, unknown> = {};
         const c = {
@@ -524,5 +542,58 @@ describe("canal do lembrete na API de tipos", () => {
     const { POST } = await import("./route");
     expect((await POST(req("POST", { name: "Design", category: "procedimento", duration_minutes: 30, location_kind: "in_person", reminder_channel_session_id: CANAL }))).status).toBe(201);
     expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
+  });
+});
+
+describe("rodízio de responsáveis (PC-052)", () => {
+  const MARIA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const JESSICA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const ESTRANHA = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  it("PATCH grava a lista na ordem, sem repetidos", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    makeAdmin(linhas, [], [MARIA, JESSICA]);
+    const { PATCH } = await import("./route");
+    const res = await PATCH(req("PATCH", { id: TIPO_DA_ORG, rotation_owner_user_ids: [MARIA, JESSICA, MARIA] }));
+    expect(res.status).toBe(200);
+    expect((linhas[0] as Record<string, unknown>).rotation_owner_user_ids).toEqual([MARIA, JESSICA]);
+  });
+
+  it("lista vazia grava nulo (sem rodízio)", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    makeAdmin(linhas, [], [MARIA]);
+    const { PATCH } = await import("./route");
+    const res = await PATCH(req("PATCH", { id: TIPO_DA_ORG, rotation_owner_user_ids: [] }));
+    expect(res.status).toBe(200);
+    expect((linhas[0] as Record<string, unknown>).rotation_owner_user_ids).toBeNull();
+  });
+
+  it("recusa quem não é da equipe desta organização, sem escrever", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    const { escritas } = makeAdmin(linhas, [], [MARIA]);
+    const { PATCH } = await import("./route");
+    const res = await PATCH(req("PATCH", { id: TIPO_DA_ORG, rotation_owner_user_ids: [MARIA, ESTRANHA] }));
+    expect(res.status).toBe(422);
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("POST recusa lista com quem não é da equipe", async () => {
+    authOk();
+    const { escritas } = makeAdmin([], [], [MARIA]);
+    const { POST } = await import("./route");
+    const res = await POST(
+      req("POST", {
+        name: "Ligação",
+        category: "outro",
+        duration_minutes: 30,
+        location_kind: "phone",
+        rotation_owner_user_ids: [ESTRANHA],
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(escritas).toHaveLength(0);
   });
 });

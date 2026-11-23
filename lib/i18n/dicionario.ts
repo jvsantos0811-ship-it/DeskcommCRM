@@ -76,6 +76,10 @@ export const DICIONARIO: Traducoes = {
   "Informe um nome interno com até 80 caracteres.": { es: "Indica un nombre interno de hasta 80 caracteres." },
   "Não foi possível consultar o canal do lembrete.": { es: "No se pudo consultar el canal del recordatorio." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
+  "Não foi possível conferir a equipe do rodízio.": { es: "No fue posible verificar el equipo de la rotación." },
+  "O rodízio só aceita pessoas ativas da equipe desta organização.": { es: "La rotación solo acepta personas activas del equipo de esta organización." },
+  "Rodízio entre": { es: "Rotación entre" },
+  "Com pessoas marcadas, a vez alterna entre elas a cada marcação sem responsável escolhido (com uma só, ela atende todas); quem não tiver horário passa a vez. Ninguém marcado: vale quem atende.": { es: "Con personas marcadas, el turno se alterna entre ellas en cada cita sin responsable elegido (con una sola, ella atiende todas); quien no tenga horario cede el turno. Nadie marcado: vale quien atiende." },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",

@@ -62,7 +62,8 @@ interface Estado {
   } | null;
 }
 
-const MAXIMO_DE_ACOES = 5;
+// Espelha `MAXIMO_DE_ACOES` de `lib/channels/atendimento-externo/config.ts` (PC-052).
+const MAXIMO_DE_ACOES = 15;
 
 function ParaColar({ rotulo, valor }: { rotulo: string; valor: string }) {
   const t = useT();

@@ -84,6 +84,13 @@ const camposDoTipo = {
   description: z.string().trim().max(500).nullish(),
   location_details: z.string().trim().max(300).nullish(),
   default_owner_user_id: z.string().uuid().nullish(),
+  /**
+   * PC-052 — RODÍZIO: sem responsável escolhido, a vez passa entre estas
+   * pessoas, na ordem da lista. Lista vazia ou nula = sem rodízio. Cada id tem
+   * de ser membro ativo da organização (conferido abaixo, porque a coluna é
+   * `uuid[]` e não tem FK).
+   */
+  rotation_owner_user_ids: z.array(z.string().uuid()).max(10).nullish(),
   requires_confirmation: z.boolean().optional(),
   buffer_before_minutes: z.number().int().min(0).max(720).optional(),
   buffer_after_minutes: z.number().int().min(0).max(720).optional(),
@@ -260,6 +267,32 @@ function slugDe(nome: string): string {
   );
 }
 
+
+/**
+ * PC-052 — confere a lista do rodízio: todo id é membro ATIVO desta
+ * organização. Devolve a lista sem repetidos (vazia vira `null`, que é "sem
+ * rodízio") ou a recusa. `undefined` = o campo não veio; nada a conferir.
+ */
+async function conferirRodizio(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  ids: string[] | null | undefined,
+): Promise<{ ok: true; valor: string[] | null | undefined } | { ok: false; erro: "leitura" | "fora_da_equipe" }> {
+  if (ids === undefined) return { ok: true, valor: undefined };
+  const unicos = [...new Set(ids ?? [])];
+  if (unicos.length === 0) return { ok: true, valor: null };
+  const { data, error } = await admin
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", organizationId)
+    .is("revoked_at", null)
+    .in("user_id", unicos);
+  if (error) return { ok: false, erro: "leitura" };
+  const membros = new Set((data ?? []).map((m) => (m as { user_id: string }).user_id));
+  if (!unicos.every((id) => membros.has(id))) return { ok: false, erro: "fora_da_equipe" };
+  return { ok: true, valor: unicos };
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = req.headers.get("x-request-id") ?? randomUUID();
   const authz = await resolveAuthDual(req, {
@@ -294,6 +327,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       location_kind: t.localKind,
       location_details: t.localDetalhes,
       default_owner_user_id: t.donoPadraoId,
+      rotation_owner_user_ids: t.rodizioIds ?? [],
       requires_confirmation: t.precisaConfirmacao,
       is_active: t.ativo,
       buffer_before_minutes: t.bufferAntesMin,
@@ -364,9 +398,22 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
   }
+  const rodizio = await conferirRodizio(admin, authz.organizationId, lido.data.rotation_owner_user_ids);
+  if (!rodizio.ok) {
+    return rodizio.erro === "leitura"
+      ? fail("internal_error", t("Não foi possível conferir a equipe do rodízio."), 500, { requestId })
+      : fail("validation_failed", t("O rodízio só aceita pessoas ativas da equipe desta organização."), 422, {
+          requestId,
+        });
+  }
   const { data, error } = await admin
     .from("calendar_event_types")
-    .insert({ ...lido.data, organization_id: authz.organizationId, slug: slugDe(lido.data.name) })
+    .insert({
+      ...lido.data,
+      ...(rodizio.valor !== undefined ? { rotation_owner_user_ids: rodizio.valor } : {}),
+      organization_id: authz.organizationId,
+      slug: slugDe(lido.data.name),
+    })
     .select("id, slug")
     .single();
 
@@ -450,6 +497,15 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       );
     }
   }
+  const rodizio = await conferirRodizio(admin, authz.organizationId, lido.data.rotation_owner_user_ids);
+  if (!rodizio.ok) {
+    return rodizio.erro === "leitura"
+      ? fail("internal_error", t("Não foi possível conferir a equipe do rodízio."), 500, { requestId })
+      : fail("validation_failed", t("O rodízio só aceita pessoas ativas da equipe desta organização."), 422, {
+          requestId,
+        });
+  }
+  if (rodizio.valor !== undefined) campos.rotation_owner_user_ids = rodizio.valor;
   const { data, error } = await admin
     .from("calendar_event_types")
     .update(campos)

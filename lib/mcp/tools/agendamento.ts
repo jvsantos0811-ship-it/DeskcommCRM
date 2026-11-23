@@ -177,7 +177,16 @@ const horariosLivresShape = {
       "dia civil pedido pelo cliente, em YYYY-MM-DD. Use para uma data específica; o servidor aplica o fuso da agenda. " +
         "Sozinho, recorta a resposta nesse dia; junto com 'dias_a_frente', é o PRIMEIRO dia do período.",
     ),
-  owner_user_id: z.string().uuid().optional(),
+  owner_user_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "de quem é a agenda. Para REMARCAR, passe SEMPRE o dono do compromisso que vai mudar: o " +
+        "`owner_user_id` que voltou em `compromisso` na marcação, ou o `atendente_id` de " +
+        "`crm_list_appointments`. O horário novo tem de ser da mesma pessoa. " +
+        "Ausente = o responsável do tipo, ou a pessoa da vez quando o tipo tem rodízio.",
+    ),
   limite: z
     .number()
     .int()
@@ -249,6 +258,10 @@ function payloadDeHorarios(
     // evitar.
     total_de_horarios: slotsDoPeriodo.length,
     ha_mais: slotsDoPeriodo.length > escolhidos.length,
+    // PC-052: de QUEM são estes horários. Com rodízio no tipo não é o
+    // responsável padrão: marcar com este `owner_user_id` garante que o horário
+    // escolhido fica com a mesma pessoa cuja agenda foi oferecida.
+    ...(consulta.donoId ? { owner_user_id: consulta.donoId } : {}),
     fuso_da_regra: consulta.fusoDaRegra,
     /** false = o atendente NÃO publicou jornada. Diferente de "sem vaga" (DECISÃO 1.1). */
     publicou_horarios: consulta.publicouHorarios,
@@ -973,7 +986,11 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       // agenda confirmou como livre.
       startsAt: achado.inicio.toISOString(),
       contactId: input.contact_id,
-      ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
+      // PC-052: sem dono pedido, marca com quem a CONSULTA achou livre — com
+      // rodízio no tipo pode não ser o responsável padrão.
+      ...((input.owner_user_id ?? consulta.donoId) !== undefined
+        ? { ownerUserId: input.owner_user_id ?? consulta.donoId }
+        : {}),
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
       ...(input.guest_email !== undefined ? { guestEmail: input.guest_email } : {}),
@@ -1062,13 +1079,16 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     "continua um só e o lembrete é refeito sozinho. Se você cancelar e marcar, o cliente recebe " +
     "dois avisos contraditórios e a linha do tempo dele passa a contar que ele desistiu e voltou — " +
     "o que não aconteceu. " +
-    "Confirme o horário novo com `crm_find_free_slots` antes: horário indisponível é recusado.",
+    "Confirme o horário novo com `crm_find_free_slots` antes, passando em `owner_user_id` o dono do " +
+    "compromisso (o `owner_user_id` da marcação ou o `atendente_id` de `crm_list_appointments`) " +
+    "(o horário novo é da MESMA pessoa; sem ele, num tipo com rodízio a consulta mostra a agenda de " +
+    "outra pessoa e a remarcação é recusada): horário indisponível é recusado.",
   inputSchema: remarcarShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    semDerrubarOTurno("remarcado", async () => {
+  handler: async (input, ctx) => {
+    const r = await semDerrubarOTurno("remarcado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
@@ -1079,7 +1099,38 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
         },
       );
       return { remarcado: true, compromisso: compromissoComHorarioLocal(r) };
-    }),
+    });
+    // PC-052: horário recusado na remarcação — o servidor diz DE QUEM é a agenda
+    // a consultar de novo, em vez de depender de a IA lembrar o dono. Sem isso,
+    // num tipo com rodízio a nova consulta mostraria a agenda de quem é a vez e
+    // a remarcação seria recusada de novo, em laço.
+    // A leitura é um extra: se ela falhar, a recusa original volta como está —
+    // recusa é resposta, nunca exceção que derruba o turno.
+    if ((r as { motivo?: string }).motivo === "agenda_horario_indisponivel") {
+      let dono: string | null = null;
+      try {
+        const { data: atual } = await ctx.supabase
+          .from("calendar_appointments")
+          .select("owner_user_id")
+          .eq("organization_id", ctx.organizationId)
+          .eq("id", input.appointment_id)
+          .maybeSingle();
+        dono = (atual as { owner_user_id?: string | null } | null)?.owner_user_id ?? null;
+      } catch {
+        dono = null;
+      }
+      if (dono) {
+        return {
+          ...(r as Record<string, unknown>),
+          owner_user_id: dono,
+          mensagem:
+            "esse horário não está livre na agenda de quem tem este compromisso. Chame `crm_find_free_slots` " +
+            `com owner_user_id "${dono}" e ofereça um dos horários que voltarem.`,
+        };
+      }
+    }
+    return r;
+  },
 };
 
 const cancelarShape = {

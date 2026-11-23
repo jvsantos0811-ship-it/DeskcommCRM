@@ -36,9 +36,13 @@ describe("configuração do canal (PC-047)", () => {
     expect(campo.success).toBe(false);
   });
 
-  it("no máximo cinco ações", () => {
+  it("no máximo quinze ações (PC-052)", () => {
     const acao = { nome: "Ação", dialogo_id: "dlg_0001", quando_usar: "sempre que for teste" };
-    const r = configDoAtendimentoExternoEntrada.safeParse({ acoes: Array.from({ length: 6 }, () => acao) });
+    const quinze = configDoAtendimentoExternoEntrada.safeParse({
+      acoes: Array.from({ length: 15 }, (_, i) => ({ ...acao, nome: `Ação ${String.fromCharCode(97 + i)}` })),
+    });
+    expect(quinze.success).toBe(true);
+    const r = configDoAtendimentoExternoEntrada.safeParse({ acoes: Array.from({ length: 16 }, () => acao) });
     expect(r.success).toBe(false);
   });
 
