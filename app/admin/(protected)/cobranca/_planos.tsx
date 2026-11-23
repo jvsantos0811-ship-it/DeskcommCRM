@@ -28,6 +28,8 @@ export interface PlanoDaTela {
   padrao_no_cadastro: boolean;
   /** false = só o dono atribui (plano negociado): a empresa não o vê nem o escolhe. */
   oferecido_ao_cliente: boolean;
+  /** PC-051: a empresa neste plano pode comprar crédito de IA quando o teto acaba. */
+  oferece_credito_ia: boolean;
   arquivado_em: string | null;
 }
 
@@ -212,6 +214,7 @@ export function PlanosDaInstalacao({ planos }: { planos: readonly PlanoDaTela[] 
                     {p.padrao_no_cadastro && <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs">{t("Plano do cadastro")}</span>}
                     {p.arquivado_em && <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs">{t("Arquivado")}</span>}
                     {!p.oferecido_ao_cliente && <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs">{t("Só você atribui")}</span>}
+                    {p.oferece_credito_ia && <span className="ml-2 rounded-md bg-muted px-1.5 py-0.5 text-xs">{t("Vende crédito de IA")}</span>}
                   </p>
                   <p className="text-muted-foreground">
                     {brl.format(p.preco_cents / 100)} {p.intervalo === "mes" ? t("por mês") : t("por ano")} · {p.trial_dias} {t("dias de teste")}
@@ -233,6 +236,11 @@ export function PlanosDaInstalacao({ planos }: { planos: readonly PlanoDaTela[] 
                   {!p.arquivado_em && (
                     <Button size="sm" variant="outline" onClick={() => mudar(p.id, { oferecido_ao_cliente: !p.oferecido_ao_cliente })}>
                       {p.oferecido_ao_cliente ? t("Esconder das empresas") : t("Mostrar às empresas")}
+                    </Button>
+                  )}
+                  {!p.arquivado_em && p.teto_ia_usd_cents !== null && (
+                    <Button size="sm" variant="outline" onClick={() => mudar(p.id, { oferece_credito_ia: !p.oferece_credito_ia })}>
+                      {p.oferece_credito_ia ? t("Parar de vender crédito de IA") : t("Vender crédito de IA")}
                     </Button>
                   )}
                   <Button size="sm" variant="outline" onClick={() => mudar(p.id, { arquivado: !p.arquivado_em })}>

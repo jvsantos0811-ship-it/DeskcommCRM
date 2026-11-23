@@ -659,6 +659,20 @@ describe("iniciarAssinatura", () => {
     });
   });
 
+  it("⭐ PC-051 compra de crédito: cobrança avulsa UNDEFINED, referência idempotente pela id da compra", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /payments": rotaDePagamentos([]),
+      "POST /payments": { corpo: cobranca({ id: "pay_credito", invoiceUrl: "https://sandbox.asaas.com/i/pay_credito" }) },
+    });
+    const resultado = await adaptador.iniciarCompraDeCredito({
+      clienteRef: CLIENTE, orgId: ORG, descricao: "Crédito de IA — R$ 100", valorCents: 10000, chaveIdempotencia: "credito-1", urlDeVolta: "https://crm.example.com/volta",
+    });
+    expect(resultado).toEqual({ pagamentoRef: "pay_credito", url: "https://sandbox.asaas.com/i/pay_credito" });
+    expect(chamadas.find((c) => c.rota === "POST /payments")?.corpo).toMatchObject({
+      customer: CLIENTE, billingType: "UNDEFINED", value: 100, description: "Crédito de IA — R$ 100", externalReference: `credito_ia:${ORG}:credito-1`,
+    });
+  });
+
   it.each([
     ["PENDING", "pendente"], ["OVERDUE", "pendente"],
     // Cartão em análise de risco: ainda pode ser aprovado — encerrado esqueceria o pagamento.
@@ -990,7 +1004,7 @@ describe("cancelarNoFim e urlDeGerenciar", () => {
     expect(a.id).toBe("asaas");
     expect(Object.keys(a).sort()).toEqual(
       ["id", "testarChave", "prepararWebhook", "removerWebhooks", "clienteExiste", "verificarWebhook", "garantirCliente",
-        "iniciarAssinatura", "iniciarAjusteProporcional", "lerPagamentoProporcional", "expirarSessao", "lerSituacao", "trocarPlano", "cancelarNoFim", "urlDeGerenciar"].sort(),
+        "iniciarAssinatura", "iniciarAjusteProporcional", "lerPagamentoProporcional", "iniciarCompraDeCredito", "expirarSessao", "lerSituacao", "trocarPlano", "cancelarNoFim", "urlDeGerenciar"].sort(),
     );
   });
 });

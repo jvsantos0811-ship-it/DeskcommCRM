@@ -493,6 +493,29 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
     return { pagamentoRef: sessao.id, url };
   }
 
+  async function iniciarCompraDeCredito(p: Parameters<AdaptadorDeCobranca["iniciarCompraDeCredito"]>[0]) {
+    const orgId = UUID.parse(p.orgId);
+    const sucesso = new URL(p.urlDeVolta);
+    sucesso.searchParams.set("voltou", "1");
+    const sessao = ler(
+      sessaoDeCheckout,
+      await chamar("POST", "/checkout/sessions", {
+        mode: "payment",
+        customer: p.clienteRef,
+        client_reference_id: orgId,
+        line_items: [{ price_data: { currency: "brl", unit_amount: p.valorCents, product_data: { name: p.descricao.slice(0, 250) } }, quantity: 1 }],
+        metadata: { organization_id: orgId, credito_id: p.chaveIdempotencia, tipo: "credito_ia" },
+        success_url: sucesso.toString(),
+        cancel_url: p.urlDeVolta,
+        locale: "pt-BR",
+      },
+      `credito_ia:${orgId}:${p.chaveIdempotencia}`),
+    );
+    const url = linkSeguro(sessao.url);
+    if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
+    return { pagamentoRef: sessao.id, url };
+  }
+
   /**
    * Boleto (e todo método que confirma depois) deixa a sessão `complete` com
    * `payment_status: unpaid` até compensar: isso é PENDENTE, não encerrado —
@@ -701,6 +724,7 @@ export function criarAdaptadorStripe(dep: DependenciasDaStripe): AdaptadorDeCobr
     iniciarAssinatura,
     iniciarAjusteProporcional,
     lerPagamentoProporcional,
+    iniciarCompraDeCredito,
     expirarSessao,
     lerSituacao,
     trocarPlano,

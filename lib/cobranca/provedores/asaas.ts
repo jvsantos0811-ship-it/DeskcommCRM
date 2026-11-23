@@ -535,6 +535,27 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     return { pagamentoRef: pagamento.id, url };
   }
 
+  async function iniciarCompraDeCredito(p: Parameters<AdaptadorDeCobranca["iniciarCompraDeCredito"]>[0]) {
+    const externalReference = `credito_ia:${uuidDaOrg(p.orgId)}:${p.chaveIdempotencia}`;
+    const consulta = new URLSearchParams({ customer: p.clienteRef, externalReference, limit: "10" });
+    const existentes = ler(listaDoAsaas(cobrancaDoAsaas), await chamar("GET", `/payments?${consulta}`)).data;
+    let pagamento = existentes.find((c) => c.status === "PENDING" || c.status === "OVERDUE");
+    if (!pagamento) {
+      pagamento = ler(cobrancaDoAsaas, await chamar("POST", "/payments", {
+        customer: p.clienteRef,
+        // UNDEFINED: o cliente escolhe Pix, boleto ou cartão na fatura.
+        billingType: "UNDEFINED",
+        value: p.valorCents / 100,
+        dueDate: dataCivilEmSaoPaulo(agora()),
+        description: p.descricao.slice(0, 500),
+        externalReference,
+      }));
+    }
+    const url = linkSeguro(pagamento.invoiceUrl);
+    if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
+    return { pagamentoRef: pagamento.id, url };
+  }
+
   async function lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado"> {
     const pagamento = ler(cobrancaDoAsaas, await chamar("GET", `/payments/${encodeURIComponent(pagamentoRef)}`));
     if (PAGO.has(pagamento.status)) return "pago";
@@ -680,6 +701,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     iniciarAssinatura,
     iniciarAjusteProporcional,
     lerPagamentoProporcional,
+    iniciarCompraDeCredito,
     expirarSessao,
     lerSituacao,
     trocarPlano,

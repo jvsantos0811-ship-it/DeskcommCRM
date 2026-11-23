@@ -152,6 +152,13 @@ export interface AdaptadorDeCobranca {
   }): Promise<{ url: string; expiraEm: Date | null; assinaturaRef: string | null; sessaoId: string | null }>;
   iniciarAjusteProporcional(p: { clienteRef: string; orgId: string; plano: PlanoParaProvedor; valorCents: number; chaveIdempotencia: string; urlDeVolta: string }): Promise<{ pagamentoRef: string; url: string }>;
   lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado">;
+  /**
+   * PC-051: cobrança avulsa de um pacote de crédito de IA (Pix, cartão ou boleto
+   * na fatura/checkout do provedor). Idempotente pela `chaveIdempotencia` (a id da
+   * linha em `ia_creditos`): o retry devolve a MESMA cobrança. O pagamento é
+   * relido por `lerPagamentoProporcional` — é a mesma leitura de cobrança avulsa.
+   */
+  iniciarCompraDeCredito(p: { clienteRef: string; orgId: string; descricao: string; valorCents: number; chaveIdempotencia: string; urlDeVolta: string }): Promise<{ pagamentoRef: string; url: string }>;
   lerSituacao(p: { clienteRef: string }): Promise<Situacao>;
   /** Atualiza o preço recorrente sem mudar a data de renovação. Pode recusar com ErroDoProvedor não transitório. */
   trocarPlano(p: { assinaturaRef: string; plano: PlanoParaProvedor }): Promise<void>;

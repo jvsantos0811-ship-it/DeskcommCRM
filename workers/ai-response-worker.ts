@@ -572,14 +572,31 @@ async function vetoPorTetoDoPlano(
     });
     return null;
   }
-  const tetoCents = typeof data === "number" ? data : null;
-  const veredito = decidirTetoDoPlano({
-    tetoUsdCents: tetoCents,
-    gastoUsdCents: leitura.gastoCents,
-    origemDaChave: alvo.origemDaChave,
-    purpose: "agent_turn",
-    chave: leitura.chave,
-  });
+  const tetoDoPlano = typeof data === "number" ? data : null;
+  const decidir = (teto: number | null) =>
+    decidirTetoDoPlano({
+      tetoUsdCents: teto,
+      gastoUsdCents: leitura.gastoCents,
+      origemDaChave: alvo.origemDaChave,
+      purpose: "agent_turn",
+      chave: leitura.chave,
+    });
+  let tetoCents = tetoDoPlano;
+  let veredito = decidir(tetoCents);
+  // PC-051: o crédito de IA comprado soma ao teto do mês — a mesma régua de
+  // `SQL_TETO_DO_PLANO`, só lida quando o plano sozinho já bloquearia.
+  if (veredito.acao === "bloquear" && tetoDoPlano !== null) {
+    const credito = await admin.rpc("fn_credito_de_ia_disponivel", { p_org: alvo.orgId });
+    if (credito.error) {
+      logger.warn("[ai-response] crédito de IA não pôde ser lido — vale só o teto do plano", {
+        organization_id: alvo.orgId,
+        causa: `${credito.error.code ?? "sem_sqlstate"}: ${credito.error.message}`,
+      });
+    } else {
+      tetoCents = tetoDoPlano + Number(credito.data ?? 0);
+      veredito = decidir(tetoCents);
+    }
+  }
   if (veredito.acao === "seguir") return null;
 
   await abrirItemDeOrcamento(admin, alvo.orgId, {

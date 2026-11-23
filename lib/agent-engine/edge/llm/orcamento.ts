@@ -442,10 +442,11 @@ select (select teto from orc)         as teto,
 export const TITULO_TETO_DO_PLANO = 'O uso de IA do plano acabou';
 export const CORPO_TETO_DO_PLANO =
   'O uso de IA incluído no plano acabou neste mês. As conversas foram para a equipe. ' +
-  'Troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde o próximo mês.';
+  'Em Configurações › Plano e cobrança: compre crédito de IA (quando o seu plano oferece) ou troque de plano; ' +
+  'ou cadastre uma chave de IA própria, ou aguarde o próximo mês.';
 /** Vai para `llm_calls.error_message` e para o `last_error` da fila — a instrução numa linha. */
 export const MOTIVO_TETO_DO_PLANO =
-  'uso de IA incluído no plano da empresa esgotado neste mês — chamada recusada antes de sair byte para o provedor; troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';
+  'uso de IA incluído no plano da empresa (e o crédito de IA comprado, se houver) esgotado neste mês — chamada recusada antes de sair byte para o provedor; compre crédito ou troque de plano em Configurações › Plano e cobrança, cadastre uma chave de IA própria ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded ref_kind=plano)';
 
 export type VereditoDoPlano =
   | {
@@ -478,6 +479,9 @@ const RECURSO_TETO_DE_IA: RecursoDoPlano = 'ia_usd_cents';
 
 /**
  * Lê o teto e o gasto numa ida, e fecha o item do plano que perdeu a razão.
+ * O teto devolvido é o do plano MAIS o crédito de IA pago que ainda vale
+ * (PC-051, `fn_credito_de_ia_disponivel`): comprar crédito destrava o gate na
+ * próxima chamada e retrata o aviso aberto.
  *
  * Parâmetros: `$1` organization_id, `$2` o recurso (`'ia_usd_cents'`).
  *
@@ -496,12 +500,24 @@ const RECURSO_TETO_DE_IA: RecursoDoPlano = 'ia_usd_cents';
  */
 export const SQL_TETO_DO_PLANO = `
 with plano as (
-  select public.fn_limite_do_plano($1, $2) as teto
+  select public.fn_limite_do_plano($1, $2) as teto_do_plano
 ),
-leitura as (
-  select teto,
-         case when teto is null then null else public.fn_gasto_de_ia_do_mes($1) end as gasto
+base as (
+  select teto_do_plano,
+         case when teto_do_plano is null then null else public.fn_gasto_de_ia_do_mes($1) end as gasto
     from plano
+),
+-- PC-051: o crédito de IA comprado soma ao teto do mês. Só é calculado quando
+-- o gasto já alcançou o teto do plano — abaixo dele a resposta não muda, e a
+-- função percorre o histórico de créditos e gasto por mês.
+leitura as (
+  select case
+           when teto_do_plano is null then null
+           when gasto < teto_do_plano then teto_do_plano
+           else teto_do_plano + public.fn_credito_de_ia_disponivel($1)
+         end as teto,
+         gasto
+    from base
 ),
 retrata as (
   update agent_inbox_items set status = 'resolved'

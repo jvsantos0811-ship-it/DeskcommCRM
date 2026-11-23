@@ -144,7 +144,7 @@ async function avisarTetoDeIa(admin: SupabaseClient): Promise<number> {
       p_org: org,
       p_titulo: t("O uso de IA do plano chegou a 80%"),
       p_corpo: t(
-        "Neste mês a empresa já usou US$ {gasto} de US$ {teto} incluídos no plano. Ao chegar ao limite, as conversas passam para a equipe. Para aumentar, troque de plano em Plano e cobrança.",
+        "Neste mês a empresa já usou US$ {gasto} de US$ {teto} incluídos no plano. Ao chegar ao limite, as conversas passam para a equipe. Para aumentar, compre crédito de IA (quando o plano oferece) ou troque de plano em Plano e cobrança.",
       )
         .replace("{gasto}", usd(gasto))
         .replace("{teto}", usd(teto)),

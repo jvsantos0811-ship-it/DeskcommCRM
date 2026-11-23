@@ -10,12 +10,14 @@ import type { ErroDeLeitura, EstadoDaAssinatura } from "@/lib/cobranca/vocabular
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { COLUNAS_DO_PACOTE } from "@/lib/cobranca/credito-ia";
 import { COLUNAS_DO_PLANO } from "@/lib/schemas/cobranca-plano";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { AbasDaCobranca } from "./_abas";
 import { ABAS_DA_COBRANCA, type AbaDaCobranca } from "./_abas-lista";
 import { ConexaoDaCobranca } from "./_conexao";
+import { CreditosDeIaDaInstalacao, type PacoteDaTela } from "./_creditos-ia";
 import { PlanosDaInstalacao, type PlanoDaTela } from "./_planos";
 import { ReguaDaCobranca } from "./_regua";
 import { FaixaDoModoDeTeste, VisaoGeral } from "./_visao-geral";
@@ -57,7 +59,7 @@ export default async function CobrancaPage({ searchParams }: { searchParams: Pro
   const { aba } = await searchParams;
   const inicial: AbaDaCobranca = ABAS_DA_COBRANCA.find((a) => a === aba) ?? "visao-geral";
 
-  const [planos, clientes, visao, tolerancia] = await Promise.all([
+  const [planos, clientes, visao, tolerancia, pacotes] = await Promise.all([
     admin.from("cobranca_planos").select(COLUNAS_DO_PLANO).order("nome"),
     admin
       .from("organizations")
@@ -67,6 +69,8 @@ export default async function CobrancaPage({ searchParams }: { searchParams: Pro
       .order("display_name"),
     lerVisaoGeral(admin),
     toleranciaDias(),
+    // PC-051: pacotes de crédito de IA. Leitura que falha não derruba a página: a aba mostra "nenhum pacote".
+    admin.from("cobranca_pacotes_credito_ia").select(COLUNAS_DO_PACOTE).order("preco_cents"),
   ]);
   if (planos.error || clientes.error) {
     throw new Error(`cobrança: leitura falhou (${planos.error?.code ?? clientes.error?.code})`);
@@ -141,7 +145,15 @@ export default async function CobrancaPage({ searchParams }: { searchParams: Pro
           "visao-geral": <VisaoGeral dados={visao} checklist={montarChecklist(visao)} idioma={idioma} agora={agora} />,
           conexao: <ConexaoDaCobranca provedor={visao.provedor} modo={visao.modo} last4={visao.chaveLast4} urlDoWebhook={visao.urlDoWebhook} />,
           regua: <ReguaDaCobranca tolerancia={tolerancia} />,
-          planos: <PlanosDaInstalacao planos={lista} />,
+          planos: (
+            <>
+              <PlanosDaInstalacao planos={lista} />
+              <CreditosDeIaDaInstalacao
+                pacotes={(pacotes.data ?? []) as PacoteDaTela[]}
+                empresas={pagantes.map((c) => ({ id: c.id, nome: c.display_name }))}
+              />
+            </>
+          ),
           clientes: clientesDaTela,
         }}
       />
