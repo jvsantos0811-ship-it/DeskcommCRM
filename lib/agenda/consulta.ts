@@ -286,7 +286,6 @@ async function horariosDoDono(
   tipo: TipoDaConsulta,
   donoId: string,
 ): Promise<ResultadoDaConsulta> {
-
   const { data: disponibilidade, error: erroDisp } = await supabase
     .from("attendant_availability")
     .select("schedule")

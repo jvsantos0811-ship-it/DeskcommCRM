@@ -922,7 +922,7 @@ export function TiposDeAgendamentoClient({
                     ))}
                     <span>
                       {t(
-                        "Com duas ou mais pessoas marcadas, a vez alterna entre elas a cada marcação sem responsável escolhido; quem não tiver horário passa a vez. Ninguém marcado: vale quem atende.",
+                        "Com pessoas marcadas, a vez alterna entre elas a cada marcação sem responsável escolhido (com uma só, ela atende todas); quem não tiver horário passa a vez. Ninguém marcado: vale quem atende.",
                       )}
                     </span>
                   </fieldset>

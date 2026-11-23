@@ -18,7 +18,7 @@
  *     Na passagem, o CRM grava `valor_ao_passar` nele, e a plataforma para de
  *     entregar. Vazio = a plataforma continua entregando, e o CRM ignora porque
  *     a conversa está com a equipe.
- *  3. `acoes` — até cinco diálogos que a IA PODE executar durante o atendimento
+ *  3. `acoes` — até quinze diálogos (PC-052) que a IA PODE executar durante o atendimento
  *     (etiquetar, mover de funil, mandar um modelo). A IA escolhe pela `chave`,
  *     nunca por um id livre: a lista é fechada pelo operador.
  */

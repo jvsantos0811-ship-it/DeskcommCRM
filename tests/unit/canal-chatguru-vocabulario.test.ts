@@ -75,7 +75,11 @@ describe("canal chatguru — vocabulário e seam", () => {
       baseline.indexOf("(provider = 'chatguru'"),
     );
     // UM bloco por constraint: o apêndice desta migration não reconstrói os CHECKs.
-    const apendice = baseline.slice(baseline.indexOf("-- ---- canal ChatGuru (migration 9038) ----"));
+    // Só o bloco DESTA migration: ele termina onde começa o próximo bloco do
+    // apêndice (o da 9039, rodízio, tem a própria constraint — PC-052).
+    const inicio = baseline.indexOf("-- ---- canal ChatGuru (migration 9038) ----");
+    const proximo = baseline.indexOf("\n-- ---- ", inicio + 1);
+    const apendice = baseline.slice(inicio, proximo === -1 ? undefined : proximo);
     expect(apendice).not.toMatch(/add\s+constraint/i);
   });
 });

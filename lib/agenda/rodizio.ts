@@ -21,8 +21,20 @@
  * rota valida na escrita, e esta leitura descarta na leitura quem saiu da
  * equipe depois. Lista vazia depois do filtro = sem rodízio (vale o
  * responsável padrão, como antes da coluna existir).
+ *
+ * ─── Por que pelo client ADMIN ─────────────────────────────────────────────
+ *
+ * A RLS de `user_organizations` só entrega a PRÓPRIA linha a quem está abaixo
+ * de manager, e a de `calendar_appointments` pode esconder a agenda dos
+ * colegas. Pela sessão de um atendente, o rodízio viraria "só eu" ou
+ * "ninguém". Mesma decisão de `donos-da-agenda.ts`: client admin, com a
+ * organização vinda de fonte confiável (quem chama) e filtro EXPLÍCITO em
+ * toda leitura. Nada daqui volta a quem chamou além de ids da própria equipe.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { isServiceRoleConfigured } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * A ordem das tentativas, PURA: a lista começa logo depois de `ultimoDono`.
@@ -46,9 +58,10 @@ export function listaDoRodizio(bruto: unknown): string[] {
  * A ordem do rodízio deste tipo, lida do banco. Devolve `[]` quando não há
  * rodízio a aplicar (lista vazia, ou ninguém da lista é mais membro).
  *
- * Erro de leitura NÃO derruba a marcação: cai na ordem da lista como está
- * gravada (filtrada pelos membros quando a leitura deles funcionou). Errar a
- * vez é recuperável; recusar o horário ao lead não é.
+ * Erro na leitura dos membros devolve `[]` (vale o responsável padrão, como
+ * antes do rodízio): sem saber quem ainda é da equipe, não se oferece a agenda
+ * de quem pode ter saído. Erro na leitura do último compromisso só tira a
+ * memória da vez: a ordem começa da primeira da lista.
  */
 export async function ordemDoRodizio(
   supabase: SupabaseClient,
@@ -59,14 +72,15 @@ export async function ordemDoRodizio(
   const lista = listaDoRodizio(brutoDaLista);
   if (lista.length === 0) return [];
 
+  const client = isServiceRoleConfigured() ? createAdminClient() : supabase;
   const [{ data: membros, error: erroMembros }, { data: ultimo }] = await Promise.all([
-    supabase
+    client
       .from("user_organizations")
       .select("user_id")
       .eq("organization_id", organizationId)
       .is("revoked_at", null)
       .in("user_id", lista),
-    supabase
+    client
       .from("calendar_appointments")
       .select("owner_user_id")
       .eq("organization_id", organizationId)
@@ -78,9 +92,8 @@ export async function ordemDoRodizio(
       .maybeSingle(),
   ]);
 
-  const ativos = erroMembros
-    ? lista
-    : lista.filter((id) => (membros ?? []).some((m) => (m as { user_id: string }).user_id === id));
+  if (erroMembros) return [];
+  const ativos = lista.filter((id) => (membros ?? []).some((m) => (m as { user_id: string }).user_id === id));
   const ultimoDono = (ultimo as { owner_user_id?: string | null } | null)?.owner_user_id ?? null;
   return ordemDaVez(ativos, ultimoDono);
 }

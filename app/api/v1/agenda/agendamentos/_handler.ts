@@ -31,7 +31,7 @@ import {
 } from "@/lib/agenda/aviso-do-compromisso";
 import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
 import { colide } from "@/lib/agenda/horarios-livres";
-import { listaDoRodizio } from "@/lib/agenda/rodizio";
+import { listaDoRodizio, ordemDoRodizio } from "@/lib/agenda/rodizio";
 import {
   atividadeDaTransicao,
   autorParaTimeline,
@@ -324,10 +324,13 @@ async function donoPeloRodizio(
   if (consulta.ok && consulta.donoId && consulta.slots.some((s) => s.inicio.getTime() === args.inicio.getTime())) {
     return consulta.donoId;
   }
-  // Ninguém da lista está livre NESTE horário: segue com a primeira da lista,
-  // para `exigeHorarioLivre` recusar pelo motivo certo ("horário indisponível")
-  // em vez de "sem responsável", que mandaria o operador consertar o tipo.
-  return lista[0] ?? null;
+  // Ninguém da lista está livre NESTE horário: segue com a pessoa DA VEZ (só
+  // membros ativos), para `exigeHorarioLivre` recusar pelo motivo certo
+  // ("horário indisponível") em vez de "sem responsável", que mandaria o
+  // operador consertar o tipo. Ninguém ativo na lista: `null`, e quem chama
+  // segue para o responsável padrão do tipo.
+  const ordem = await ordemDoRodizio(supabase, ctx.organization_id, args.tipoId, lista);
+  return ordem[0] ?? null;
 }
 
 async function executarCriacaoDeAgendamento(
@@ -357,7 +360,7 @@ async function executarCriacaoDeAgendamento(
     input.owner_user_id ??
     (await donoPeloRodizio(supabase, ctx, {
       tipoId: tipo.id,
-      lista: (tipo as { rotation_owner_user_ids?: unknown }).rotation_owner_user_ids,
+      lista: tipo.rotation_owner_user_ids,
       inicio,
       fim: new Date(inicio.getTime() + tipo.duration_minutes * 60_000),
     })) ??

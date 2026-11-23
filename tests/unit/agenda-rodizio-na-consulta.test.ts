@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { horariosLivresDaOrg, type ResultadoDaConsulta } from "@/lib/agenda/consulta";
+
+// O rodízio lê a equipe pelo client ADMIN quando há service role (RLS do
+// atendente). Aqui o banco é o dublê: desliga o admin para a leitura cair nele.
+vi.mock("@/lib/audit", async (original) => ({
+  ...(await original<typeof import("@/lib/audit")>()),
+  isServiceRoleConfigured: () => false,
+}));
+
 
 /**
  * PC-052 — o RODÍZIO na consulta de horários livres, com o banco de mentira

@@ -177,7 +177,15 @@ const horariosLivresShape = {
       "dia civil pedido pelo cliente, em YYYY-MM-DD. Use para uma data específica; o servidor aplica o fuso da agenda. " +
         "Sozinho, recorta a resposta nesse dia; junto com 'dias_a_frente', é o PRIMEIRO dia do período.",
     ),
-  owner_user_id: z.string().uuid().optional(),
+  owner_user_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "de quem é a agenda. Para REMARCAR, passe SEMPRE o owner_user_id do compromisso que vai mudar " +
+        "(ele volta na marcação e em `crm_list_appointments`): o horário novo tem de ser da mesma pessoa. " +
+        "Ausente = o responsável do tipo, ou a pessoa da vez quando o tipo tem rodízio.",
+    ),
   limite: z
     .number()
     .int()
@@ -1070,7 +1078,9 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     "continua um só e o lembrete é refeito sozinho. Se você cancelar e marcar, o cliente recebe " +
     "dois avisos contraditórios e a linha do tempo dele passa a contar que ele desistiu e voltou — " +
     "o que não aconteceu. " +
-    "Confirme o horário novo com `crm_find_free_slots` antes: horário indisponível é recusado.",
+    "Confirme o horário novo com `crm_find_free_slots` antes, passando o `owner_user_id` do compromisso " +
+    "(o horário novo é da MESMA pessoa; sem ele, num tipo com rodízio a consulta mostra a agenda de " +
+    "outra pessoa e a remarcação é recusada): horário indisponível é recusado.",
   inputSchema: remarcarShape,
   category: "write",
   requiresRole: "ai_operator",
