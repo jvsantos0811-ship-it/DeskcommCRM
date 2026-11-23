@@ -56,6 +56,8 @@ export function ModeloDoEventoNaAgenda({
   const [descricao, setDescricao] = useState<NivelDaDescricao>(
     modeloInicial?.descricao ?? "basica",
   );
+  // PC-052 — "agenda interna": o contato nunca é convidado e a descrição vai em todos.
+  const [agendaInterna, setAgendaInterna] = useState(modeloInicial?.agenda_interna === true);
   const [erro, setErro] = useState<ErroModeloDoEvento | null>(null);
   const [salvo, setSalvo] = useState(false);
   const [salvando, iniciar] = useTransition();
@@ -94,6 +96,7 @@ export function ModeloDoEventoNaAgenda({
       if (r.modelo) {
         setTitulo(r.modelo.titulo);
         setDescricao(r.modelo.descricao);
+        setAgendaInterna(r.modelo.agenda_interna === true);
       }
       setSalvo(true);
     });
@@ -104,7 +107,11 @@ export function ModeloDoEventoNaAgenda({
       gravar(null);
       return;
     }
-    gravar({ titulo: titulo.trim() || TITULO_SUGERIDO, descricao });
+    gravar({
+      titulo: titulo.trim() || TITULO_SUGERIDO,
+      descricao,
+      ...(agendaInterna ? { agenda_interna: true } : {}),
+    });
   }
 
   const desabilitado = !podeMudar || salvando;
@@ -206,10 +213,33 @@ export function ModeloDoEventoNaAgenda({
             )}
           </fieldset>
 
+          <label className="flex items-start gap-2 text-sm" data-testid="modelo-do-evento-agenda-interna">
+            <input
+              type="checkbox"
+              checked={agendaInterna}
+              onChange={(e) => setAgendaInterna(e.target.checked)}
+              disabled={desabilitado}
+            />
+            <span className="flex flex-col gap-1">
+              {t("Agenda interna: nunca convidar o cliente")}
+              <span className="text-xs text-text-muted">
+                {t(
+                  "O cliente não recebe convite do Google, mesmo com e-mail na ficha, e por isso a descrição vai em todos os compromissos.",
+                )}
+              </span>
+            </span>
+          </label>
+
           <Button
             type="button"
             size="sm"
-            onClick={() => gravar({ titulo: titulo.trim(), descricao })}
+            onClick={() =>
+              gravar({
+                titulo: titulo.trim(),
+                descricao,
+                ...(agendaInterna ? { agenda_interna: true } : {}),
+              })
+            }
             disabled={desabilitado || titulo.trim().length === 0}
             data-testid="modelo-do-evento-salvar"
           >

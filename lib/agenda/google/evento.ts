@@ -42,6 +42,7 @@
  *   WhatsApp. Públicos diferentes — não é lembrete em dobro.
  */
 
+import { aparenciaDaPresenca } from "@/lib/agenda/presenca-cor";
 import { instanteDaParede, primeiroInstanteDoDia } from "./tempo";
 
 /**
@@ -171,6 +172,12 @@ export interface AgendamentoParaGoogle {
    */
   meet_aberto?: boolean | null;
   participantes?: ParticipanteDoAgendamento[];
+  /**
+   * PC-052 — a presença do lead (`aguardando | confirmada | nao_vai`). Nula ou
+   * ausente = o tipo não usa presença, e o corpo é o de sempre (sem cor,
+   * `opaque`). Fica FORA das projeções do sync: ver `lib/agenda/presenca.ts`.
+   */
+  lead_presence?: string | null;
   /** Quando já existe, é a identidade do evento lá — nunca se gera outra. */
   google_ical_uid?: string | null;
 }
@@ -227,7 +234,10 @@ export interface CorpoDeEventoDoGoogle {
   start: { dateTime: string; timeZone: string };
   end: { dateTime: string; timeZone: string };
   status: "confirmed" | "tentative" | "cancelled";
-  transparency: "opaque";
+  /** `transparent` só para a presença "não vai" (PC-052): o vermelho fica e libera o horário. */
+  transparency: "opaque" | "transparent";
+  /** Cor do evento pela presença do lead (PC-052). Ausente = a cor da agenda. */
+  colorId?: string;
   /**
    * ⚠️ NÃO EXISTE MAIS, e a ausência é o conserto.
    *
@@ -395,6 +405,14 @@ export function paraEventoDoGoogle(a: AgendamentoParaGoogle): CorpoDeEventoDoGoo
       },
     },
   };
+
+  // PC-052: o compromisso com presença nasce pintado. `aparenciaDaPresenca`
+  // devolve `null` para presença nula, e aí o corpo é exatamente o de antes.
+  const aparencia = aparenciaDaPresenca(a.lead_presence);
+  if (aparencia) {
+    corpo.colorId = aparencia.colorId;
+    corpo.transparency = aparencia.transparency;
+  }
 
   const descricao = a.description?.trim();
   if (descricao) corpo.description = descricao;

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { googlePushCandidates } from "@/lib/agenda/google/candidates";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { reconcileAppointment } from "@/lib/agenda/google/sync-executor";
+import { pintarPresencasPendentes } from "@/lib/agenda/presenca";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -42,7 +43,13 @@ async function executar(req: NextRequest) {
         metadata: { direcao: "ida", ...summary },
       });
   }
-  return NextResponse.json({ data: { candidatos: data?.length ?? 0, organizacoes: effects.size } });
+  // PC-052 — depois de publicar, repinta no Google o que mudou de presença
+  // (verde, vermelho, de volta ao amarelo). Fora das projeções do sync: ver
+  // `lib/agenda/presenca.ts`. A mudança de presença já foi auditada na escrita.
+  const pintura = await pintarPresencasPendentes(db);
+  return NextResponse.json({
+    data: { candidatos: data?.length ?? 0, organizacoes: effects.size, presencas_pintadas: pintura.pintados },
+  });
 }
 export const GET = executar;
 export const POST = executar;

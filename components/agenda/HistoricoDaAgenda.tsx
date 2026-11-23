@@ -102,6 +102,7 @@ export function HistoricoDaAgenda({
   onRealizado,
   onFaltou,
   onConfirmar,
+  onPresenca,
   className,
 }: {
   agendamentos: Agendamento[];
@@ -136,6 +137,8 @@ export function HistoricoDaAgenda({
    * menos quem deveria.
    */
   onConfirmar?: (id: string) => void;
+  /** PC-052 — registrar a resposta do cliente (só aparece em compromisso com presença). */
+  onPresenca?: (id: string, presenca: "confirmada" | "nao_vai") => void;
   className?: string;
 }) {
   const localeDaData = useLocaleDeData();
@@ -246,6 +249,21 @@ export function HistoricoDaAgenda({
                   <Badge variant={variante} className="shrink-0">
                     {t(ROTULO_DA_SITUACAO[a.situacao])}
                   </Badge>
+                  {a.presenca && (
+                    <Badge
+                      variant={
+                        a.presenca === "confirmada" ? "success" : a.presenca === "nao_vai" ? "error" : "warning"
+                      }
+                      className="shrink-0"
+                      data-testid={`presenca-${a.id}`}
+                    >
+                      {a.presenca === "confirmada"
+                        ? t("Cliente confirmou")
+                        : a.presenca === "nao_vai"
+                          ? t("Cliente não vai")
+                          : t("Aguardando o cliente")}
+                    </Badge>
+                  )}
                   <div className="flex shrink-0 items-center gap-1">
                     {/*
                       Ação por aba, e a lista de CADA aba tem razão própria.
@@ -268,6 +286,32 @@ export function HistoricoDaAgenda({
                       >
                         {t("Confirmar")}
                       </Button>
+                    )}
+                    {(aba === "proximos" || aba === "aguardando") && a.presenca && (
+                      <>
+                        {a.presenca !== "confirmada" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid={`presenca-confirmada-${a.id}`}
+                            disabled={!onPresenca}
+                            onClick={() => onPresenca?.(a.id, "confirmada")}
+                          >
+                            {t("Confirmou")}
+                          </Button>
+                        )}
+                        {a.presenca !== "nao_vai" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid={`presenca-nao-vai-${a.id}`}
+                            disabled={!onPresenca}
+                            onClick={() => onPresenca?.(a.id, "nao_vai")}
+                          >
+                            {t("Não vai")}
+                          </Button>
+                        )}
+                      </>
                     )}
                     {(aba === "proximos" || aba === "aguardando") && (
                       <>

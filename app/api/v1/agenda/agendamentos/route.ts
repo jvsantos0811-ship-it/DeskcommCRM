@@ -108,6 +108,8 @@ const alterarSchema = z
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
     guest_email: emailDoConvidado.optional(),
+    /** PC-052 — presença do lead (só no compromisso de tipo com presença). */
+    lead_presence: z.enum(["aguardando", "confirmada", "nao_vai"]).optional(),
   })
   .refine(
     (c) =>
@@ -115,7 +117,8 @@ const alterarSchema = z
       c.starts_at !== undefined ||
       c.status !== undefined ||
       c.notes !== undefined ||
-      c.guest_email !== undefined,
+      c.guest_email !== undefined ||
+      c.lead_presence !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },

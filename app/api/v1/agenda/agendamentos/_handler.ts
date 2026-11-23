@@ -117,6 +117,11 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /**
+   * PC-052 — a presença do lead. Só vale para compromisso que já nasceu com
+   * presença (o tipo usa "Presença com cor no Google"); nos outros, 422.
+   */
+  lead_presence?: "aguardando" | "confirmada" | "nao_vai";
 }
 
 export interface CancelarInput {
@@ -343,7 +348,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, rotation_owner_user_ids, requires_confirmation, location_kind, location_details",
+      "id, name, is_active, duration_minutes, default_owner_user_id, rotation_owner_user_ids, lead_presence_colors, requires_confirmation, location_kind, location_details",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -472,6 +477,8 @@ async function executarCriacaoDeAgendamento(
       // o horário foi decidido, e ele viaja até o lembrete (ACHADO 09).
       time_zone: consulta.fusoDaRegra,
       status: tipo.requires_confirmation ? "pending" : "confirmed",
+      // PC-052: o tipo com presença nasce "aguardando" (amarelo no Google).
+      lead_presence: tipo.lead_presence_colors ? "aguardando" : null,
       owner_user_id: donoId,
       contact_id: input.contact_id ?? null,
       conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
@@ -554,6 +561,7 @@ export async function alterarAgendamentoHandler(
     "starts_at",
     "status",
     "time_zone",
+    "lead_presence",
   ]);
 
   await exigeDonoDoCompromisso(supabase, ctx, atual);
@@ -582,6 +590,33 @@ export async function alterarAgendamentoHandler(
   // gerada `needs_google_push` (migration 0225), que compara a revisão
   // publicável com o último aceite; notes e metadata não criam intenção.
   if (input.guest_email !== undefined) mudanca.guest_email = input.guest_email || null;
+  // PC-052: a presença do lead não é transição (o `status` é da equipe) e não
+  // sobe a revisão; a cor no Google sai pelo cron de sync (`lib/agenda/presenca.ts`).
+  let presencaMudou = false;
+  if (input.lead_presence !== undefined) {
+    if (atual.lead_presence === null || atual.lead_presence === undefined) {
+      throw new ApiError(
+        422,
+        "agenda_presenca_desligada",
+        undefined,
+        ctx.requestId,
+        "Este tipo de atendimento não registra presença.",
+      );
+    }
+    if (atual.status !== "pending" && atual.status !== "confirmed") {
+      throw new ApiError(
+        422,
+        "agenda_presenca_fora_de_hora",
+        undefined,
+        ctx.requestId,
+        "A presença só se registra num compromisso que ainda vai acontecer.",
+      );
+    }
+    if (input.lead_presence !== atual.lead_presence) {
+      mudanca.lead_presence = input.lead_presence;
+      presencaMudou = true;
+    }
+  }
   let transicao: Transicao | null = null;
 
   if (input.starts_at) {
@@ -680,6 +715,10 @@ export async function alterarAgendamentoHandler(
       metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id}});
 
   }
+
+  if (presencaMudou) void audit({action:"agenda.appointment_presence_recorded",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
+    organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
+    metadata:{lead_presence:input.lead_presence,anterior:atual.lead_presence ?? null}});
 
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
@@ -1330,8 +1369,9 @@ async function formatoDoEvento(
         phone_number: string | null;
         email: string | null;
       } | null;
-      // O contato com e-mail na ficha entra no convite do Google (worker de push).
-      if (c?.email?.trim()) clienteRecebeOConvite = true;
+      // O contato com e-mail na ficha entra no convite do Google (worker de push),
+      // exceto na "agenda interna" (PC-052), em que ele nunca é convidado.
+      if (c?.email?.trim() && modelo.agenda_interna !== true) clienteRecebeOConvite = true;
       dados.nomeDoContato = nomeDoContato(c);
       dados.telefone = c?.phone_number ?? null;
       const ck = checkpoint as { next_action: string | null; rolling_summary: string | null } | null;

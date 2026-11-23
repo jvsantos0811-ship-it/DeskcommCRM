@@ -489,7 +489,7 @@ export async function coletaOQueOcupa(
 ): Promise<({ ok: true } & OQueOcupa) | { ok: false; erro: string }> {
   let agendamentos = supabase
     .from("calendar_appointments")
-    .select("starts_at, ends_at, status")
+    .select("starts_at, ends_at, status, lead_presence")
     .eq("organization_id", organizationId)
     .eq("owner_user_id", params.donoId)
     .lt("starts_at", params.ate.toISOString())
@@ -560,6 +560,8 @@ export interface AgendamentoListado {
   terminaEm: string;
   fuso: string;
   situacao: string;
+  /** PC-052 — presença do lead; nula quando o tipo não usa presença. */
+  presenca?: string | null;
   donoId: string | null;
   contatoId: string | null;
   contatoNome: string | null;
@@ -903,7 +905,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
+      "id, title, starts_at, ends_at, time_zone, status, lead_presence, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1040,6 +1042,7 @@ export async function listaAgendamentos(
         terminaEm: String(l.ends_at),
         fuso: String(l.time_zone),
         situacao: String(l.status),
+        presenca: typeof l.lead_presence === "string" ? l.lead_presence : null,
         donoId: l.owner_user_id ? String(l.owner_user_id) : null,
         contatoId: l.contact_id ? String(l.contact_id) : null,
         // O ID sozinho não serve a nenhum dos dois consumidores: a grade precisa do
@@ -1120,6 +1123,8 @@ export interface TipoDeAtendimento {
   donoPadraoId: string | null;
   /** PC-052: rodízio de responsáveis, na ordem da vez. Vazio/ausente = sem rodízio. */
   rodizioIds?: string[];
+  /** PC-052: marcações deste tipo registram a presença do lead com cor no Google. */
+  presencaComCor?: boolean;
   /**
    * Os quatro números da grade. Eles NÃO vão ao modelo — `horariosLivresDaOrg`
    * já os aplicou antes de devolver os horários, e repassá-los convidaria a IA a
@@ -1181,7 +1186,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, lead_presence_colors, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1214,6 +1219,7 @@ export async function listaTiposDeAtendimento(
       ativo: Boolean(t.is_active),
       donoPadraoId: t.default_owner_user_id === null ? null : String(t.default_owner_user_id),
       rodizioIds: listaDoRodizio(t.rotation_owner_user_ids),
+      presencaComCor: t.lead_presence_colors === true,
       bufferAntesMin: Number(t.buffer_before_minutes),
       bufferDepoisMin: Number(t.buffer_after_minutes),
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { agendaInterna } from "@/lib/agenda/modelo-do-evento";
 import { observeMeeting, type MeetingObservation } from "./meet";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -88,6 +89,18 @@ export async function emailDoContato(
   if (!contactId) return null;
   if (typeof db.from !== "function") return null;
   try {
+    // PC-052 — "agenda interna": o contato nunca vira convidado do evento. Sem
+    // e-mail aqui, o POST não o convida e o PATCH (`delta`) não o acrescenta —
+    // e também não tira quem já estava, então ninguém recebe cancelamento.
+    // A leitura da opção não derruba o convite: se falhar, vale o de sempre.
+    let interna = false;
+    try {
+      const { data: daOrg } = await db.from("organizations").select("settings").eq("id", org).maybeSingle();
+      interna = agendaInterna((daOrg as { settings?: unknown } | null)?.settings);
+    } catch {
+      interna = false;
+    }
+    if (interna) return null;
     const { data, error } = await db
       .from("contacts")
       .select("email,name,display_name,is_anonymized")
