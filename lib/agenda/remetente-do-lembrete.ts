@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { capabilitiesOf, transportaMensagem } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
+import { canaisComRoteiro, type UsoForaDaJanela } from "@/lib/channels/roteiro-fora-da-janela";
 
 export interface CanalDoLembrete {
   id: string;
@@ -21,11 +22,12 @@ export type MotivoSemRemetente =
   | "sem_canal"
   | "remetente_ambiguo";
 /**
- * `foraDaJanela` = o canal só serve porque o tipo tem MODELO da Meta
- * (PC-045): texto livre não sai; quem envia tem de mandar o modelo.
+ * `foraDaJanela` = o canal só serve porque há como falar fora da janela de 24 h:
+ * texto livre não sai. `via` diz como — `modelo`: o MODELO da Meta do tipo
+ * (PC-045); `roteiro`: o diálogo que a conexão escolheu para este uso (PC-052).
  */
 export type RemetenteDoLembrete =
-  | { canal: CanalDoLembrete; motivo: null; foraDaJanela?: boolean }
+  | { canal: CanalDoLembrete; motivo: null; foraDaJanela?: boolean; via?: "modelo" | "roteiro" }
   | { canal: null; motivo: MotivoSemRemetente };
 
 /**
@@ -48,30 +50,38 @@ export function decidirRemetenteDoLembrete(
   agora: Date,
   /** PC-045: o tipo tem modelo da Meta — canal oficial fora da janela serve. */
   comModeloDaMeta = false,
+  /** PC-052: conexões com diálogo escolhido para este uso — servem fora da janela. */
+  comRoteiro: ReadonlySet<string> = new Set(),
 ): RemetenteDoLembrete {
   const decisao = decidirSoTextoLivre(canais, canalIndicadoId, agora);
-  if (decisao.canal || !comModeloDaMeta || decisao.motivo !== "canal_fora_da_janela_24h") {
+  if (
+    decisao.canal ||
+    decisao.motivo !== "canal_fora_da_janela_24h" ||
+    (!comModeloDaMeta && comRoteiro.size === 0)
+  ) {
     return decisao;
   }
-  // Fora da janela: só o canal que manda modelo, e com a MESMA régua de antes —
-  // o indicado não libera outro número, e no automático só um elegível.
+  // Fora da janela: só o canal que tem COMO falar fora dela, e com a MESMA régua
+  // de antes — o indicado não libera outro número, e no automático só um elegível.
+  const pormodelo = (c: CanalDoLembrete) => comModeloDaMeta && mandaModeloDaMeta(c.provider);
   const operante = (c: CanalDoLembrete) =>
     c.status === "WORKING" &&
     !c.archived_at &&
     c.metadata?.disabled !== true &&
     transportaMensagem(c.provider) &&
-    mandaModeloDaMeta(c.provider);
+    (pormodelo(c) || comRoteiro.has(c.id));
+  const via = (c: CanalDoLembrete): "modelo" | "roteiro" => (pormodelo(c) ? "modelo" : "roteiro");
   if (canalIndicadoId) {
     const canal = canais.find((c) => c.id === canalIndicadoId);
     return canal && operante(canal)
-      ? { canal, motivo: null, foraDaJanela: true }
+      ? { canal, motivo: null, foraDaJanela: true, via: via(canal) }
       : { canal: null, motivo: "canal_fora_da_janela_24h" };
   }
   const candidatos = canais.filter(operante);
   if (candidatos.length > 1) return { canal: null, motivo: "remetente_ambiguo" };
   const unico = candidatos[0];
   return unico
-    ? { canal: unico, motivo: null, foraDaJanela: true }
+    ? { canal: unico, motivo: null, foraDaJanela: true, via: via(unico) }
     : { canal: null, motivo: "canal_fora_da_janela_24h" };
 }
 
@@ -108,6 +118,8 @@ export async function resolverRemetenteDoLembrete(
   canalDoTipoId: string | null,
   agora: Date,
   comModeloDaMeta = false,
+  /** PC-052: o uso cujo diálogo de conexão serve fora da janela (ex.: `lembrete`). */
+  usoDoRoteiro: UsoForaDaJanela | null = null,
 ): Promise<RemetenteDoLembrete> {
   const org = compromisso.organization_id;
   let indicado = canalDoTipoId;
@@ -164,5 +176,10 @@ export async function resolverRemetenteDoLembrete(
       }
     }
   }
-  return decidirRemetenteDoLembrete(canais, indicado, agora, comModeloDaMeta);
+  const primeira = decidirRemetenteDoLembrete(canais, indicado, agora, comModeloDaMeta);
+  if (primeira.canal || primeira.motivo !== "canal_fora_da_janela_24h" || !usoDoRoteiro) return primeira;
+  // Só pergunta pelos diálogos quando a janela fechou — a leitura extra é do
+  // caso raro, não de toda rodada.
+  const comRoteiro = await canaisComRoteiro(admin, org, canais, usoDoRoteiro);
+  return decidirRemetenteDoLembrete(canais, indicado, agora, comModeloDaMeta, comRoteiro);
 }

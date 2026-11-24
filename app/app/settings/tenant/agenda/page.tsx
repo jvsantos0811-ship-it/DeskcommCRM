@@ -10,6 +10,8 @@ import { listSelectableChannels } from "@/lib/channels/selectable";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
+import { SequenciaDepoisDeMarcar } from "@/components/agenda/SequenciaDepoisDeMarcar";
+
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -154,6 +156,8 @@ export default async function TiposDeAgendamentoPage() {
         modeloDoEvento={lerModeloDoEvento(org?.settings)}
         podeMudarModeloDoEvento={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager}
       />
+      {/* PC-052 parte 3: a sequência depois de marcar e a mídia do aquecimento. */}
+      <SequenciaDepoisDeMarcar podeMudar={podeEditar} />
     </div>
   );
 }
