@@ -63262,7 +63262,7 @@ begin
   end if;
 end $$;
 
--- ---- sequência depois de marcar e mídia de aquecimento (migration 9041) ----
+-- ---- sequência depois de marcar e mídia de aquecimento (migration 9043) ----
 -- A chave e a configuração moram no TIPO de atendimento, como o lembrete. Chave
 -- desligada = nada sai (o de sempre). O jsonb tem schema único em
 -- `lib/agenda/sequencia.ts` (`lerSequencia` nunca lança); ninguém lê o caminho

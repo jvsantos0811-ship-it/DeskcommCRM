@@ -92,6 +92,7 @@ import {
   lerMidiaDoAquecimento,
 } from "@/lib/agenda/midia-do-aquecimento";
 import {
+  aquecimentoLigadoEm,
   lerSequencia,
   ocasiaoDaConfirmacao,
   ocasiaoDoAquecimento,
@@ -208,7 +209,7 @@ describe("quando sai a confirmação", () => {
 
 describe("o passo aberto agora", () => {
   const config: ConfigDaSequencia = {
-    aquecimento: { ativo: true, hora: "19:00", texto: null },
+    aquecimento: { ativo: true, hora: "19:00", texto: null, ligadoEm: null },
     confirmacao: { ativo: true, corte: "12:00", horaVespera: "17:00", horaDoDia: "08:30", textoVespera: null, textoDoDia: null },
   };
   const linha = {
@@ -242,6 +243,24 @@ describe("o passo aberto agora", () => {
     );
   });
 
+  it("ligar o aquecimento agora não manda vídeo para quem marcou antes", () => {
+    const agora = local("2026-12-08T19:05:00");
+    const ligadoDepois = { ...config, aquecimento: { ...config.aquecimento, ligadoEm: local("2026-12-08T12:00:00").toISOString() } };
+    expect(passoAberto({ linha, config: ligadoDepois, fuso: FUSO, agora, diaTemEnvio: todoDia })?.passo).not.toBe("aquecimento");
+    const ligadoAntes = { ...config, aquecimento: { ...config.aquecimento, ligadoEm: local("2026-12-08T09:00:00").toISOString() } };
+    expect(passoAberto({ linha, config: ligadoAntes, fuso: FUSO, agora, diaTemEnvio: todoDia })?.passo).toBe("aquecimento");
+  });
+
+  it("o instante em que o aquecimento passou a valer: novo ao ligar, mantido enquanto ligado, nulo ao desligar", () => {
+    const agora = new Date("2026-12-08T15:00:00.000Z");
+    const antes = lerSequencia({ aquecimento: { ativo: true, ligado_em: "2026-12-01T10:00:00.000Z" } });
+    expect(aquecimentoLigadoEm({ ligadaAntes: false, antes, ligadaAgora: true, aquecimentoAtivoAgora: true, agora })).toBe(agora.toISOString());
+    expect(aquecimentoLigadoEm({ ligadaAntes: true, antes, ligadaAgora: true, aquecimentoAtivoAgora: true, agora })).toBe(
+      "2026-12-01T10:00:00.000Z",
+    );
+    expect(aquecimentoLigadoEm({ ligadaAntes: true, antes, ligadaAgora: true, aquecimentoAtivoAgora: false, agora })).toBeNull();
+  });
+
   it("sequência desligada: nada", () => {
     const desligada = { ...config, aquecimento: { ...config.aquecimento, ativo: false }, confirmacao: { ...config.confirmacao, ativo: false } };
     expect(passoAberto({ linha, config: desligada, fuso: FUSO, agora: local("2026-12-08T19:05:00"), diaTemEnvio: todoDia })).toBeNull();
@@ -251,7 +270,7 @@ describe("o passo aberto agora", () => {
 describe("a configuração", () => {
   it("ilegível volta ao padrão campo a campo, e o ativo ilegível é desligado", () => {
     const c = lerSequencia({ aquecimento: { ativo: "true", hora: "25:00" }, confirmacao: { ativo: true, corte: "11:00", hora_vespera: "x" } });
-    expect(c.aquecimento).toEqual({ ativo: false, hora: "19:00", texto: null });
+    expect(c.aquecimento).toEqual({ ativo: false, hora: "19:00", texto: null, ligadoEm: null });
     expect(c.confirmacao).toMatchObject({ ativo: true, corte: "11:00", horaVespera: "17:00", horaDoDia: "08:30" });
     expect(lerSequencia(null).confirmacao.ativo).toBe(false);
   });
@@ -417,6 +436,22 @@ describe("cron agenda-sequencia", () => {
     expect(corpo).toContain("amanhã");
     expect(corpo).toContain("10:00");
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "agenda.sequencia_enviada" }));
+  });
+
+  it("⭐ reunião de segunda de manhã, número sem domingo: a confirmação sai no SÁBADO às 17h", async () => {
+    vi.setSystemTime(local("2026-12-05T17:05:00"));
+    mocks.compromissos = [
+      compromisso({
+        starts_at: local("2026-12-07T09:00:00").toISOString(),
+        created_at: local("2026-12-02T10:00:00").toISOString(),
+      }),
+    ];
+    const { data } = await (await GET(pedido())).json();
+    expect(data).toMatchObject({ enviados: 1, passos: { confirmacao_vespera: 1 } });
+    const corpo = (mocks.enviar.mock.calls[0]?.[2] as { body: string }).body;
+    // Saiu dois dias antes: o texto diz o dia, não "amanhã".
+    expect(corpo).not.toContain("amanhã");
+    expect(corpo).toContain("segunda");
   });
 
   it("perdeu a troca do carimbo (outra rodada levou): não envia", async () => {

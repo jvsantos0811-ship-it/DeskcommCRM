@@ -148,7 +148,10 @@ async function handle(req: NextRequest): Promise<Response> {
     base()
       .is("warmup_sent_at", null)
       .gte("created_at", new Date(agora.getTime() - AQUECIMENTO_OLHA_MARCACOES_DE_MS).toISOString())
-      .order("created_at", { ascending: true })
+      // Mais nova primeiro: a marcação que não vai receber aquecimento (passo
+      // desligado, sem conteúdo, recusou marketing) nunca carimba, e em ordem
+      // crescente ficaria na frente das novas por dois dias.
+      .order("created_at", { ascending: false })
       .limit(LIMITE_DA_VARREDURA),
     base()
       .lte("starts_at", new Date(agora.getTime() + CONFIRMACAO_OLHA_ATE_MS).toISOString())
@@ -207,9 +210,13 @@ async function handle(req: NextRequest): Promise<Response> {
     const organizacao = await organizacaoDe(org);
     const fuso = organizacao?.timezone || FUSO_PADRAO;
 
-    // A suposição mais larga (todo dia tem envio): se nem assim há passo aberto,
-    // não vale ler contato e canal.
-    const provavel = passoAberto({ linha, config, fuso, agora, diaTemEnvio: () => true });
+    // Antes de saber o canal, as duas suposições do dia de envio: todo dia, ou
+    // sem domingo. Sem a segunda, a véspera de uma reunião de segunda (que recua
+    // para o sábado quando o número não manda no domingo) nunca passaria daqui.
+    // Se nenhuma das duas abre um passo, não vale ler contato e canal.
+    const provavel =
+      passoAberto({ linha, config, fuso, agora, diaTemEnvio: () => true }) ??
+      passoAberto({ linha, config, fuso, agora, diaTemEnvio: (dow) => dow !== 0 });
     if (!provavel) {
       pular("ainda_nao");
       continue;
@@ -289,6 +296,9 @@ async function handle(req: NextRequest): Promise<Response> {
         .eq("id", linha.id)
         .eq("organization_id", org)
         .is("warmup_sent_at", null)
+        // A troca confere de novo o que a leitura viu: ainda de pé.
+        .eq("status", "confirmed")
+        .or("lead_presence.is.null,lead_presence.neq.nao_vai")
         .select("id");
       if (erroCarimbo || !reivindicado?.length) {
         pular(erroCarimbo ? "carimbo_falhou" : "ja_reivindicado");
@@ -352,7 +362,9 @@ async function handle(req: NextRequest): Promise<Response> {
       .update({ confirmation_sent_for: linha.starts_at })
       .eq("id", linha.id)
       .eq("organization_id", org)
-      .eq("starts_at", linha.starts_at);
+      .eq("starts_at", linha.starts_at)
+      .eq("status", "confirmed")
+      .or("lead_presence.is.null,lead_presence.neq.nao_vai");
     troca = linha.confirmation_sent_for
       ? troca.eq("confirmation_sent_for", linha.confirmation_sent_for)
       : troca.is("confirmation_sent_for", null);

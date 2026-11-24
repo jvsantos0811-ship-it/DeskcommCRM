@@ -9,7 +9,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *   DELETE — `?tipo=video` ou `?tipo=imagem&indice=N`. Manager ou acima.
  *
  * O tipo do arquivo é FAREJADO pelos bytes; o bucket é privado e só o
- * service_role lê e grava (migration 9041). Organização sempre da sessão.
+ * service_role lê e grava (migration 9043). Organização sempre da sessão.
  */
 import { randomUUID } from "node:crypto";
 
