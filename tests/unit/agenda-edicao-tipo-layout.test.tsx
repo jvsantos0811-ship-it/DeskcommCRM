@@ -22,6 +22,7 @@ vi.mock("@/components/agenda/AgendasConectadas", () => ({ AgendasConectadas: () 
 vi.mock("@/components/agenda/PrazosDePresenca", () => ({ PrazosDePresenca: () => null }));
 vi.mock("@/components/agenda/ClientePelaAgenda", () => ({ ClientePelaAgenda: () => null }));
 vi.mock("@/components/agenda/DiasBloqueados", () => ({ DiasBloqueados: () => null }));
+vi.mock("@/components/agenda/VideoDeAquecimento", () => ({ VideoDeAquecimento: () => null }));
 
 const ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 

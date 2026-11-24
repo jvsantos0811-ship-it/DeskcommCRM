@@ -36,6 +36,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 vi.mock("@/lib/api/client", () => ({
   apiClient: { post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
+// PC-045: o bloco do vídeo de aquecimento lê a própria rota; aqui o assunto é a lista de tipos.
+vi.mock("@/components/agenda/VideoDeAquecimento", () => ({ VideoDeAquecimento: () => null }));
 
 const TIPO: TipoRow = {
   id: "11111111-1111-4111-8111-111111111111",
