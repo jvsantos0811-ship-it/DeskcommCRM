@@ -22,6 +22,7 @@ import {
   BUCKET_DO_VIDEO,
   cabecalhoDeMp4,
   caminhoDoVideo,
+  orfaosDoAquecimento,
   conferirVideo,
   TEXTO_MAX,
   videoPertenceAOrg,
@@ -62,6 +63,26 @@ async function apagarArquivo(caminho: string, orgId: string): Promise<void> {
   if (!videoPertenceAOrg(caminho, orgId)) return;
   const { error } = await createAdminClient().storage.from(BUCKET_DO_VIDEO).remove([caminho]);
   if (error) logger.warn("video_aquecimento.arquivo_antigo_nao_removido", { organization_id: orgId, motivo: error.message.slice(0, 120) });
+}
+
+/**
+ * Varre `<org>/aquecimento/` e tira o que não é o vídeo atual e tem mais de 2 h
+ * (upload sem confirmação, recusa ou troca que não conseguiu apagar). A limpeza
+ * de órfãos do produto só varre as pastas das conversas. Melhor esforço.
+ */
+async function limparOrfaos(orgId: string, atual: string | null): Promise<void> {
+  try {
+    const pasta = `${orgId}/aquecimento`;
+    const { data } = await createAdminClient().storage.from(BUCKET_DO_VIDEO).list(pasta, { limit: 100 });
+    const nomes = orfaosDoAquecimento(
+      (data ?? []).map((a) => ({ name: a.name, created_at: a.created_at ?? null })),
+      atual ? atual.slice(atual.lastIndexOf("/") + 1) : null,
+      new Date(),
+    );
+    if (nomes.length > 0) await createAdminClient().storage.from(BUCKET_DO_VIDEO).remove(nomes.map((n) => `${pasta}/${n}`));
+  } catch (e) {
+    logger.warn("video_aquecimento.orfaos_nao_limpos", { organization_id: orgId, motivo: (e instanceof Error ? e.message : String(e)).slice(0, 120) });
+  }
 }
 
 export async function GET(): Promise<NextResponse> {
@@ -159,10 +180,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const mime = (info.contentType ?? "").split(";")[0]!.trim();
   const bytes = Number(info.size ?? 0);
   const motivo = conferirVideo({ type: mime, size: bytes });
-  const cabecalho = motivo ? null : await primeirosBytes(caminho);
-  if (motivo || !cabecalho || !cabecalhoDeMp4(cabecalho)) {
+  if (motivo) {
     await apagarArquivo(caminho, orgId);
-    return recusa(motivo ?? "conteudo", requestId);
+    return recusa(motivo, requestId);
+  }
+  const cabecalho = await primeirosBytes(caminho);
+  // Leitura que falhou (rede) não condena um vídeo bom: pede para tentar de novo.
+  if (cabecalho === null) {
+    return fail("upstream_unavailable", "Não foi possível conferir o vídeo agora. Tente de novo em instantes.", 503, { requestId });
+  }
+  if (!cabecalhoDeMp4(cabecalho)) {
+    await apagarArquivo(caminho, orgId);
+    return recusa("conteudo", requestId);
   }
   const texto = corpo.data.texto;
 
@@ -189,6 +218,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("internal_error", "Não foi possível salvar o vídeo.", 500, { requestId });
   }
   if (antigo && antigo.storage_path !== caminho) await apagarArquivo(antigo.storage_path, orgId);
+  await limparOrfaos(orgId, caminho);
 
   void audit({
     action: "agenda.video_aquecimento_trocado",
@@ -247,6 +277,7 @@ export async function DELETE(): Promise<NextResponse> {
   const { error } = await createAdminClient().from("agenda_video_aquecimento").delete().eq("organization_id", orgId);
   if (error) return fail("internal_error", "Não foi possível tirar o vídeo.", 500, { requestId });
   await apagarArquivo(antigo.storage_path, orgId);
+  await limparOrfaos(orgId, null);
   void audit({
     action: "agenda.video_aquecimento_removido",
     actorUserId: authz.user.id,

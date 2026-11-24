@@ -53,10 +53,32 @@ export function caminhoNaConversa(orgId: string, conversationId: string, origem:
   return `${orgId}/${conversationId}/aquecimento-${arquivo}`;
 }
 
+/** Marcas (bytes 8-11 da caixa `ftyp`) de mp4/3gp que o WhatsApp toca. `.mov` (`qt  `) e `.heic` ficam fora. */
+const MARCAS_ACEITAS = new Set(["isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "3gp4", "3gp5", "3gp6", "3g2a", "dash", "msnv"]);
+
 /**
- * Pura: os primeiros bytes são de um arquivo mp4/3gp (caixa `ftyp` do ISO BMFF)?
- * O tipo que o navegador declara vem da extensão; isto confere o conteúdo.
+ * Pura: os primeiros bytes são de um arquivo mp4/3gp (caixa `ftyp` do ISO BMFF,
+ * com marca de mp4/3gp)? O tipo que o navegador declara vem da extensão; isto
+ * confere o conteúdo. O codec (H.264 x HEVC) não é conferido aqui.
  */
 export function cabecalhoDeMp4(bytes: Uint8Array): boolean {
-  return bytes.length >= 8 && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
+  if (bytes.length < 12) return false;
+  if (String.fromCharCode(...bytes.slice(4, 8)) !== "ftyp") return false;
+  return MARCAS_ACEITAS.has(String.fromCharCode(...bytes.slice(8, 12)));
+}
+
+/**
+ * Pura: dos arquivos da pasta do aquecimento, quais são lixo (não são o vídeo
+ * atual e têm mais de 2 h — upload que nunca foi confirmado, recusa que não
+ * conseguiu apagar, troca cujo antigo ficou). As 2 h protegem um envio em curso.
+ */
+export function orfaosDoAquecimento(
+  arquivos: readonly { name: string; created_at: string | null }[],
+  atual: string | null,
+  agora: Date,
+): string[] {
+  const limite = agora.getTime() - 2 * 60 * 60 * 1000;
+  return arquivos
+    .filter((a) => a.name !== atual && a.created_at !== null && new Date(a.created_at).getTime() < limite)
+    .map((a) => a.name);
 }

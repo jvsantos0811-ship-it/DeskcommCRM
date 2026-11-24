@@ -5,7 +5,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 import { enviarVideoDeAquecimento, intervaloEntreMensagens, prepararVideoDeAquecimento } from "@/lib/agent-engine/agent/meet-delivery";
 import { corpoDoEnvio } from "@/lib/agent-engine/edge/crm/send-message";
 
-import { cabecalhoDeMp4, caminhoDoVideo, caminhoNaConversa, conferirVideo, VIDEO_MAX_BYTES, videoPertenceAOrg } from "./video-aquecimento";
+import { cabecalhoDeMp4, caminhoDoVideo, caminhoNaConversa, conferirVideo, orfaosDoAquecimento, VIDEO_MAX_BYTES, videoPertenceAOrg } from "./video-aquecimento";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONVERSA = "22222222-2222-4222-8222-222222222222";
@@ -34,6 +34,23 @@ describe("o arquivo do vídeo de aquecimento (PC-045 parte 2)", () => {
     expect(cabecalhoDeMp4(mp4)).toBe(true);
     expect(cabecalhoDeMp4(new TextEncoder().encode("<html>nao e video"))).toBe(false);
     expect(cabecalhoDeMp4(new Uint8Array([0, 0, 0]))).toBe(false);
+    const comMarca = (marca: string) => new Uint8Array([0, 0, 0, 0x20, ...new TextEncoder().encode("ftyp" + marca)]);
+    expect(cabecalhoDeMp4(comMarca("mp42"))).toBe(true);
+    expect(cabecalhoDeMp4(comMarca("3gp4"))).toBe(true);
+    expect(cabecalhoDeMp4(comMarca("qt  ")), ".mov renomeado").toBe(false);
+    expect(cabecalhoDeMp4(comMarca("heic")), "foto .heic renomeada").toBe(false);
+  });
+
+  it("órfãos da pasta do aquecimento: nunca o atual, nunca um envio recente (< 2 h)", () => {
+    const agora = new Date("2026-11-24T12:00:00Z");
+    const arquivos = [
+      { name: "atual.mp4", created_at: "2026-11-20T00:00:00Z" },
+      { name: "velho.mp4", created_at: "2026-11-24T09:00:00Z" },
+      { name: "subindo.mp4", created_at: "2026-11-24T11:30:00Z" },
+      { name: "sem-data.mp4", created_at: null },
+    ];
+    expect(orfaosDoAquecimento(arquivos, "atual.mp4", agora)).toEqual(["velho.mp4"]);
+    expect(orfaosDoAquecimento(arquivos, null, agora)).toEqual(["atual.mp4", "velho.mp4"]);
   });
 
   it("o vídeo da conversa chega ao handler como VÍDEO, sem corpo quando não há texto", () => {
