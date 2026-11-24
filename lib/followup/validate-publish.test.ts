@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { algumCanalExigeModeloForaDaJanela, CONTA_NO_TETO, custoNoMotorDoFluxo, validateFlowForPublish } from './validate-publish';
+import { algumCanalExigeModeloForaDaJanela, CONTA_NO_TETO, custoNoMotorDoFluxo, roteiroBastaForaDaJanela, validateFlowForPublish } from './validate-publish';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
 import { idsDeEtapaCitados } from './etapas-citadas';
 import { flowGraphSchema, NODE_TYPES, type FlowGraph, type FlowNode, type FlowEdge } from './graph-schema';
@@ -196,14 +196,26 @@ describe('validateFlowForPublish', () => {
     expect(validateFlowForPublish(g).ok).toBe(true);
   });
 
-  it('does not flag long_wait_needs_template when the connection dialog (fallback_roteiro) is set', () => {
+  it('the connection dialog (fallback_roteiro) only counts when every 24h-window channel speaks by dialog', () => {
     const a1 = actionAiMessage('a1');
     a1.config = { mode: 'ai_message', prompt_hint: 'hint', fallback_roteiro: 'followup_1' } as FlowNode['config'];
     const g = graph(
       [trigger('t1'), wait('w1', { mode: 'fixed', duration_ms: 86_400_000 }), a1, end('e1')],
       [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
     );
-    expect(validateFlowForPublish(g).ok).toBe(true);
+    expect(validateFlowForPublish(g, { roteiroServeForaDaJanela: true }).ok).toBe(true);
+    // Sem a garantia (organização com canal oficial ao lado, ou contexto ausente): o modelo segue exigido.
+    const semGarantia = validateFlowForPublish(g);
+    expect(semGarantia.ok).toBe(false);
+    if (!semGarantia.ok) expect(semGarantia.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
+  });
+
+  it('roteiroBastaForaDaJanela: só a plataforma que fala por diálogo, sozinha, basta', () => {
+    expect(roteiroBastaForaDaJanela(['chatguru'])).toBe(true);
+    expect(roteiroBastaForaDaJanela(['chatguru', 'waha'])).toBe(true); // o QR não tem janela
+    expect(roteiroBastaForaDaJanela(['chatguru', 'meta_cloud'])).toBe(false);
+    expect(roteiroBastaForaDaJanela(['meta_cloud'])).toBe(false);
+    expect(roteiroBastaForaDaJanela([])).toBe(false);
   });
 
   // Revisão do #1729: o plano B só sai com a janela de 24 h fechada, e o seletor

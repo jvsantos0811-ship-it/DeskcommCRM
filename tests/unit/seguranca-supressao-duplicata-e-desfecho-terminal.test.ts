@@ -58,7 +58,11 @@ describe("follow-up fixo não tem gate near-dup (decisão mantida e documentada)
     // O caminho fixo (handoff-skip → getLeadContext → cadeia → despacho) não
     // contém NENHUMA comparação de conteúdo: nada de supressão implícita entre
     // o texto escolhido pelo operador e o envio.
-    const iHandoff = followup.indexOf("isLeadInHandoff(pool, tenantId, leadId)");
+    // Ancorado na função do texto fixo: outras funções do arquivo (o diálogo da
+    // conexão, PC-052 parte 3b) também conferem o handoff, e o recorte é o DESTE caminho.
+    const iFuncao = followup.indexOf("async function sendFixedOutbound(");
+    expect(iFuncao).toBeGreaterThan(-1);
+    const iHandoff = followup.indexOf("isLeadInHandoff(pool, tenantId, leadId)", iFuncao);
     const iDespacho = followup.indexOf("const context = await getLeadContext(", iHandoff);
     expect(iHandoff).toBeGreaterThan(-1);
     expect(iDespacho).toBeGreaterThan(iHandoff);

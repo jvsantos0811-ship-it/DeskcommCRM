@@ -56,6 +56,8 @@ import { isLeadInHandoff } from './human-handoff';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { enviarRoteiroForaDaJanela, type UsoForaDaJanela } from '@/lib/channels/roteiro-fora-da-janela';
+import { falaPorRoteiro } from '@/lib/channels/fala-por-roteiro';
+import { createHash } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { etapaQueExigeHumano, passarParaHumanoPelaEtapa } from './etapa-exige-humano';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
@@ -666,44 +668,95 @@ type EnvioFixoDesfecho =
  *
  * O diálogo não passa pela cadeia `before_send` (quem manda a mensagem é a
  * plataforma), então as portas que valem para o texto do fluxo são cobradas
- * AQUI, as mesmas e na mesma ordem: pessoa no comando ou opt-out, etapa "só
- * atendimento humano", e a janela de ENVIO do número (8h–20h, domingo) — fora
- * dela o passo é ADIADO para a abertura, nunca disparado. A recusa da
- * plataforma não reenvia: vira `skipped` com o motivo (envio em dobro é pior que
- * não-envio).
+ * AQUI: pessoa no comando ou opt-out, contato bloqueado ou anonimizado, etapa
+ * "só atendimento humano" (passa para uma pessoa, como o texto fixo), e a janela
+ * de ENVIO do número (8h–20h, domingo) — fora dela o job é RE-AGENDADO para a
+ * abertura, nunca disparado. Um recibo no `send_ledger` antes do diálogo impede
+ * a segunda execução no reprocesso do job. A recusa da plataforma não reenvia:
+ * vira `skipped` com o motivo — e `skipped` encerra a sequência (`turn-bridge`).
+ *
+ * Fica de fora, e está dito: o espaçamento anti-ban entre envios (o diálogo é
+ * uma chamada à plataforma, que manda a mensagem no ritmo dela) e o teto diário
+ * do aquecimento do número.
  */
 async function enviarRoteiroDoFluxo(
   deps: InboundTurnDeps,
+  job: JobRow,
   pool: pg.Pool,
   clock: () => Date,
   target: ReentrySendTarget,
   uso: UsoForaDaJanela,
-  runLog: Pick<ReturnType<typeof withFields>, 'info' | 'warn'>,
+  runLog: ReturnType<typeof withFields>,
 ): Promise<{ kind: 'sent' } | { kind: 'deferred'; until: Date; reason: string } | { kind: 'skipped'; reason: string }> {
-  // `contato` e não `leadId`: a cerca de `seguranca-supressao-duplicata-e-desfecho-terminal`
-  // recorta o caminho do texto fixo pela PRIMEIRA chamada com `leadId`.
-  const { tenantId, leadId: contato, channelSessionId, conversationId } = target;
-  if (await isLeadInHandoff(pool, tenantId, contato)) {
+  const { tenantId, leadId, channelSessionId, conversationId } = target;
+  if (await isLeadInHandoff(pool, tenantId, leadId)) {
     return { kind: 'skipped', reason: 'O cliente está com a equipe ou pediu para parar: o diálogo do follow-up não saiu.' };
   }
-  if ((await etapaQueExigeHumano(pool, tenantId, contato)) !== null) {
+  // Bloqueado (é onde o STOP mora) e anonimizado: `isLeadInHandoff` não os vê,
+  // e o cancelamento da inscrição pelo STOP é assíncrono.
+  const { rows: contato } = await pool.query<{ is_blocked: boolean; is_anonymized: boolean }>(
+    'select is_blocked, is_anonymized from contacts where organization_id = $1 and id = $2',
+    [tenantId, leadId],
+  );
+  if (!contato[0] || contato[0].is_blocked || contato[0].is_anonymized) {
+    return { kind: 'skipped', reason: 'O contato está bloqueado ou pediu para parar: o diálogo do follow-up não saiu.' };
+  }
+  const etapa = await etapaQueExigeHumano(pool, tenantId, leadId);
+  if (etapa !== null) {
+    // A mesma regra do texto fixo: o passo não sai e a conversa passa para uma pessoa.
+    await passarParaHumanoPelaEtapa(
+      pool,
+      { tenantId, leadId, conversationId, channelSessionId, jobId: job.id },
+      etapa,
+      { checkpoint: await latestCheckpoint(pool, tenantId, leadId), log: runLog, aviso: null },
+    );
     return { kind: 'skipped', reason: 'O negócio está numa etapa "só atendimento humano": o diálogo do follow-up não saiu.' };
   }
   const { knobs } = await loadChannelKnobs(pool, tenantId, channelSessionId, deps.log);
   const agora = clock();
   if (!janelaDeEnvioAberta(agora, knobs)) {
-    return {
-      kind: 'deferred',
-      until: proximaAberturaDaJanela(agora, knobs),
-      reason: 'fora da janela de envio do número — o diálogo sai na abertura',
-    };
+    // O mesmo contrato do texto fixo: re-agenda o job para a abertura E devolve
+    // `deferred` ao enrollment. Sem o re-agendamento o motor só re-checaria o nó
+    // até o dead-man (~11 h) e o mataria com motivo falso.
+    const abertura = proximaAberturaDaJanela(agora, knobs);
+    await rescheduleReentry(pool, { tenantId, leadId, jobId: job.id, at: abertura, payload: job.payload });
+    return { kind: 'deferred', until: abertura, reason: 'fora da janela de envio do número — o diálogo sai na abertura' };
   }
+
+  // O RECIBO ANTES DO DIÁLOGO, no mesmo livro do envio (`send_ledger`, único por
+  // job e seq). O diálogo não volta atrás: se o job for reprocessado (o `complete`
+  // lançou, o worker morreu), o recibo existente impede a segunda execução —
+  // envio em dobro é pior que não-envio. Recibo `requested` de uma tentativa que
+  // caiu no meio conta como saído: não dá para saber, e repetir é o pior caso.
+  const hash = createHash('sha256').update(`roteiro:${uso}`).digest('hex');
+  try {
+    await pool.query(
+      'insert into send_ledger (organization_id, contact_id, job_id, seq, body_hash) values ($1, $2, $3, $4, $5)',
+      [tenantId, leadId, job.id, SEQ_DO_ROTEIRO, hash],
+    );
+  } catch (err) {
+    if (!(err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505')) throw err;
+    const { rows } = await pool.query<{ status: string }>(
+      'select status from send_ledger where organization_id = $1 and job_id = $2 and seq = $3',
+      [tenantId, job.id, SEQ_DO_ROTEIRO],
+    );
+    if (rows[0]?.status === 'failed') {
+      return { kind: 'skipped', reason: 'A plataforma recusou o diálogo do follow-up nesta tentativa.' };
+    }
+    runLog.info('diálogo do follow-up já executado neste job — não repete', { uso });
+    return { kind: 'sent' };
+  }
+
   const r = await enviarRoteiroForaDaJanela(createAdminClient(), {
     organizationId: tenantId,
     channelSessionId,
     conversationId,
     uso,
   });
+  await pool.query(
+    'update send_ledger set status = $4, last_error = $5, updated_at = now() where organization_id = $1 and job_id = $2 and seq = $3',
+    [tenantId, job.id, SEQ_DO_ROTEIRO, r.ok ? 'accepted' : 'failed', r.ok ? null : r.motivo],
+  );
   if (r.ok) {
     runLog.info('passo do fluxo saiu pelo diálogo da conexão (janela de 24 h fechada)', { uso });
     return { kind: 'sent' };
@@ -716,6 +769,18 @@ async function enviarRoteiroDoFluxo(
         ? 'A janela de 24 horas está fechada e a conexão não tem diálogo escolhido para este passo do follow-up.'
         : 'A janela de 24 horas está fechada e a plataforma não executou o diálogo do follow-up.',
   };
+}
+
+/** `seq` do recibo do diálogo no `send_ledger`: fora da faixa das mensagens do turno. */
+const SEQ_DO_ROTEIRO = 101;
+
+/** A conexão do alvo fala fora da janela por diálogo da plataforma? */
+async function conexaoFalaPorRoteiro(pool: pg.Pool, target: ReentrySendTarget): Promise<boolean> {
+  const { rows } = await pool.query<{ provider: string | null }>(
+    'select provider from channel_sessions where organization_id = $1 and id = $2',
+    [target.tenantId, target.channelSessionId],
+  );
+  return falaPorRoteiro(rows[0]?.provider ?? null);
 }
 
 interface ReentrySendTarget {
@@ -833,24 +898,19 @@ async function runFlowDrivenTurn(
     // e o campo era gravado, validado e nunca lido. Só vale para modelo APROVADO
     // do canal: um texto de `message_templates` seria recusado pela mesma janela,
     // então nesse caso o turno segue para a IA como sempre seguiu.
-    if (
-      passo === null &&
-      input.fallbackTemplateId !== undefined &&
-      (await janelaFechada(pool, target, clock()))
-    ) {
-      passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId);
-    }
     // PC-052 parte 3b — O PLANO B NO CANAL QUE ATENDE DENTRO DE OUTRA PLATAFORMA.
     // Lá o CRM não manda modelo da Meta: com a janela fechada, executa o diálogo
-    // que a conexão escolheu para este passo (`roteiros_fora_da_janela`). Só
-    // quando o passo não tem modelo aprovado (que é o caminho do canal oficial).
+    // que a conexão escolheu para este passo (`roteiros_fora_da_janela`). O
+    // caminho sai do PROVIDER da conversa, e não do que o passo tem: numa
+    // organização com os dois canais, o mesmo passo leva modelo (conversa do
+    // canal oficial) e diálogo (conversa da plataforma).
     if (
       passo === null &&
-      input.fallbackTemplateId === undefined &&
       input.fallbackRoteiro !== undefined &&
+      (await conexaoFalaPorRoteiro(pool, target)) &&
       (await janelaFechada(pool, target, clock()))
     ) {
-      const desfecho = await enviarRoteiroDoFluxo(deps, pool, clock, target, input.fallbackRoteiro, runLog);
+      const desfecho = await enviarRoteiroDoFluxo(deps, job, pool, clock, target, input.fallbackRoteiro, runLog);
       await complete(pool, {
         jobId: job.id,
         jobClaim: claimOfJob(job),
@@ -865,6 +925,13 @@ async function runFlowDrivenTurn(
               : { kind: 'skipped', reason: desfecho.reason },
       });
       return;
+    }
+    if (
+      passo === null &&
+      input.fallbackTemplateId !== undefined &&
+      (await janelaFechada(pool, target, clock()))
+    ) {
+      passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId);
     }
     if (passo !== null && passo.tipo === 'recusado') {
       runLog.info('passo do fluxo pulado — o modelo não pode sair', { motivo: passo.motivo });

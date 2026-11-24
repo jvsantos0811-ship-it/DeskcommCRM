@@ -24,6 +24,7 @@ import { triggerConfigSchema, type FollowupFlowSurface } from "@/lib/followup/ap
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
   algumCanalExigeModeloForaDaJanela,
+  roteiroBastaForaDaJanela,
   proximosDoGrafo,
   validateFlowForPublish,
   type RoteiroDoPublish,
@@ -223,6 +224,12 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const exigeModeloForaDaJanela = algumCanalExigeModeloForaDaJanela(
     (conexoes ?? []).map((c) => c.provider as string | null),
   );
+  // PC-052 parte 3b: o diálogo da conexão só basta como plano B quando TODA
+  // conexão com janela de 24 h fala por diálogo — num canal oficial da Meta ele
+  // não alcança a conversa.
+  const roteiroServeForaDaJanela = roteiroBastaForaDaJanela(
+    (conexoes ?? []).map((c) => c.provider as string | null),
+  );
   // O gatilho entra só pelos AVISOS (`avisosDoGatilho`): nenhuma recusa
   // depende dele, e um `trigger_config` que não parseia não pode travar a
   // publicação de um grafo válido — vira ausência, que é "nada a avisar".
@@ -232,6 +239,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     surface,
     roteiro,
     exigeModeloForaDaJanela,
+    roteiroServeForaDaJanela,
     modelos: modelos.modelos,
     ...(gatilho.success ? { trigger: gatilho.data } : {}),
   });

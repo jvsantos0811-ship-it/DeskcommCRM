@@ -29,6 +29,7 @@ import { resolverCredenciais } from "./atendimento-externo/credenciais";
 import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO } from "./capabilities";
 
 export { USOS_FORA_DA_JANELA, type UsoForaDaJanela };
+export { falaPorRoteiro } from "./fala-por-roteiro";
 
 function soDigitos(v: string | null | undefined): string {
   return (v ?? "").replace(/\D/g, "");

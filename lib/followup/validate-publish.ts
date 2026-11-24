@@ -7,6 +7,7 @@ import type { EtapaCitada } from './etapas-citadas';
 import type { ModelosDaConta } from './modelos-citados';
 import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
+import { falaPorRoteiro } from '../channels/fala-por-roteiro';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
 
 /**
@@ -131,6 +132,14 @@ export interface ContextoDoPublish {
    */
   exigeModeloForaDaJanela?: boolean;
   /**
+   * PC-052 parte 3b: TODA conexão com janela de 24 h da organização fala fora
+   * dela por diálogo da plataforma (`falaPorRoteiro`)? Só aí o `fallback_roteiro`
+   * basta como plano B. Numa organização com canal oficial da Meta (sozinho ou
+   * junto), o diálogo não alcança a conversa de lá, e o modelo continua exigido.
+   * Ausente = o diálogo não basta (o comportamento de antes).
+   */
+  roteiroServeForaDaJanela?: boolean;
+  /**
    * O gatilho que vai armar este fluxo. Só os AVISOS o leem — nenhuma recusa
    * depende dele —, e ausente significa "não há o que avisar sobre o gatilho".
    */
@@ -226,6 +235,18 @@ export function algumCanalExigeModeloForaDaJanela(providers: readonly (string | 
   return providers.some(
     (p) => transportaMensagem(p) && !capabilitiesOf(p as ChannelProvider).freeformOutsideWindow
   );
+}
+
+/**
+ * PC-052 parte 3b — o `fallback_roteiro` (diálogo da conexão) basta como plano B?
+ * Só quando há conexão com janela de 24 h e TODAS elas falam fora da janela por
+ * diálogo da plataforma. Uma conexão oficial da Meta ao lado exige o modelo.
+ */
+export function roteiroBastaForaDaJanela(providers: readonly (string | null)[]): boolean {
+  const comJanela = providers.filter(
+    (p) => transportaMensagem(p) && !capabilitiesOf(p as ChannelProvider).freeformOutsideWindow
+  );
+  return comJanela.length > 0 && comJanela.every((p) => falaPorRoteiro(p));
 }
 
 export interface RoteiroDoPublish {
@@ -566,7 +587,9 @@ function analyzeCondensedPaths(
   startId: string,
   nodes: FlowNode[],
   nodesById: Map<string, FlowNode>,
-  outEdges: Map<string, FlowEdge[]>
+  outEdges: Map<string, FlowEdge[]>,
+  /** PC-052 parte 3b: o `fallback_roteiro` basta como plano B nesta organização. */
+  roteiroServe = false
 ): { longWaitNodeIds: Set<string>; maxStepsExceeded: boolean } {
   const longWaitNodeIds = new Set<string>();
   let maxStepsExceeded = false;
@@ -630,8 +653,9 @@ function analyzeCondensedPaths(
         node.type === 'action' &&
         node.config.mode === 'ai_message' &&
         !node.config.fallback_template_id &&
-        // PC-052 parte 3b: o diálogo da conexão (ChatGuru) também é plano B.
-        !node.config.fallback_roteiro &&
+        // PC-052 parte 3b: o diálogo da conexão também é plano B — mas só quando
+        // toda conexão com janela da organização fala por diálogo.
+        !(node.config.fallback_roteiro && roteiroServe) &&
         totalWait >= LONG_WAIT_THRESHOLD_MS
       ) {
         longWaitNodeIds.add(id);
@@ -1088,7 +1112,8 @@ export function validateFlowForPublish(
       startTrigger.id,
       nodes,
       nodesById,
-      outEdges
+      outEdges,
+      contexto.roteiroServeForaDaJanela === true
     );
     const exigeModelo = contexto.exigeModeloForaDaJanela !== false;
     for (const id of exigeModelo ? [...longWaitNodeIds].sort() : []) {
