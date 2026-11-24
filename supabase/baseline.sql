@@ -63050,3 +63050,31 @@ begin
       check (rotation_owner_user_ids is null or cardinality(rotation_owner_user_ids) <= 10);
   end if;
 end $$;
+
+-- ---- vídeo de aquecimento por organização (migration 9042) ----
+--
+-- PC-045 parte 2. Não cria função, então pode ficar depois da VARREDURA anon.
+-- Desenho completo no cabeçalho de supabase/migrations/20261124030000_9042_video_de_aquecimento.sql.
+
+create table if not exists public.agenda_video_aquecimento (
+  organization_id  uuid primary key references public.organizations(id) on delete cascade,
+  storage_path     text not null check (storage_path ~ '^[0-9a-f-]{36}/aquecimento/[A-Za-z0-9._-]{1,120}$'),
+  mime             text not null check (mime in ('video/mp4', 'video/3gpp')),
+  bytes            integer not null check (bytes > 0 and bytes <= 16777216),
+  texto            text check (texto is null or char_length(texto) <= 500),
+  trocado_em       timestamptz not null default now(),
+  trocado_por      uuid,
+  updated_at       timestamptz not null default now()
+);
+
+comment on table public.agenda_video_aquecimento is
+  'PC-045 parte 2 (migration 9042): o vídeo de aquecimento da organização (mp4 até 16 MB no bucket whatsapp-media, pasta <org>/aquecimento) e um texto curto opcional, enviados uma vez por compromisso logo depois da confirmação do agendamento. Sem linha = como antes. Só o servidor: RLS sem policy.';
+
+alter table public.agenda_video_aquecimento enable row level security;
+revoke all on public.agenda_video_aquecimento from public, anon, authenticated;
+grant select, insert, update, delete on public.agenda_video_aquecimento to service_role;
+
+drop trigger if exists trg_agenda_video_aquecimento_touch on public.agenda_video_aquecimento;
+create trigger trg_agenda_video_aquecimento_touch
+  before update on public.agenda_video_aquecimento
+  for each row execute function public.fn_touch_updated_at();

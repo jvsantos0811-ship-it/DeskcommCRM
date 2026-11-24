@@ -3,6 +3,7 @@ import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { ModeloDoEventoNaAgenda } from "@/components/agenda/ModeloDoEventoNaAgenda";
+import { VideoDeAquecimento } from "@/components/agenda/VideoDeAquecimento";
 import type { ModeloDoEvento } from "@/lib/agenda/modelo-do-evento";
 import { MeetComAcessoAberto } from "@/components/agenda/MeetComAcessoAberto";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
@@ -499,6 +500,8 @@ export function TiposDeAgendamentoClient({
         modeloInicial={modeloDoEvento}
         podeMudar={podeMudarModeloDoEvento}
       />
+      {/* PC-045 parte 2: o vídeo que sai depois da confirmação do agendamento. */}
+      <VideoDeAquecimento podeMudar={podeEditar} />
       <DiasBloqueados podeEditar={podeEditar} />
       {podeEditar ? (
         <div>

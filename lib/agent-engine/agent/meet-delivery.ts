@@ -17,12 +17,87 @@ import {
 import { meetVideoUrl } from "@/lib/agenda/google/meet";
 import { textoDoCompromisso, type MotivoDaEntrega } from "@/lib/agenda/texto-do-compromisso";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+import {
+  BUCKET_DO_VIDEO,
+  caminhoNaConversa,
+  videoPertenceAOrg,
+} from "@/lib/agenda/video-aquecimento";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+/** Copia o vídeo da organização para a pasta da conversa. `true` = está no destino. */
+export type CopiarVideo = (origem: string, destino: string) => Promise<boolean>;
+
+function copiarVideoNoStorage(log: Logger): CopiarVideo {
+  return async (origem, destino) => {
+    const { error } = await createAdminClient()
+      .storage.from(BUCKET_DO_VIDEO)
+      .copy(origem, destino);
+    if (!error) return true;
+    // Já copiado antes (retentativa do mesmo compromisso): o arquivo está lá.
+    if (/already exists/i.test(error.message) || (error as { statusCode?: string }).statusCode === "409") return true;
+    log.warn("vídeo de aquecimento não copiado para a conversa", { detalhe: error.message.slice(0, 120) });
+    return false;
+  };
+}
+
+/**
+ * PC-045 parte 2 — o vídeo de aquecimento da organização, logo depois da
+ * confirmação do agendamento. Só na 1ª confirmação (não na remarcação), só
+ * quando a confirmação SAIU (então passou pela janela, pelo opt-out e pela LGPD
+ * agora há pouco) e só com vídeo cadastrado. É a 2ª mensagem do MESMO job: a
+ * idempotência por (job, posição) garante uma vez por compromisso. Melhor
+ * esforço — falha aqui nunca derruba a confirmação, que já saiu.
+ */
+export async function enviarVideoDeAquecimento(
+  pool: pg.Pool,
+  log: Logger,
+  copiar: CopiarVideo,
+  p: {
+    orgId: string;
+    conversationId: string;
+    appointmentId: string;
+    contactId: string;
+    jobId: string;
+    jobClaim: NonNullable<ReturnType<typeof claimOfJob>>;
+    channel: RuntimeSendChannel;
+  },
+): Promise<void> {
+  try {
+    const { rows } = await pool.query<{ storage_path: string; mime: string; texto: string | null }>(
+      "select storage_path, mime, texto from agenda_video_aquecimento where organization_id = $1",
+      [p.orgId],
+    );
+    const video = rows[0];
+    if (!video || !videoPertenceAOrg(video.storage_path, p.orgId)) return;
+    const destino = caminhoNaConversa(p.orgId, p.conversationId, p.appointmentId, video.storage_path);
+    if (!(await copiar(video.storage_path, destino))) return;
+    const r = await p.channel.send({
+      tenantId: p.orgId,
+      leadId: p.contactId,
+      jobId: p.jobId,
+      jobClaim: p.jobClaim,
+      seq: 2,
+      conversationId: p.conversationId,
+      body: (video.texto ?? "").trim(),
+      media: { storagePath: destino, mime: video.mime, type: "video" },
+    });
+    if (r.kind !== "sent" && r.kind !== "already_sent") {
+      log.warn("vídeo de aquecimento não saiu", { desfecho: r.kind });
+    }
+  } catch (err) {
+    log.warn("vídeo de aquecimento falhou — a confirmação já saiu", {
+      detalhe: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
 
 export function createMeetDeliveryHandler(deps: {
   crmCfg: CrmEdgeConfig;
   log: Logger;
   channel?: (pool: pg.Pool) => RuntimeSendChannel;
   sleep?: (ms: number) => Promise<void>;
+  /** Injeção para o teste; em produção copia no Storage (`whatsapp-media`). */
+  copiarVideo?: CopiarVideo;
 }) {
   return async (job: JobRow, pool: pg.Pool) => {
     const claim = claimOfJob(job);
@@ -150,6 +225,17 @@ export function createMeetDeliveryHandler(deps: {
         switch (result.outcome.kind) {
           case "sent":
           case "already_sent":
+            if (((job.payload.motivo as MotivoDaEntrega | undefined) ?? "primeiro_envio") === "primeiro_envio") {
+              await enviarVideoDeAquecimento(pool, deps.log, deps.copiarVideo ?? copiarVideoNoStorage(deps.log), {
+                orgId: job.organization_id,
+                conversationId: boundary.conversation_id,
+                appointmentId: String(job.payload.appointment_id),
+                contactId: job.contact_id!,
+                jobId: job.id,
+                jobClaim: claim,
+                channel,
+              });
+            }
             await settle("sent");
             break;
           case "queued":

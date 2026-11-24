@@ -49,7 +49,9 @@ export interface ChannelSendInput {
    * mensagens, como em toda mídia — e é ele que confere a URL antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    // `type` ausente = imagem (o caminho da foto do catálogo, de antes). Vídeo é o
+    // de aquecimento da agenda (PC-045), copiado para a pasta da conversa.
+    | { storagePath: string; mime: string; type?: 'image' | 'video' }
     | { url: string; mime: string; type: 'image' | 'document' };
 }
 

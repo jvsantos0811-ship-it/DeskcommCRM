@@ -656,6 +656,10 @@ export const AUDIT_ACTIONS = [
   "agenda.google.conexao_desconectada",
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
+  // PC-045 parte 2 (fork): vídeo de aquecimento da organização enviado,
+  // trocado (inclui só o texto) ou tirado. Metadata só com a forma.
+  "agenda.video_aquecimento_trocado",
+  "agenda.video_aquecimento_removido",
   "agenda.tipo_criado",
   "agenda.tipo_alterado",
   "agenda.tipo_desativado",

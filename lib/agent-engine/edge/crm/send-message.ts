@@ -71,7 +71,7 @@ export interface SendMessageInput {
    * (#2734), que o operador aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { storagePath: string; mime: string; type?: 'image' | 'video' }
     | { url: string; mime: string; type: 'image' | 'document' };
 }
 
@@ -103,7 +103,7 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              type: input.media.type ?? ('image' as const),
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }
