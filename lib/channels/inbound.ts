@@ -21,7 +21,8 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
-import { lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
+import { corpoDoPost, lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
+import { tratarEnqueteDoPost } from "./atendimento-externo/enquete";
 import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
 import { phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
@@ -497,8 +498,24 @@ async function atendimentoExternoInbound(
     return { ok: false, code: "unauthorized", message: "bad_secret" };
   }
 
+  // PC-050: o voto na enquete do grupo, quando a chave da organização está
+  // ligada. Grava só o voto (nenhuma mensagem, nenhuma IA); a ativação que chega
+  // SEM texto termina aqui. Desligada = como antes. Nunca lança.
+  const enquete = await tratarEnqueteDoPost(admin, {
+    orgId: input.session.organization_id,
+    corpo: corpoDoPost(input.rawBody),
+  });
+
   const leitura = lerEntrada(input.rawBody);
   if (!leitura.ok) {
+    if (
+      enquete.status === "registrado" &&
+      leitura.motivo === "contrato_violado" &&
+      leitura.campos.length === 1 &&
+      leitura.campos[0] === "texto_mensagem"
+    ) {
+      return { ok: true, body: { status: "enquete_registrada", mudou: enquete.mudou } };
+    }
     if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
     return {
       ok: false,

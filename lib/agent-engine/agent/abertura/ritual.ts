@@ -114,7 +114,7 @@ export function ritualBlocks(
       : []),
     // Só entra quando o contato veio de anúncio: ausência não custa token.
     ...(origemBlock.trim() !== ''
-      ? ['## Origem deste contato — o anúncio que ele clicou', origemBlock, '']
+      ? ['## Origem deste contato — o anúncio que ele clicou ou a enquete em que votou', origemBlock, '']
       : []),
     '## Contexto do lead (contato + últimas mensagens)',
     // Campo de cadastro VAZIO não é prova de que a informação não existe.

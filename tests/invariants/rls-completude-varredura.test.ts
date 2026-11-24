@@ -417,6 +417,33 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "organização existindo (controle positivo), o admin dessa organização por JWT e o anon " +
       "recebem `permission denied` em SELECT, INSERT e DELETE. Migration 9030 (fork, PC-028).",
   },
+  {
+    tabela: "enquetes_config",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
+  {
+    tabela: "enquetes_do_grupo",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
+  {
+    tabela: "enquetes_votos",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
 ];
 
 /**

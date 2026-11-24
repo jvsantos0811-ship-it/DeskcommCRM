@@ -268,6 +268,9 @@ export const AUDIT_ACTIONS = [
   "ai_agent.run_completed",
   "ai_agent.run_failed",
   "channel.connected",
+  // PC-050 (fork): enquete do grupo — chave, campo do voto e enquetes salvos
+  // pela tela do canal de atendimento externo (metadata só com a forma).
+  "channel.enquetes_salvas",
   "prospecting.changed",
   // A ABORDAGEM que SAIU (PR #963). Distinta de `prospecting.changed`, que é
   // configuração: esta é a única linha do produto que fala primeiro com quem

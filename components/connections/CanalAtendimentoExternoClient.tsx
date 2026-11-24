@@ -13,6 +13,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { nomeDoCanal } from "@/lib/channels/estado";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { EnquetesDoGrupo } from "./EnquetesDoGrupo";
 import { FunilDoNumero } from "./FunilDoNumero";
 import { ResponsavelDoNumero } from "./ResponsavelDoNumero";
 
@@ -375,6 +376,8 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
           </div>
         </Card>
       )}
+      {/* PC-050: enquetes do grupo (desligadas de fábrica). */}
+      {conectado && <EnquetesDoGrupo />}
     </div>
   );
 }

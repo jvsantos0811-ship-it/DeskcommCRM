@@ -17910,6 +17910,25 @@ export const DICIONARIO: Traducoes = {
   "Confira os campos: algum valor está fora do formato.": { es: "Revise los campos: algún valor está fuera del formato." },
   "Conecte a conta antes de configurar.": { es: "Conecte la cuenta antes de configurar." },
   "A plataforma de atendimento não recebeu a passagem: devolva o chat à equipe por lá.": { es: "La plataforma de atención no recibió el traspaso: devuelva el chat al equipo desde allí." },
+  // PC-050 (fork): enquetes do grupo.
+  "Enquetes salvas.": { es: "Encuestas guardadas." },
+  "Enquetes do grupo": { es: "Encuestas del grupo" },
+  "Quem vota na enquete recebe a mensagem de abertura pelo diálogo da plataforma, no número oficial. Aqui você diz ao CRM de qual campo vem o voto e o que cada opção quer dizer: a IA abre a conversa a partir do voto. Use só opções neutras: todo o grupo vê quem votou em quê.": { es: "Quien vota en la encuesta recibe el mensaje de apertura por el diálogo de la plataforma, en el número oficial. Aquí le dices al CRM de qué campo viene el voto y qué significa cada opción: la IA abre la conversación a partir del voto. Usa solo opciones neutras: todo el grupo ve quién votó qué." },
+  "Ligar enquetes do grupo nesta organização": { es: "Activar encuestas del grupo en esta organización" },
+  "Campo de onde vem o voto": { es: "Campo del que viene el voto" },
+  "Nenhum aviso recebido ainda. Dispare o diálogo da enquete uma vez num chat de teste e recarregue esta tela.": { es: "Todavía no llegó ningún aviso. Dispara el diálogo de la encuesta una vez en un chat de prueba y recarga esta pantalla." },
+  "Recomendado: o diálogo de cada opção grava no campo o valor enquete:<código>:<opção>.": { es: "Recomendado: el diálogo de cada opción guarda en el campo el valor enquete:<código>:<opción>." },
+  "Código da enquete": { es: "Código de la encuesta" },
+  "código (ex.: reparadora)": { es: "código (ej.: reparadora)" },
+  "Pergunta da enquete": { es: "Pregunta de la encuesta" },
+  "Enquete ativa": { es: "Encuesta activa" },
+  "Opção": { es: "Opción" },
+  "O que a opção quer dizer": { es: "Qué significa la opción" },
+  "O que a opção quer dizer (para a IA)": { es: "Qué significa la opción (para la IA)" },
+  "Quer contato": { es: "Quiere contacto" },
+  "Adicionar opção": { es: "Agregar opción" },
+  "Adicionar enquete": { es: "Agregar encuesta" },
+  "Salvar enquetes": { es: "Guardar encuestas" },
 };
 
 /**

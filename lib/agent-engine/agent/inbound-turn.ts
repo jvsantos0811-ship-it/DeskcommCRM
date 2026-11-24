@@ -122,6 +122,7 @@ import { gravarTempoDoTurno } from "./tempo-do-turno";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
+import { buildEnqueteBlock } from './abertura/enquete-do-contato';
 import { agendaNoFechamento } from './abertura/agenda-no-fechamento';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
 import { podeExporScheduleFollowup } from '@/lib/followup/callback-policy';
@@ -3013,7 +3014,13 @@ async function executarTurnoDoAgente(
       ? (preview.notes ?? []).map((n) => n.headline + ': ' + n.body).join('\n')
       : buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens),
     preview?.kind === 'sandbox' ? '' : buildCompromissosBlock(pool, tenantId, leadId, new Date()),
-    preview ? '' : buildOrigemBlock(pool, tenantId, leadId, new Date()),
+    // PC-050: o voto na enquete do grupo entra junto da origem (os dois dizem de onde o contato veio).
+    preview
+      ? ''
+      : Promise.all([
+          buildOrigemBlock(pool, tenantId, leadId, new Date()),
+          buildEnqueteBlock(pool, tenantId, leadId, new Date()),
+        ]).then((blocos) => blocos.filter((b) => b.trim() !== '').join('\n\n')),
     preview
       ? null
       : pool
