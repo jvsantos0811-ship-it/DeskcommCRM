@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const deps = vi.hoisted(() => ({ audit: vi.fn(), token: vi.fn() }));
+const deps = vi.hoisted(() => ({ audit: vi.fn(), token: vi.fn(), ocupa: vi.fn() }));
+vi.mock("@/lib/agenda/consulta", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  coletaOQueOcupa: (...args: unknown[]) => deps.ocupa(...args),
+}));
 vi.mock("@/lib/audit", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   audit: deps.audit,
@@ -17,6 +21,8 @@ import { paraEventoDoGoogle, type AgendamentoParaGoogle } from "@/lib/agenda/goo
 import { localProjection } from "@/lib/agenda/google/sync-model";
 import { ocupadosDoDono } from "@/lib/agenda/ocupados";
 import { agendaInterna, lerModeloDoEvento } from "@/lib/agenda/modelo-do-evento";
+import { renderCompromissos } from "@/lib/agent-engine/agent/compromissos-do-contato";
+import { protecaoDaAgenda } from "@/lib/agenda/protecao-followup";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -191,6 +197,61 @@ describe("registrar a presença", () => {
     expect(chamadas.some((c) => c.rpc === "fn_appointment_change")).toBe(false);
   });
 
+  it("compromisso que já terminou: recusa", async () => {
+    const chamadas: Array<{ rpc: string; args: unknown }> = [];
+    await expect(
+      alterarAgendamentoHandler(
+        sbDoCompromisso(
+          { ...compromisso("aguardando"), starts_at: "2020-01-01T12:00:00.000Z", ends_at: "2020-01-01T12:30:00.000Z" },
+          chamadas,
+        ),
+        ctxDaIA(),
+        { id: COMPROMISSO, lead_presence: "confirmada" },
+      ),
+    ).rejects.toMatchObject({ status: 422, code: "agenda_presenca_fora_de_hora" });
+    expect(chamadas.some((c) => c.rpc === "fn_appointment_change")).toBe(false);
+  });
+
+  it("voltar de 'não vai' para um horário que já foi dado a outro: recusa SEM escrever", async () => {
+    deps.ocupa.mockResolvedValue({
+      ok: true,
+      ocupados: [{ inicio: new Date("2099-01-05T12:00:00.000Z"), fim: new Date("2099-01-05T12:30:00.000Z") }],
+    });
+    const chamadas: Array<{ rpc: string; args: unknown }> = [];
+    await expect(
+      alterarAgendamentoHandler(
+        sbDoCompromisso(
+          { ...compromisso("nao_vai"), starts_at: "2099-01-05T12:00:00.000Z", ends_at: "2099-01-05T12:30:00.000Z" },
+          chamadas,
+        ),
+        ctxDaIA(),
+        { id: COMPROMISSO, lead_presence: "confirmada" },
+      ),
+    ).rejects.toMatchObject({ status: 422, code: "agenda_horario_indisponivel" });
+    expect(chamadas.some((c) => c.rpc === "fn_appointment_change")).toBe(false);
+    // A conferência ignora o próprio compromisso (ele ocupa de onde sai).
+    expect(deps.ocupa).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      expect.objectContaining({ ignorarAgendamentoId: COMPROMISSO }),
+    );
+  });
+
+  it("voltar de 'não vai' com o horário ainda livre: grava", async () => {
+    deps.ocupa.mockResolvedValue({ ok: true, ocupados: [] });
+    const chamadas: Array<{ rpc: string; args: unknown }> = [];
+    await alterarAgendamentoHandler(
+      sbDoCompromisso(
+        { ...compromisso("nao_vai"), starts_at: "2099-01-05T12:00:00.000Z", ends_at: "2099-01-05T12:30:00.000Z" },
+        chamadas,
+      ),
+      ctxDaIA(),
+      { id: COMPROMISSO, lead_presence: "confirmada" },
+    );
+    const escrita = chamadas.find((c) => c.rpc === "fn_appointment_change");
+    expect((escrita?.args as { p_patch: Record<string, unknown> }).p_patch).toEqual({ lead_presence: "confirmada" });
+  });
+
   it("compromisso que já não vai acontecer: recusa", async () => {
     const chamadas: Array<{ rpc: string; args: unknown }> = [];
     await expect(
@@ -223,6 +284,7 @@ describe("pintar no Google", () => {
           not: () => q,
           is: () => q,
           in: () => q,
+          gte: () => q,
           order: () => q,
           limit: async () => ({ data: linhas, error: null }),
           update: (v: Record<string, unknown>) => {
@@ -245,7 +307,8 @@ describe("pintar no Google", () => {
     const updates: Array<Record<string, unknown>> = [];
     const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
     const r = await pintarPresencasPendentes(adminFalso([pendente], updates), { fetchImpl });
-    expect(r).toEqual({ pintados: 1, falhas: 0 });
+    expect(r).toMatchObject({ pintados: 1, falhas: 0 });
+    expect(r.porOrganizacao.get(ORG)).toBe(1);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain("sendUpdates=none");
     expect(url).toContain(encodeURIComponent("agenda@exemplo.com"));
@@ -259,7 +322,61 @@ describe("pintar no Google", () => {
     const updates: Array<Record<string, unknown>> = [];
     const fetchImpl = vi.fn(async () => new Response("{}", { status: 403 }));
     const r = await pintarPresencasPendentes(adminFalso([pendente], updates), { fetchImpl });
-    expect(r).toEqual({ pintados: 0, falhas: 1 });
+    expect(r).toMatchObject({ pintados: 0, falhas: 1 });
     expect(updates).toHaveLength(0);
+  });
+
+  it("o evento sumiu do Google (404): sai da fila sem contar como pintado", async () => {
+    deps.token.mockResolvedValue("tok");
+    const updates: Array<Record<string, unknown>> = [];
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 404 }));
+    const r = await pintarPresencasPendentes(adminFalso([pendente], updates), { fetchImpl });
+    expect(r).toMatchObject({ pintados: 0, falhas: 1 });
+    expect(updates[0]).toEqual({ lead_presence_painted: "confirmada" });
+  });
+});
+
+describe("o que a IA vê dos compromissos do contato", () => {
+  const linha = (lead_presence: string | null) => ({
+    id: COMPROMISSO,
+    title: "Ligação",
+    starts_at: "2099-01-05T12:00:00.000Z",
+    ends_at: "2099-01-05T12:30:00.000Z",
+    time_zone: "America/Sao_Paulo",
+    status: "confirmed",
+    lead_presence,
+  });
+
+  it("o horário em que o cliente disse que não vai aparece como só registro", () => {
+    const texto = renderCompromissos([linha("nao_vai"), { ...linha("aguardando"), id: "outro", starts_at: "2099-01-06T12:00:00.000Z" }]);
+    expect(texto).toContain("NÃO vai");
+    expect(texto).toContain("não lembre nem confirme");
+    expect(texto).toContain("presença ainda não confirmada");
+  });
+
+  it("tipo sem presença: o texto é o de sempre", () => {
+    expect(renderCompromissos([linha(null)])).not.toContain("presença");
+  });
+});
+
+describe("o follow-up não fica preso no vermelho", () => {
+  const agora = new Date("2099-01-04T12:00:00.000Z");
+  const compromissoFuturo = (lead_presence: string | null) => ({
+    id: COMPROMISSO,
+    contact_id: "c",
+    revision: 1,
+    starts_at: "2099-01-05T12:00:00.000Z",
+    ends_at: "2099-01-05T12:30:00.000Z",
+    status: "confirmed",
+    lead_presence,
+  });
+
+  it("quem disse que não vai não segura a cadência", () => {
+    expect(protecaoDaAgenda([compromissoFuturo("nao_vai")], {}, agora).adiar).toBe(false);
+  });
+
+  it("quem vai (ou ainda não respondeu) segura, como sempre", () => {
+    expect(protecaoDaAgenda([compromissoFuturo("aguardando")], {}, agora).adiar).toBe(true);
+    expect(protecaoDaAgenda([compromissoFuturo(null)], {}, agora).adiar).toBe(true);
   });
 });

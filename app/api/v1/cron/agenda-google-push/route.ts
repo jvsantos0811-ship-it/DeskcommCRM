@@ -47,6 +47,14 @@ async function executar(req: NextRequest) {
   // (verde, vermelho, de volta ao amarelo). Fora das projeções do sync: ver
   // `lib/agenda/presenca.ts`. A mudança de presença já foi auditada na escrita.
   const pintura = await pintarPresencasPendentes(db);
+  // A rodada que pintou, audita (a que não pintou nada, não).
+  for (const [organizationId, pintados] of pintura.porOrganizacao) {
+    await audit({
+      action: "agenda.google.sync_executado",
+      organizationId,
+      metadata: { direcao: "cor_da_presenca", processados: pintados, falhas: 0 },
+    });
+  }
   return NextResponse.json({
     data: { candidatos: data?.length ?? 0, organizacoes: effects.size, presencas_pintadas: pintura.pintados },
   });

@@ -559,6 +559,7 @@ export async function alterarAgendamentoHandler(
     "owner_user_id",
     "contact_id",
     "starts_at",
+    "ends_at",
     "status",
     "time_zone",
     "lead_presence",
@@ -611,6 +612,30 @@ export async function alterarAgendamentoHandler(
         ctx.requestId,
         "A presença só se registra num compromisso que ainda vai acontecer.",
       );
+    }
+    // Compromisso que já acabou não recebe presença: "vai" ou "não vai" é sobre
+    // o que ainda vai acontecer; o desfecho do passado é Realizado/Faltou.
+    if (atual.ends_at && new Date(atual.ends_at as string).getTime() <= Date.now()) {
+      throw new ApiError(
+        422,
+        "agenda_presenca_fora_de_hora",
+        undefined,
+        ctx.requestId,
+        "A presença só se registra num compromisso que ainda vai acontecer.",
+      );
+    }
+    // VOLTAR DE "NÃO VAI" REOCUPA O HORÁRIO. Enquanto estava vermelho ele ficou
+    // livre, e pode ter sido dado a outro cliente; reocupar sem conferir faria
+    // dois compromissos no mesmo horário (ou o índice recusaria com um erro
+    // genérico que a IA leria como "a equipe confirma"). Ocupado = a recusa
+    // ensinada de horário indisponível: marque um novo.
+    if (atual.lead_presence === "nao_vai" && input.lead_presence !== "nao_vai") {
+      await exigeSemSobreposicao(supabase, ctx, {
+        donoId: atual.owner_user_id as string,
+        inicio: new Date(atual.starts_at as string),
+        fim: new Date(atual.ends_at as string),
+        ignorarAgendamentoId: atual.id as string,
+      });
     }
     if (input.lead_presence !== atual.lead_presence) {
       mudanca.lead_presence = input.lead_presence;

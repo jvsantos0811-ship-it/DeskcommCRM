@@ -198,6 +198,8 @@ export interface AppointmentRow {
   google_pending_write?: Json | null;
   meeting_url?: string | null;
   meeting_state?: string;
+  /** PC-052: o que o titular respondeu sobre ir (aguardando, confirmada, nao_vai). */
+  lead_presence?: string | null;
 }
 
 /**
@@ -1558,7 +1560,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("calendar_appointments")
       .select(
-        "id, title, description, notes, location_details, cancellation_reason, starts_at, ends_at, time_zone, status, google_base_projection, google_conflict, google_pending_write, meeting_url, meeting_state",
+        "id, title, description, notes, location_details, cancellation_reason, starts_at, ends_at, time_zone, status, google_base_projection, google_conflict, google_pending_write, meeting_url, meeting_state, lead_presence",
       )
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)

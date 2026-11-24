@@ -10,6 +10,8 @@ export interface CompromissoProtetor {
   starts_at: string;
   ends_at: string;
   status: string;
+  /** PC-052: presença do cliente. `nao_vai` não protege a cadência (o horário é só registro). */
+  lead_presence?: string | null;
 }
 export type ProtecaoAgenda = {
   adiar: boolean;
@@ -30,7 +32,12 @@ export function protecaoDaAgenda(
 ): ProtecaoAgenda {
   const config = agendaSettingsSchema.parse(settings);
   const agoraMs = agora.getTime();
-  const vivos = compromissos.filter((a) => a.status === "pending" || a.status === "confirmed");
+  // PC-052: quem disse que NÃO vai não está mais "agendado" — o horário vermelho
+  // é só registro, e segurar a cadência por ele deixaria sem follow-up justamente
+  // o cliente que desistiu e sumiu.
+  const vivos = compromissos.filter(
+    (a) => (a.status === "pending" || a.status === "confirmed") && a.lead_presence !== "nao_vai",
+  );
   let vencido: CompromissoProtetor | undefined;
   for (const a of vivos.sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))) {
     const inicio = Date.parse(a.starts_at),
@@ -81,7 +88,7 @@ export async function protecaoAgendaSupabase(
     for (;;) {
       let query = db
         .from("calendar_appointments")
-        .select("id,contact_id,revision,starts_at,ends_at,status")
+        .select("id,contact_id,revision,starts_at,ends_at,status,lead_presence")
         .eq("organization_id", org)
         .in("contact_id", contatos)
         .in("status", ["pending", "confirmed"])
@@ -121,7 +128,7 @@ export async function protecaoAgendaPg(
   try {
     const [appointments, organization] = await Promise.all([
       db.query<CompromissoProtetor>(
-        "select id,contact_id,revision::float8,starts_at::text,ends_at::text,status from calendar_appointments where organization_id=$1 and contact_id=$2 and status in ('pending','confirmed')",
+        "select id,contact_id,revision::float8,starts_at::text,ends_at::text,status,lead_presence from calendar_appointments where organization_id=$1 and contact_id=$2 and status in ('pending','confirmed')",
         [org, contact],
       ),
       db.query<{ settings: { agenda?: unknown } }>(
