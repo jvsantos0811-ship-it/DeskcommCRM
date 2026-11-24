@@ -1186,7 +1186,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, lead_presence_colors, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, lead_presence_enabled, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1219,7 +1219,7 @@ export async function listaTiposDeAtendimento(
       ativo: Boolean(t.is_active),
       donoPadraoId: t.default_owner_user_id === null ? null : String(t.default_owner_user_id),
       rodizioIds: listaDoRodizio(t.rotation_owner_user_ids),
-      presencaComCor: t.lead_presence_colors === true,
+      presencaComCor: t.lead_presence_enabled === true,
       bufferAntesMin: Number(t.buffer_before_minutes),
       bufferDepoisMin: Number(t.buffer_after_minutes),
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),

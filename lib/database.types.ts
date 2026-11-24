@@ -3765,7 +3765,7 @@ export type Database = {
           description: string | null
           duration_minutes: number
           id: string
-          lead_presence_colors: boolean
+          lead_presence_enabled: boolean
           post_booking_sequence: Json
           post_booking_sequence_enabled: boolean
           is_active: boolean
@@ -3801,7 +3801,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
-          lead_presence_colors?: boolean
+          lead_presence_enabled?: boolean
           post_booking_sequence?: Json
           post_booking_sequence_enabled?: boolean
           is_active?: boolean
@@ -3837,7 +3837,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
-          lead_presence_colors?: boolean
+          lead_presence_enabled?: boolean
           post_booking_sequence?: Json
           post_booking_sequence_enabled?: boolean
           is_active?: boolean

@@ -411,6 +411,11 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
                 "Opcional. Quando o cliente não escreve há mais de 24 horas, o CRM não pode mandar texto livre: no lugar, executa o diálogo escolhido aqui, que manda o modelo aprovado da conta. Vazio = naquele caso nada sai.",
               )}
             </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "O modelo do diálogo é fixo: não escreva \"amanhã\" no da véspera (quando a véspera cai num dia sem envio, ele sai antes), e lembre que o mesmo diálogo do lembrete sai em cada aviso do tipo de atendimento.",
+              )}
+            </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ae-roteiro-vespera">{t("Confirmação da véspera")}</Label>

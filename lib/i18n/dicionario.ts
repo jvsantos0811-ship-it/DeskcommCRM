@@ -128,8 +128,6 @@ export const DICIONARIO: Traducoes = {
   "Confirmação da véspera": { es: "Confirmación del día anterior" },
   "Confirmação do dia": { es: "Confirmación del día" },
   "Lembrete do compromisso": { es: "Recordatorio de la cita" },
-  "Oi, {{primeiro_nome}}! Passando para lembrar: {{dia_relativo}}, às {{hora}}, a especialista vai te ligar.\n\nEstá confirmado?": { es: "¡Hola, {{primeiro_nome}}! Paso a recordarte: {{dia_relativo}}, a las {{hora}}, la especialista te va a llamar.\n\n¿Está confirmado?" },
-  "Oi, {{primeiro_nome}}! É hoje: às {{hora}} a especialista vai te ligar.\n\nEstá confirmado?": { es: "¡Hola, {{primeiro_nome}}! Es hoy: a las {{hora}} la especialista te va a llamar.\n\n¿Está confirmado?" },
   "Não foi possível salvar a sequência.": { es: "No fue posible guardar la secuencia." },
   "Confira os horários (hh:mm) e o tamanho dos textos.": { es: "Revisa los horarios (hh:mm) y el largo de los textos." },
   "O vídeo pode ter no máximo 16 MB.": { es: "El video puede tener como máximo 16 MB." },
@@ -148,6 +146,9 @@ export const DICIONARIO: Traducoes = {
   "Follow-up 5 da conexão": { es: "Seguimiento 5 de la conexión" },
   "Vale só quando o passo não tem modelo aprovado. O diálogo de cada número é escolhido em Conexões › ChatGuru › Fora da janela de 24 horas.": { es: "Vale solo cuando el paso no tiene plantilla aprobada. El diálogo de cada número se elige en Conexiones › ChatGuru › Fuera de la ventana de 24 horas." },
   "Follow-up: o passo do fluxo escolhe qual destes diálogos sai quando a janela fechou.": { es: "Seguimiento: el paso del flujo elige cuál de estos diálogos sale cuando la ventana se cerró." },
+  "Oi, {{primeiro_nome}}! Passando para lembrar do seu horário: {{dia_relativo}}, às {{hora}}.\n\nEstá confirmado?": { es: "¡Hola, {{primeiro_nome}}! Paso a recordarte tu horario: {{dia_relativo}}, a las {{hora}}.\n\n¿Está confirmado?" },
+  "Oi, {{primeiro_nome}}! É hoje, às {{hora}}.\n\nEstá confirmado?": { es: "¡Hola, {{primeiro_nome}}! Es hoy, a las {{hora}}.\n\n¿Está confirmado?" },
+  "O modelo do diálogo é fixo: não escreva \"amanhã\" no da véspera (quando a véspera cai num dia sem envio, ele sai antes), e lembre que o mesmo diálogo do lembrete sai em cada aviso do tipo de atendimento.": { es: "La plantilla del diálogo es fija: no escribas \"mañana\" en la del día anterior (cuando el día anterior cae en un día sin envíos, sale antes), y recuerda que el mismo diálogo del recordatorio sale en cada aviso del tipo de atención." },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",

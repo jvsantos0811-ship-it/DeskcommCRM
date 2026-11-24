@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { lerSequencia, sequenciaEntrada, sequenciaParaGravar } from "@/lib/agenda/sequencia";
+import { aquecimentoLigadoEm, lerSequencia, sequenciaEntrada, sequenciaParaGravar } from "@/lib/agenda/sequencia";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -95,11 +95,32 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     });
   }
 
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: atual, error: erroAtual } = await admin
+    .from("calendar_event_types")
+    .select("post_booking_sequence_enabled, post_booking_sequence")
+    .eq("id", lido.data.tipo_id)
+    .eq("organization_id", authz.org.orgId)
+    .maybeSingle();
+  if (erroAtual) {
+    logger.error("[agenda/sequencia] leitura antes de gravar falhou", { detail: erroAtual.message, requestId });
+    return fail("internal_error", t("Não foi possível salvar a sequência."), 500, { requestId });
+  }
+  if (!atual) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
+  // Ligar o aquecimento agora não manda vídeo para quem já tinha marcado antes.
+  const ligadoEm = aquecimentoLigadoEm({
+    ligadaAntes: atual.post_booking_sequence_enabled === true,
+    antes: lerSequencia(atual.post_booking_sequence),
+    ligadaAgora: lido.data.ligada,
+    aquecimentoAtivoAgora: lido.data.config.aquecimento.ativo,
+    agora: new Date(),
+  });
+
+  const { data, error } = await admin
     .from("calendar_event_types")
     .update({
       post_booking_sequence_enabled: lido.data.ligada,
-      post_booking_sequence: sequenciaParaGravar(lido.data.config),
+      post_booking_sequence: sequenciaParaGravar(lido.data.config, ligadoEm),
     })
     .eq("id", lido.data.tipo_id)
     .eq("organization_id", authz.org.orgId)

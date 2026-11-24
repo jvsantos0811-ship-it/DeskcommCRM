@@ -42,7 +42,7 @@ export interface TipoRow {
   default_owner_user_id: string | null;
   /** PC-052 (9039): rodízio de responsáveis, na ordem da vez. */
   rotation_owner_user_ids?: string[];
-  lead_presence_colors?: boolean;
+  lead_presence_enabled?: boolean;
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
@@ -818,7 +818,7 @@ export function TiposDeAgendamentoClient({
                           .map((v) => String(v)),
                         // PC-052: caixa desmarcada some do FormData — a comparação
                         // manda `false` explícito, nunca omite.
-                        lead_presence_colors: dados.get("lead_presence_colors") === "on",
+                        lead_presence_enabled: dados.get("lead_presence_enabled") === "on",
                         // Caixa desmarcada não aparece no `FormData` — daí a
                         // comparação, e não um `Boolean(...)` do valor ausente.
                         // Vazio é uma ESCOLHA (voltar a digitar na hora), e
@@ -936,8 +936,8 @@ export function TiposDeAgendamentoClient({
                   >
                     <input
                       type="checkbox"
-                      name="lead_presence_colors"
-                      defaultChecked={tipo.lead_presence_colors === true}
+                      name="lead_presence_enabled"
+                      defaultChecked={tipo.lead_presence_enabled === true}
                     />
                     <span className="flex flex-col gap-1">
                       {t("Presença com cor no Google")}

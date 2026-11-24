@@ -144,6 +144,9 @@ export function HistoricoDaAgenda({
   const localeDaData = useLocaleDeData();
   const t = useT();
   const [aba, setAba] = React.useState<AbaDoHistorico>("proximos");
+  // O "agora" da tela, lido uma vez (render puro): só decide se os botões de
+  // presença aparecem; o servidor confere de novo.
+  const [agoraDaTela] = React.useState(() => Date.now());
   const grupos = React.useMemo(() => separar(agendamentos, agora), [agendamentos, agora]);
   const daAba = grupos[aba];
 
@@ -287,7 +290,11 @@ export function HistoricoDaAgenda({
                         {t("Confirmar")}
                       </Button>
                     )}
-                    {(aba === "proximos" || aba === "aguardando") && a.presenca && (
+                    {(aba === "proximos" || aba === "aguardando") &&
+                      a.presenca &&
+                      // Compromisso que já terminou não recebe presença (o servidor recusa):
+                      // o desfecho do passado é Realizado/Faltou.
+                      new Date(a.termina).getTime() > agoraDaTela && (
                       <>
                         {a.presenca !== "confirmada" && (
                           <Button

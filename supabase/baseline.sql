@@ -59707,8 +59707,8 @@ comment on column public.calendar_appointments.lead_presence is
 comment on column public.calendar_appointments.lead_presence_painted is
   'PC-052: a presença que já está pintada no Google. Diferente de lead_presence = o cron de sync repinta.';
 
-alter table public.calendar_event_types add column if not exists lead_presence_colors boolean not null default false;
-comment on column public.calendar_event_types.lead_presence_colors is
+alter table public.calendar_event_types add column if not exists lead_presence_enabled boolean not null default false;
+comment on column public.calendar_event_types.lead_presence_enabled is
   'PC-052: marcações deste tipo nascem com presença "aguardando" e o evento do Google ganha cor pela presença (amarelo, verde, vermelho). Desligado = como sempre.';
 
 -- O índice de instante único deixa de ver quem não vai: a remarcação nasce em
@@ -63262,7 +63262,7 @@ begin
   end if;
 end $$;
 
--- ---- sequência depois de marcar e mídia de aquecimento (migration 9041) ----
+-- ---- sequência depois de marcar e mídia de aquecimento (migration 9043) ----
 -- A chave e a configuração moram no TIPO de atendimento, como o lembrete. Chave
 -- desligada = nada sai (o de sempre). O jsonb tem schema único em
 -- `lib/agenda/sequencia.ts` (`lerSequencia` nunca lança); ninguém lê o caminho

@@ -4,7 +4,7 @@
  * A presença é a resposta do LEAD ("vou", "não vou"), e mora numa coluna
  * própria (`calendar_appointments.lead_presence`) justamente para não se
  * misturar ao `status`, que é da equipe (confirmado, realizado, faltou). Ela só
- * existe quando o TIPO de atendimento pede (`lead_presence_colors`): nula é o
+ * existe quando o TIPO de atendimento pede (`lead_presence_enabled`): nula é o
  * comportamento de sempre.
  *
  * Três estados e três cores, como o escritório pinta à mão hoje:

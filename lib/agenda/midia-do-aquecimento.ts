@@ -3,7 +3,7 @@
  * três imagens da organização, que a sequência depois de marcar manda na noite
  * do dia em que a reunião foi marcada.
  *
- * Mora no bucket privado `agenda-media` (migration 9041), sob o prefixo da
+ * Mora no bucket privado `agenda-media` (migration 9043), sob o prefixo da
  * organização, e o caminho fica em `organizations.settings.midia_do_aquecimento`.
  * Este é o schema ÚNICO dessa chave: a rota grava, o cron lê, e ninguém lê o
  * caminho do jsonb direto. `lerMidiaDoAquecimento` nunca lança e só aceita

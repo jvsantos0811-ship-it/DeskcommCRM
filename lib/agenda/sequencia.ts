@@ -42,7 +42,12 @@ export const MARGEM_ANTES_DA_REUNIAO_MS = 30 * 60_000;
 export type PassoDaSequencia = "aquecimento" | "confirmacao_vespera" | "confirmacao_do_dia";
 
 export interface ConfigDaSequencia {
-  aquecimento: { ativo: boolean; hora: string; texto: string | null };
+  /**
+   * `ligadoEm`: quando o aquecimento passou a valer (gravado pela rota). Marcação
+   * ANTERIOR a ele não recebe vídeo — ligar a chave não pode disparar, de uma vez,
+   * o aquecimento atrasado de tudo o que foi marcado nos dois dias antes.
+   */
+  aquecimento: { ativo: boolean; hora: string; texto: string | null; ligadoEm: string | null };
   confirmacao: {
     ativo: boolean;
     corte: string;
@@ -59,14 +64,14 @@ export interface ConfigDaSequencia {
  * ele escreveu. Recebem o `t` para o literal ficar aqui, onde o dicionário o vê.
  */
 export function textoPadraoDaVespera(t: (texto: string) => string): string {
-  return t("Oi, {{primeiro_nome}}! Passando para lembrar: {{dia_relativo}}, às {{hora}}, a especialista vai te ligar.\n\nEstá confirmado?");
+  return t("Oi, {{primeiro_nome}}! Passando para lembrar do seu horário: {{dia_relativo}}, às {{hora}}.\n\nEstá confirmado?");
 }
 export function textoPadraoDoDia(t: (texto: string) => string): string {
-  return t("Oi, {{primeiro_nome}}! É hoje: às {{hora}} a especialista vai te ligar.\n\nEstá confirmado?");
+  return t("Oi, {{primeiro_nome}}! É hoje, às {{hora}}.\n\nEstá confirmado?");
 }
 
 export const SEQUENCIA_PADRAO: ConfigDaSequencia = Object.freeze({
-  aquecimento: { ativo: false, hora: "19:00", texto: null },
+  aquecimento: { ativo: false, hora: "19:00", texto: null, ligadoEm: null },
   confirmacao: {
     ativo: false,
     corte: "12:00",
@@ -103,10 +108,36 @@ export const sequenciaEntrada = z
   })
   .strict();
 
+/**
+ * Quando o aquecimento passa a valer. Ligar agora (estava desligado, pela chave do
+ * tipo ou pela do passo) = `agora`; continua ligado = o instante de antes;
+ * desligado = nulo.
+ */
+export function aquecimentoLigadoEm(input: {
+  ligadaAntes: boolean;
+  antes: ConfigDaSequencia;
+  ligadaAgora: boolean;
+  aquecimentoAtivoAgora: boolean;
+  agora: Date;
+}): string | null {
+  const vale = input.ligadaAgora && input.aquecimentoAtivoAgora;
+  if (!vale) return null;
+  const valiaAntes = input.ligadaAntes && input.antes.aquecimento.ativo;
+  return valiaAntes && input.antes.aquecimento.ligadoEm ? input.antes.aquecimento.ligadoEm : input.agora.toISOString();
+}
+
 /** O jsonb que vai para `calendar_event_types.post_booking_sequence`. */
-export function sequenciaParaGravar(e: z.output<typeof sequenciaEntrada>): Record<string, unknown> {
+export function sequenciaParaGravar(
+  e: z.output<typeof sequenciaEntrada>,
+  ligadoEm: string | null = null,
+): Record<string, unknown> {
   return {
-    aquecimento: { ativo: e.aquecimento.ativo, hora: e.aquecimento.hora, texto: textoOuNulo(e.aquecimento.texto) },
+    aquecimento: {
+      ativo: e.aquecimento.ativo,
+      hora: e.aquecimento.hora,
+      texto: textoOuNulo(e.aquecimento.texto),
+      ligado_em: ligadoEm,
+    },
     confirmacao: {
       ativo: e.confirmacao.ativo,
       corte: e.confirmacao.corte,
@@ -143,6 +174,7 @@ export function lerSequencia(raw: unknown): ConfigDaSequencia {
       ativo: a.ativo === true,
       hora: lerHora(a.hora, p.aquecimento.hora),
       texto: lerTexto(a.texto),
+      ligadoEm: typeof a.ligado_em === "string" && !Number.isNaN(Date.parse(a.ligado_em)) ? a.ligado_em : null,
     },
     confirmacao: {
       ativo: c.ativo === true,
@@ -357,7 +389,11 @@ export function passoAberto(input: {
 }): Ocasiao | null {
   const { linha, config, fuso, agora } = input;
   const comeca = new Date(linha.starts_at);
-  if (config.aquecimento.ativo && !linha.warmup_sent_at && linha.created_at) {
+  const marcadoAntesDeLigar =
+    config.aquecimento.ligadoEm !== null &&
+    linha.created_at !== null &&
+    Date.parse(linha.created_at) < Date.parse(config.aquecimento.ligadoEm);
+  if (config.aquecimento.ativo && !linha.warmup_sent_at && linha.created_at && !marcadoAntesDeLigar) {
     const o = ocasiaoDoAquecimento({ marcadoEm: new Date(linha.created_at), comeca, fuso, hora: config.aquecimento.hora });
     if (o && ocasiaoAberta(o, agora)) return o;
   }
