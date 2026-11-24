@@ -77,7 +77,7 @@ export async function prepararVideoDeAquecimento(
   }
 }
 
-/** O intervalo anti-ban entre duas mensagens físicas: 1,2 s + até 0,8 s (CLAUDE.md, WAHA). */
+/** O intervalo anti-ban entre duas mensagens físicas: 1,2 s + até 0,8 s (CLAUDE.md, seção de anti-banimento). */
 export const intervaloEntreMensagens = (rng: () => number = Math.random) => 1200 + Math.floor(rng() * 800);
 
 /**
