@@ -96,7 +96,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
           <dd className="text-right tabular-nums" data-testid="uso-do-plano">{extrato.mes.uso_do_plano_pct}%</dd>
           {extrato.mes.credito_restante_pct !== null && (
             <>
-              <dt className="font-medium">{t("Crédito comprado que ainda resta")}</dt>
+              <dt className="font-medium">{t("Do crédito que vale neste mês, ainda resta")}</dt>
               <dd className="text-right font-medium tabular-nums" data-testid="saldo-de-credito">{extrato.mes.credito_restante_pct}%</dd>
             </>
           )}

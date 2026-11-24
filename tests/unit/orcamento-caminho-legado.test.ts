@@ -121,7 +121,7 @@ interface Operacao {
  * `agent_inbox_items`; elas se distinguem pelo filtro, não pela ordem.
  */
 function makeAdminStub(
-  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null },
+  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null; creditoDoMes?: number | "erro" },
   corpoInbound: string = INBOUND_BODY,
 ) {
   const operacoes: Operacao[] = [];
@@ -247,6 +247,14 @@ function makeAdminStub(
   const rpcs: string[] = [];
   const rpc = (name: string) => {
     rpcs.push(name);
+    // PC-051: o crédito de IA comprado que vale no mês (soma ao teto do plano).
+    if (name === "fn_credito_de_ia_disponivel") {
+      return Promise.resolve(
+        contagens.creditoDoMes === "erro"
+          ? { data: null, error: { code: "XX000", message: "função ausente" } }
+          : { data: contagens.creditoDoMes ?? 0, error: null },
+      );
+    }
     return Promise.resolve({
       data:
         name === "fn_service_boundary"
@@ -268,7 +276,7 @@ const eventRow = {
 
 function montar(
   orcamento: Partial<BudgetStatus> | "erro",
-  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null } = {
+  contagens: { avisosNoMes: number; itensAbertos: number; tetoDoPlano?: number | null; creditoDoMes?: number | "erro" } = {
     avisosNoMes: 0,
     itensAbertos: 0,
   },
@@ -391,6 +399,39 @@ describe("o teto de IA do plano no caminho legado (forçado: hoje o veto é inal
       ).length,
       "o teto do plano parou a IA sem passar a conversa para a equipe",
     ).toBeGreaterThan(0);
+  });
+
+  it("⭐ PC-051: crédito comprado que cobre o excedente libera a resposta", async () => {
+    const { operacoes, rpcs } = montar(
+      { enforcement_mode: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000, creditoDoMes: 600 },
+    );
+    comOrigem("padrao");
+    const r = await processMessageReceived(eventRow).catch(() => null);
+    expect(rpcs).toContain("fn_credito_de_ia_disponivel");
+    expect(r).not.toEqual({ status: "skipped", reason: "budget_exceeded" });
+    expect(itensDoPlano(operacoes)).toEqual([]);
+  });
+
+  it("PC-051: crédito que não cobre o excedente continua bloqueando", async () => {
+    const { operacoes } = montar(
+      { enforcement_mode: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000, creditoDoMes: 400 },
+    );
+    comOrigem("padrao");
+    expect(await processMessageReceived(eventRow)).toEqual({ status: "skipped", reason: "budget_exceeded" });
+    expect(itensDoPlano(operacoes)).toHaveLength(1);
+  });
+
+  it("PC-051: leitura do crédito que falha SEGUE (o mesmo lado do engine)", async () => {
+    const { operacoes } = montar(
+      { enforcement_mode: "off", current_month_consumed_cents: 1500 },
+      { avisosNoMes: 0, itensAbertos: 0, tetoDoPlano: 1000, creditoDoMes: "erro" },
+    );
+    comOrigem("padrao");
+    const r = await processMessageReceived(eventRow).catch(() => null);
+    expect(r).not.toEqual({ status: "skipped", reason: "budget_exceeded" });
+    expect(itensDoPlano(operacoes)).toEqual([]);
   });
 
   it("chave da organização (BYOK): o teto do plano nem é lido", async () => {

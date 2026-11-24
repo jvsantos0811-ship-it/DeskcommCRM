@@ -403,6 +403,8 @@ export async function conferirCreditosPendentes(
       .eq("organization_id", orgId)
       .eq("status", "pendente")
       .not("pagamento_ref", "is", null)
+      // As mais novas primeiro: uma compra recém-paga nunca fica atrás de pendentes antigas.
+      .order("created_at", { ascending: false })
       .limit(20);
     data = r.data;
     error = r.error;

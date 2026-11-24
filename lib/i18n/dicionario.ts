@@ -17947,7 +17947,7 @@ export const DICIONARIO: Traducoes = {
   "Vender crédito de IA": { es: "Vender crédito de IA" },
   // PC-051 (ajustes da revisão)
   "Uso de IA incluído no plano, neste mês": { es: "Uso de IA incluido en el plan, este mes" },
-  "Crédito comprado que ainda resta": { es: "Crédito comprado que aún queda" },
+  "Do crédito que vale neste mês, ainda resta": { es: "Del crédito válido este mes, aún queda" },
   "O consumo é primeiro o incluído no plano, depois o crédito comprado mais antigo.": { es: "El consumo es primero lo incluido en el plan y después el crédito comprado más antiguo." },
 };
 
