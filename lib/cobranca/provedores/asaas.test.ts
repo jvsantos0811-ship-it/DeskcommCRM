@@ -809,6 +809,13 @@ describe("lerSituacao", () => {
     });
   });
 
+  it("⭐ PC-051: crédito de IA pago NÃO é 'já pagou' (teste com o 1º pagamento pendente não vira cancelada)", async () => {
+    expect(await ler([assinatura()], [
+      cobranca({ status: "PENDING", dueDate: "2026-10-05" }),
+      cobranca({ id: "pay_credito", subscription: null, status: "RECEIVED", dueDate: "2026-10-02", externalReference: `credito_ia:${ORG}:c1` }),
+    ]).situacao).toMatchObject({ existe: false, jaPagou: false, assinaturasVivas: 1, statusBruto: "ACTIVE:sem_pagamento" });
+  });
+
   it("⭐ CONFIRMED (cartão aprovado, saldo não liberado) já conta como pago", async () => {
     const { situacao, chamadas } = ler([assinatura()], [cobranca({ status: "CONFIRMED", dueDate: "2026-10-01" })]);
     expect(await situacao).toMatchObject({ existe: true, jaPagou: true, proximoVencimento: fim("2026-11-01") });

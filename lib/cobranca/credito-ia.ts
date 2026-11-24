@@ -8,8 +8,10 @@
  * mesma no gate do engine (`SQL_TETO_DO_PLANO`) e no caminho legado.
  *
  * Aqui mora o que a TELA e a COBRANÇA precisam:
- *   - `lerExtratoDeCredito`: o que a empresa vê em Plano e cobrança, em REAIS
- *     (o cliente nunca vê dólar; a conversão usa a cotação da agência);
+ *   - `lerExtratoDeCredito`: o que a empresa vê em Plano e cobrança — o uso do
+ *     plano e o crédito restante em PORCENTAGEM, e as compras pelo valor PAGO em
+ *     reais. Nunca dólar e nunca o custo da IA convertido (que mostraria ao
+ *     cliente quanto do plano é custo);
  *   - `iniciarCompraDeCredito`: o botão "Comprar" — linha `pendente` + link do
  *     provedor que a empresa já usa na assinatura;
  *   - `conferirCreditosPendentes`: chamada por `sincronizar` (aviso do provedor,
@@ -26,7 +28,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
-import { lerConfigDaAgencia } from "@/lib/agencia/ler";
 import { adaptador as adaptadorPadrao } from "@/lib/cobranca/provedores";
 import { ErroDoProvedor, type AdaptadorDeCobranca } from "@/lib/cobranca/provedores/contrato";
 import { urlDoPainelDaEmpresa } from "@/lib/cobranca/url";
@@ -67,6 +68,8 @@ export type MotivoSemOferta =
   | "sem_teto"
   | "plano_sem_oferta"
   | "sem_pacote"
+  /** Teste grátis, atraso ou cancelada: o crédito só se compra com o plano em dia. */
+  | "assinatura_nao_ativa"
   | "sem_cadastro_de_pagamento";
 
 /**
@@ -79,9 +82,18 @@ export function vencimentoDoCredito(pagoEm: Date): Date {
   return new Date(Date.UTC(pagoEm.getUTCFullYear(), pagoEm.getUTCMonth() + 2, 1));
 }
 
-/** Centavos de dólar → centavos de real, pela cotação da agência. */
-export function emReais(usdCents: number, cotacao: number): number {
-  return Math.round(usdCents * cotacao);
+/**
+ * O extrato do mês em PORCENTAGEM: quanto do incluído no plano já foi usado (0 a
+ * 100) e quanto do crédito que vale no mês ainda resta (`null` sem crédito).
+ */
+export function extratoDoMes(p: { tetoDoPlano: number; gasto: number; creditoDoMes: number }): {
+  uso_do_plano_pct: number;
+  credito_restante_pct: number | null;
+} {
+  const uso = p.tetoDoPlano > 0 ? Math.min(100, Math.round((p.gasto / p.tetoDoPlano) * 100)) : 100;
+  const restante =
+    p.creditoDoMes > 0 ? Math.round((saldoDoCredito(p) / p.creditoDoMes) * 100) : null;
+  return { uso_do_plano_pct: Math.max(0, uso), credito_restante_pct: restante };
 }
 
 /**
@@ -98,20 +110,18 @@ export interface ExtratoDeCredito {
   motivoSemOferta: MotivoSemOferta | null;
   /** Pacotes à venda (só quando `motivoSemOferta` é null). Preço em centavos de real. */
   pacotes: Array<{ id: string; nome: string; preco_cents: number }>;
-  /** Tudo em centavos de REAL. `null` quando a empresa não tem teto de IA no plano. */
+  /** Em PORCENTAGEM (nunca dólar nem custo). `null` quando o plano não tem teto de IA. */
   mes: {
-    uso_cents: number;
-    incluido_no_plano_cents: number;
-    credito_cents: number;
-    saldo_cents: number;
+    uso_do_plano_pct: number;
+    credito_restante_pct: number | null;
   } | null;
   pendentes: Array<{ id: string; preco_cents: number; link: string | null; criado_em: string }>;
   historico: Array<{
     id: string;
     origem: "compra" | "cortesia";
     status: "pendente" | "pago" | "cancelado";
+    /** O valor PAGO, em centavos de real; `null` na cortesia. */
     preco_cents: number | null;
-    credito_cents: number;
     pago_em: string | null;
     vence_em: string | null;
     criado_em: string;
@@ -120,6 +130,7 @@ export interface ExtratoDeCredito {
 
 interface Assinatura {
   plano_id: string | null;
+  estado: string | null;
   provedor: ProvedorDeCobranca | null;
   provedor_cliente_id: string | null;
 }
@@ -127,7 +138,7 @@ interface Assinatura {
 async function lerAssinatura(admin: SupabaseClient, orgId: string): Promise<Assinatura | null> {
   const { data, error } = await admin
     .from("cobranca_assinaturas")
-    .select("plano_id, provedor, provedor_cliente_id")
+    .select("plano_id, estado, provedor, provedor_cliente_id")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) throw new Error(`credito_ia: assinatura ilegível (${error.code ?? "sem_codigo"})`);
@@ -167,6 +178,9 @@ async function lerOferta(
   if (p?.oferece_credito_ia !== true) return { motivo: "plano_sem_oferta", assinatura, tetoUsd, pacotes: [] };
   const pacotes = await pacotesAtivos(admin);
   if (pacotes.length === 0) return { motivo: "sem_pacote", assinatura, tetoUsd, pacotes };
+  // Teste grátis com o 1º pagamento pendente: a cobrança avulsa paga não pode
+  // ser lida como "já pagou" pela leitura da assinatura (e virar suspensão).
+  if (assinatura.estado !== "ativa") return { motivo: "assinatura_nao_ativa", assinatura, tetoUsd, pacotes };
   if (assinatura.provedor === null || assinatura.provedor_cliente_id === null) {
     return { motivo: "sem_cadastro_de_pagamento", assinatura, tetoUsd, pacotes };
   }
@@ -190,7 +204,6 @@ export async function lerExtratoDeCredito(admin: SupabaseClient, orgId: string):
     .limit(20);
   if (error) throw new Error(`credito_ia: créditos ilegíveis (${error.code ?? "sem_codigo"})`);
   const creditos = (linhas ?? []) as LinhaDeCredito[];
-  const { cotacao_usd_brl: cotacao } = await lerConfigDaAgencia(admin);
 
   let mes: ExtratoDeCredito["mes"] = null;
   if (oferta.tetoUsd !== null) {
@@ -198,12 +211,7 @@ export async function lerExtratoDeCredito(admin: SupabaseClient, orgId: string):
       numeroDaRpc(admin, "fn_gasto_de_ia_do_mes", orgId),
       numeroDaRpc(admin, "fn_credito_de_ia_disponivel", orgId),
     ]);
-    mes = {
-      uso_cents: emReais(gasto, cotacao),
-      incluido_no_plano_cents: emReais(oferta.tetoUsd, cotacao),
-      credito_cents: emReais(creditoDoMes, cotacao),
-      saldo_cents: emReais(saldoDoCredito({ tetoDoPlano: oferta.tetoUsd, gasto, creditoDoMes }), cotacao),
-    };
+    mes = extratoDoMes({ tetoDoPlano: oferta.tetoUsd, gasto, creditoDoMes });
   }
 
   return {
@@ -218,7 +226,6 @@ export async function lerExtratoDeCredito(admin: SupabaseClient, orgId: string):
       origem: c.origem,
       status: c.status,
       preco_cents: c.preco_cents,
-      credito_cents: emReais(c.ia_usd_cents, cotacao),
       pago_em: c.pago_em,
       vence_em: c.vence_em,
       criado_em: c.created_at,
@@ -279,7 +286,9 @@ export async function iniciarCompraDeCredito(
       message:
         oferta.motivo === "sem_cadastro_de_pagamento"
           ? "A compra de crédito usa o cadastro de pagamento da assinatura, e esta empresa ainda não tem. Assine o plano pelo CRM ou fale com o suporte."
-          : "O seu plano não oferece compra de crédito de IA.",
+          : oferta.motivo === "assinatura_nao_ativa"
+            ? "A compra de crédito fica disponível com a assinatura ativa e o pagamento do plano em dia."
+            : "O seu plano não oferece compra de crédito de IA.",
     };
   }
   const pacote = oferta.pacotes.find((x) => x.id === p.pacoteId);
@@ -348,13 +357,21 @@ export async function iniciarCompraDeCredito(
     };
   }
 
-  const { error: erroLink } = await admin
-    .from("ia_creditos")
-    .update({ pagamento_ref: cobranca.pagamentoRef, link_pagamento: cobranca.url })
-    .eq("id", creditoId)
-    .eq("organization_id", p.orgId);
+  // Sem `pagamento_ref` gravado, a leitura nunca acharia este pagamento e a
+  // compra paga nunca viraria crédito: tenta de novo e, falhando, não entrega o
+  // link (nada é pago por ele) e cancela a linha.
+  const gravarLink = () =>
+    admin
+      .from("ia_creditos")
+      .update({ pagamento_ref: cobranca.pagamentoRef, link_pagamento: cobranca.url })
+      .eq("id", creditoId)
+      .eq("organization_id", p.orgId);
+  let { error: erroLink } = await gravarLink();
+  if (erroLink) ({ error: erroLink } = await gravarLink());
   if (erroLink) {
     logger.warn("cobranca.credito_ia_link_nao_gravado", { organization_id: p.orgId, codigo: erroLink.code ?? null });
+    await admin.from("ia_creditos").update({ status: "cancelado" }).eq("id", creditoId).eq("organization_id", p.orgId);
+    return { ok: false, status: 500, code: "internal_error", message: "Não foi possível registrar a compra. Tente de novo em alguns minutos." };
   }
   auditar("cobranca.credito_ia_compra_iniciada", p.orgId, creditoId, p.actorUserId, {
     pacote_id: pacote.id,

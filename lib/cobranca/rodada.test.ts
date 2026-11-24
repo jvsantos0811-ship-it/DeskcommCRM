@@ -89,7 +89,7 @@ describe("rodadaDaCobranca", () => {
     expect(await rodar()).toMatchObject({ falhas: 1, avisos: 1 });
   });
 
-  it("aviso de 80% da IA: só empresa operante, entre 80% e 100% do teto, com o gasto no texto", async () => {
+  it("aviso de 80% da IA: só empresa operante, entre 80% e 100% do teto, com o uso em % no texto", async () => {
     m.planos = [{ id: "p1", teto_ia_usd_cents: 1000 }];
     m.assinaturasDePlano = [
       { organization_id: "A", plano_id: "p1" },
@@ -105,7 +105,9 @@ describe("rodadaDaCobranca", () => {
     const r = await rodar();
     const avisos = banco.rpcs.filter((x) => x.nome === "fn_cobranca_avisar_teto_de_ia");
     expect(avisos.map((a) => a.args.p_org)).toEqual(["A"]);
-    expect(String(avisos[0]?.args.p_corpo)).toContain("US$ 8.50 de US$ 10.00");
+    // PC-051: em porcentagem — o aviso vai à empresa, e o cliente nunca vê dólar.
+    expect(String(avisos[0]?.args.p_corpo)).toContain("85% do uso de IA incluído no plano");
+    expect(String(avisos[0]?.args.p_corpo)).not.toContain("US$");
     expect(r.avisosDeIa).toBe(1);
   });
 });

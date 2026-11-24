@@ -16438,7 +16438,7 @@ export const DICIONARIO: Traducoes = {
   "Você recebe este aviso porque administra esta empresa.": { es: "Recibes este aviso porque administras esta empresa." },
   // ─── Cobrança do revendedor — teto de IA (PR 3a) ───
   "O uso de IA do plano chegou a 80%": { es: "El uso de IA del plan llegó al 80%" },
-  "Neste mês a empresa já usou US$ {gasto} de US$ {teto} incluídos no plano. Ao chegar ao limite, as conversas passam para a equipe. Para aumentar, compre crédito de IA (quando o plano oferece) ou troque de plano em Plano e cobrança.": { es: "Este mes la empresa ya usó US$ {gasto} de US$ {teto} incluidos en el plan. Al llegar al límite, las conversaciones pasan al equipo. Para aumentarlo, compra crédito de IA (cuando el plan lo ofrece) o cambia de plan en Plan y facturación." },
+  "Neste mês a empresa já usou {pct}% do uso de IA incluído no plano. Ao chegar ao limite, as conversas passam para a equipe. Para aumentar, compre crédito de IA (quando o plano oferece) ou troque de plano em Plano e cobrança.": { es: "Este mes la empresa ya usó el {pct}% del uso de IA incluido en el plan. Al llegar al límite, las conversaciones pasan al equipo. Para aumentarlo, compra crédito de IA (cuando el plan lo ofrece) o cambia de plan en Plan y facturación." },
   // ─── Cobrança do revendedor — menu e limites (PR 3a) ───
   "Plano e cobrança": { es: "Plan y facturación" },
   "Pagamento, troca de plano e faturas da sua empresa.": { es: "Pago, cambio de plan y facturas de tu empresa." },
@@ -17919,11 +17919,6 @@ export const DICIONARIO: Traducoes = {
   "Liberado": { es: "Liberado" },
   "Crédito de IA extra": { es: "Crédito de IA adicional" },
   "Quando o uso de IA incluído no plano acaba, as conversas vão para a equipe. O crédito comprado libera a IA de novo na hora em que o pagamento é confirmado. O que sobrar vale até o fim do mês seguinte.": { es: "Cuando se agota el uso de IA incluido en el plan, las conversaciones pasan al equipo. El crédito comprado vuelve a liberar la IA en cuanto se confirma el pago. Lo que sobre vale hasta el fin del mes siguiente." },
-  "Uso de IA neste mês": { es: "Uso de IA este mes" },
-  "Incluído no plano": { es: "Incluido en el plan" },
-  "Crédito comprado válido neste mês": { es: "Crédito comprado válido este mes" },
-  "Saldo de crédito": { es: "Saldo de crédito" },
-  "Valores em reais pela cotação do dólar usada pela agência; o consumo é primeiro o incluído no plano, depois o crédito mais antigo.": { es: "Valores en reales según la cotización del dólar que usa la agencia; el consumo es primero lo incluido en el plan y después el crédito más antiguo." },
   "Comprar crédito": { es: "Comprar crédito" },
   "Gerando link…": { es: "Generando enlace…" },
   "Comprar": { es: "Comprar" },
@@ -17931,7 +17926,6 @@ export const DICIONARIO: Traducoes = {
   "Abrir pagamento": { es: "Abrir el pago" },
   "Conferindo…": { es: "Verificando…" },
   "Histórico de crédito": { es: "Historial de crédito" },
-  "Crédito": { es: "Crédito" },
   "Vale até": { es: "Vale hasta" },
   "Cortesia": { es: "Cortesía" },
   "Confira o pacote: nome, preço a partir de R$ 5,00 e IA a partir de US$ 1,00.": { es: "Revisa el paquete: nombre, precio desde R$ 5,00 e IA desde US$ 1,00." },
@@ -17951,6 +17945,10 @@ export const DICIONARIO: Traducoes = {
   "Vende crédito de IA": { es: "Vende crédito de IA" },
   "Parar de vender crédito de IA": { es: "Dejar de vender crédito de IA" },
   "Vender crédito de IA": { es: "Vender crédito de IA" },
+  // PC-051 (ajustes da revisão)
+  "Uso de IA incluído no plano, neste mês": { es: "Uso de IA incluido en el plan, este mes" },
+  "Crédito comprado que ainda resta": { es: "Crédito comprado que aún queda" },
+  "O consumo é primeiro o incluído no plano, depois o crédito comprado mais antigo.": { es: "El consumo es primero lo incluido en el plan y después el crédito comprado más antiguo." },
 };
 
 /**

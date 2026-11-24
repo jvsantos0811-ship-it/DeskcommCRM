@@ -588,10 +588,13 @@ async function vetoPorTetoDoPlano(
   if (veredito.acao === "bloquear" && tetoDoPlano !== null) {
     const credito = await admin.rpc("fn_credito_de_ia_disponivel", { p_org: alvo.orgId });
     if (credito.error) {
-      logger.warn("[ai-response] crédito de IA não pôde ser lido — vale só o teto do plano", {
+      // O mesmo lado do gate do engine: leitura que falha SEGUE (quem pagou
+      // crédito não pode ficar sem IA por uma falha de leitura).
+      logger.warn("[ai-response] crédito de IA não pôde ser lido — a resposta segue", {
         organization_id: alvo.orgId,
         causa: `${credito.error.code ?? "sem_sqlstate"}: ${credito.error.message}`,
       });
+      return null;
     } else {
       tetoCents = tetoDoPlano + Number(credito.data ?? 0);
       veredito = decidir(tetoCents);

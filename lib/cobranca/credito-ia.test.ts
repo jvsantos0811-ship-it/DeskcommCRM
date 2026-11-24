@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import {
   conferirCreditosPendentes,
-  emReais,
+  extratoDoMes,
   iniciarCompraDeCredito,
   saldoDoCredito,
   vencimentoDoCredito,
@@ -28,9 +28,10 @@ describe("as contas do crédito de IA (PC-051)", () => {
     expect(saldoDoCredito({ tetoDoPlano: 1000, gasto: 1900, creditoDoMes: 500 })).toBe(0);
   });
 
-  it("o cliente vê reais: centavos de dólar × cotação", () => {
-    expect(emReais(1000, 5.5)).toBe(5500);
-    expect(emReais(333, 5.25)).toBe(1748);
+  it("⭐ o cliente vê PORCENTAGEM — nunca dólar nem o custo convertido", () => {
+    expect(extratoDoMes({ tetoDoPlano: 1000, gasto: 730, creditoDoMes: 0 })).toEqual({ uso_do_plano_pct: 73, credito_restante_pct: null });
+    expect(extratoDoMes({ tetoDoPlano: 1000, gasto: 1200, creditoDoMes: 500 })).toEqual({ uso_do_plano_pct: 100, credito_restante_pct: 60 });
+    expect(extratoDoMes({ tetoDoPlano: 1000, gasto: 1900, creditoDoMes: 500 })).toEqual({ uso_do_plano_pct: 100, credito_restante_pct: 0 });
   });
 });
 
@@ -43,6 +44,8 @@ function adminFalso(respostas: {
   pacotes?: unknown[];
   aberta?: unknown;
   nova?: unknown;
+  /** O update do link da compra (pagamento_ref) falha. */
+  erroNoLink?: boolean;
 }) {
   const updates: Array<Record<string, unknown>> = [];
   const inserts: Array<Record<string, unknown>> = [];
@@ -63,6 +66,9 @@ function adminFalso(respostas: {
       return q;
     };
     const resultado = () => {
+      if (tabela === "ia_creditos" && mudanca && respostas.erroNoLink && "pagamento_ref" in mudanca) {
+        return { data: null, error: { code: "57014" } };
+      }
       if (tabela === "ia_creditos" && mudanca) return { data: respostas.gravada ? respostas.gravada(mudanca) : null, error: null };
       if (tabela === "ia_creditos" && inserido) return { data: respostas.nova ?? null, error: null };
       if (tabela === "ia_creditos") return { data: respostas.aberta ?? null, error: null };
@@ -134,7 +140,7 @@ describe("conferir as compras pendentes", () => {
 });
 
 describe("o botão Comprar", () => {
-  const ASSINATURA = { plano_id: "p1", provedor: "asaas", provedor_cliente_id: "cus_1" };
+  const ASSINATURA = { plano_id: "p1", estado: "ativa", provedor: "asaas", provedor_cliente_id: "cus_1" };
   const PACOTE = { id: "22222222-0000-4000-8000-000000000002", nome: "R$ 100", preco_cents: 10000, ia_usd_cents: 1500, arquivado_em: null };
 
   it("⭐ sem pacote, ou plano sem a oferta, nada é cobrado (como antes)", async () => {
@@ -148,6 +154,32 @@ describe("o botão Comprar", () => {
     expect(r2).toMatchObject({ ok: false, code: "plano_sem_oferta" });
     expect(iniciar).not.toHaveBeenCalled();
     expect(semPacote.inserts).toHaveLength(0);
+  });
+
+  it("⭐ teste grátis, atraso ou cancelada: não compra (a avulsa paga não pode virar 'já pagou')", async () => {
+    const iniciar = vi.fn();
+    const adaptadorDe = () => ({ iniciarCompraDeCredito: iniciar }) as unknown as AdaptadorDeCobranca;
+    for (const estado of ["trial", "em_atraso", "cancelada", "suspensa"]) {
+      const { admin, inserts } = adminFalso({
+        assinatura: { ...ASSINATURA, estado },
+        plano: { teto_ia_usd_cents: 9100, oferece_credito_ia: true },
+        pacotes: [PACOTE],
+      });
+      const r = await iniciarCompraDeCredito(admin, { orgId: "org", pacoteId: PACOTE.id, actorUserId: "u", requestId: "r", adaptadorDe });
+      expect(r, estado).toMatchObject({ ok: false, status: 409, code: "assinatura_nao_ativa" });
+      expect(inserts).toHaveLength(0);
+    }
+    expect(iniciar).not.toHaveBeenCalled();
+  });
+
+  it("o link não foi gravado (nem na 2ª tentativa): não entrega o link e cancela a linha", async () => {
+    const iniciar = vi.fn<AdaptadorDeCobranca["iniciarCompraDeCredito"]>().mockResolvedValue({ pagamentoRef: "pay_9", url: "https://www.asaas.com/i/9" });
+    const adaptadorDe = () => ({ iniciarCompraDeCredito: iniciar }) as unknown as AdaptadorDeCobranca;
+    const f = adminFalso({ assinatura: ASSINATURA, plano: { teto_ia_usd_cents: 9100, oferece_credito_ia: true }, pacotes: [PACOTE], nova: { id: "c1" }, erroNoLink: true });
+    const r = await iniciarCompraDeCredito(f.admin, { orgId: "org", pacoteId: PACOTE.id, actorUserId: "u", requestId: "r", adaptadorDe });
+    expect(r).toMatchObject({ ok: false, status: 500 });
+    expect(f.updates.filter((u) => "pagamento_ref" in u)).toHaveLength(2);
+    expect(f.updates.at(-1)).toEqual({ status: "cancelado" });
   });
 
   it("sem cadastro de pagamento da assinatura: recusa com o motivo", async () => {

@@ -18,10 +18,11 @@ import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 /**
  * PC-051 — "Crédito de IA extra" em Configurações › Plano e cobrança.
  *
- * Tudo em REAIS (o cliente nunca vê dólar). Só aparece quando há o que mostrar:
- * plano com teto de IA (extrato do mês) ou compra/cortesia registrada. A compra
- * só é oferecida quando o plano oferece, há pacote ativo e a empresa tem o
- * cadastro de pagamento da assinatura. Nada é cobrado sem este clique.
+ * O cliente nunca vê dólar nem o custo da IA: o uso do plano e o crédito
+ * restante aparecem em PORCENTAGEM, e as compras pelo valor PAGO em reais. Só
+ * aparece quando a compra é oferecida (plano que oferece, pacote ativo,
+ * assinatura ativa e cadastro de pagamento) ou quando já há compra/cortesia
+ * registrada: sem pacote, a tela fica como antes. Nada é cobrado sem o clique.
  */
 export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso: string | null }) {
   const t = useT();
@@ -34,7 +35,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
   const data = formatadorDeData(idioma, fuso, { dateStyle: "short" });
   const dia = (iso: string | null) => (iso === null ? "—" : data.format(new Date(iso)));
 
-  if (extrato.mes === null && extrato.historico.length === 0) return null;
+  if (extrato.motivoSemOferta !== null && extrato.historico.length === 0) return null;
 
   async function comprar(pacoteId: string) {
     setOcupado(pacoteId);
@@ -91,19 +92,19 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
 
       {extrato.mes && (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-          <dt className="text-muted-foreground">{t("Uso de IA neste mês")}</dt>
-          <dd className="text-right tabular-nums">{reais(extrato.mes.uso_cents)}</dd>
-          <dt className="text-muted-foreground">{t("Incluído no plano")}</dt>
-          <dd className="text-right tabular-nums">{reais(extrato.mes.incluido_no_plano_cents)}</dd>
-          <dt className="text-muted-foreground">{t("Crédito comprado válido neste mês")}</dt>
-          <dd className="text-right tabular-nums">{reais(extrato.mes.credito_cents)}</dd>
-          <dt className="font-medium">{t("Saldo de crédito")}</dt>
-          <dd className="text-right font-medium tabular-nums" data-testid="saldo-de-credito">{reais(extrato.mes.saldo_cents)}</dd>
+          <dt className="text-muted-foreground">{t("Uso de IA incluído no plano, neste mês")}</dt>
+          <dd className="text-right tabular-nums" data-testid="uso-do-plano">{extrato.mes.uso_do_plano_pct}%</dd>
+          {extrato.mes.credito_restante_pct !== null && (
+            <>
+              <dt className="font-medium">{t("Crédito comprado que ainda resta")}</dt>
+              <dd className="text-right font-medium tabular-nums" data-testid="saldo-de-credito">{extrato.mes.credito_restante_pct}%</dd>
+            </>
+          )}
         </dl>
       )}
       {extrato.mes && (
         <p className="text-xs text-muted-foreground">
-          {t("Valores em reais pela cotação do dólar usada pela agência; o consumo é primeiro o incluído no plano, depois o crédito mais antigo.")}
+          {t("O consumo é primeiro o incluído no plano, depois o crédito comprado mais antigo.")}
         </p>
       )}
 
@@ -161,7 +162,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
                 <th className="py-1 font-normal">{t("Data")}</th>
                 <th className="py-1 font-normal">{t("Origem")}</th>
                 <th className="py-1 font-normal">{t("Situação")}</th>
-                <th className="py-1 text-right font-normal">{t("Crédito")}</th>
+                <th className="py-1 text-right font-normal">{t("Valor")}</th>
                 <th className="py-1 text-right font-normal">{t("Vale até")}</th>
               </tr>
             </thead>
@@ -171,7 +172,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
                   <td className="py-1">{dia(h.pago_em ?? h.criado_em)}</td>
                   <td className="py-1">{h.origem === "cortesia" ? t("Cortesia") : t("Compra")}</td>
                   <td className="py-1">{ROTULO_DO_STATUS[h.status] ?? h.status}</td>
-                  <td className="py-1 text-right tabular-nums">{reais(h.credito_cents)}</td>
+                  <td className="py-1 text-right tabular-nums">{h.preco_cents === null ? "—" : reais(h.preco_cents)}</td>
                   <td className="py-1 text-right">{h.vence_em ? dia(new Date(new Date(h.vence_em).getTime() - 1).toISOString()) : "—"}</td>
                 </tr>
               ))}
