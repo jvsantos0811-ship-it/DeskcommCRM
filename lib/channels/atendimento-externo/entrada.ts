@@ -180,6 +180,11 @@ export function idExternoDaEntrada(e: EntradaDoAtendimentoExterno, agora: Date =
   return `ext_${createHash("sha256").update(base).digest("hex").slice(0, 40)}`;
 }
 
+/** O corpo do POST como objeto (JSON ou formulário), sem validar — para a enquete (PC-050). */
+export function corpoDoPost(rawBody: string): Record<string, unknown> | null {
+  return lerCorpo(rawBody);
+}
+
 /** O `phone_id` que o corpo declara, sem validar o resto — para a guarda de conta. */
 export function phoneIdDoCorpo(rawBody: string): string | null {
   const corpo = lerCorpo(rawBody);
