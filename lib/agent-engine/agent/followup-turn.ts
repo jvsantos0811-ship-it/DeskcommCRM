@@ -680,11 +680,13 @@ async function enviarRoteiroDoFluxo(
   uso: UsoForaDaJanela,
   runLog: Pick<ReturnType<typeof withFields>, 'info' | 'warn'>,
 ): Promise<{ kind: 'sent' } | { kind: 'deferred'; until: Date; reason: string } | { kind: 'skipped'; reason: string }> {
-  const { tenantId, leadId, channelSessionId, conversationId } = target;
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+  // `contato` e não `leadId`: a cerca de `seguranca-supressao-duplicata-e-desfecho-terminal`
+  // recorta o caminho do texto fixo pela PRIMEIRA chamada com `leadId`.
+  const { tenantId, leadId: contato, channelSessionId, conversationId } = target;
+  if (await isLeadInHandoff(pool, tenantId, contato)) {
     return { kind: 'skipped', reason: 'O cliente está com a equipe ou pediu para parar: o diálogo do follow-up não saiu.' };
   }
-  if ((await etapaQueExigeHumano(pool, tenantId, leadId)) !== null) {
+  if ((await etapaQueExigeHumano(pool, tenantId, contato)) !== null) {
     return { kind: 'skipped', reason: 'O negócio está numa etapa "só atendimento humano": o diálogo do follow-up não saiu.' };
   }
   const { knobs } = await loadChannelKnobs(pool, tenantId, channelSessionId, deps.log);

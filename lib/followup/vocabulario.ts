@@ -627,6 +627,20 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   template: "Modelo de mensagem pronto",
 };
 
+/**
+ * PC-052 parte 3b — qual diálogo da CONEXÃO (ChatGuru) o passo de IA executa com
+ * a janela de 24 h fechada (`fallback_roteiro`). O diálogo em si é escolhido na
+ * tela da conexão; o passo só aponta o número.
+ */
+export type RoteiroDoPasso = "followup_1" | "followup_2" | "followup_3" | "followup_4" | "followup_5";
+export const ROTEIROS_DO_PASSO: Record<RoteiroDoPasso, string> = {
+  followup_1: "Follow-up 1 da conexão",
+  followup_2: "Follow-up 2 da conexão",
+  followup_3: "Follow-up 3 da conexão",
+  followup_4: "Follow-up 4 da conexão",
+  followup_5: "Follow-up 5 da conexão",
+};
+
 // ─── prioridade da tarefa (ação create_task, #1540) ────────────────────────
 
 /** Wire de prioridade da tarefa — rótulos do formulário e do card. */
