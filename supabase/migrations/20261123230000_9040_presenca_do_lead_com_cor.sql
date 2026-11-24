@@ -22,8 +22,8 @@ comment on column public.calendar_appointments.lead_presence is
 comment on column public.calendar_appointments.lead_presence_painted is
   'PC-052: a presença que já está pintada no Google. Diferente de lead_presence = o cron de sync repinta.';
 
-alter table public.calendar_event_types add column if not exists lead_presence_colors boolean not null default false;
-comment on column public.calendar_event_types.lead_presence_colors is
+alter table public.calendar_event_types add column if not exists lead_presence_enabled boolean not null default false;
+comment on column public.calendar_event_types.lead_presence_enabled is
   'PC-052: marcações deste tipo nascem com presença "aguardando" e o evento do Google ganha cor pela presença (amarelo, verde, vermelho). Desligado = como sempre.';
 
 -- O índice de instante único deixa de ver quem não vai: a remarcação nasce em
@@ -155,7 +155,9 @@ begin
 end; $$;
 
 revoke all on function public.fn_definir_modelo_do_evento_agenda(uuid,jsonb) from public,anon;
-grant execute on function public.fn_definir_modelo_do_evento_agenda(uuid,jsonb) to authenticated,service_role;-- O vermelho tem estado final: quem disse que não vai NÃO entra na varredura de
+grant execute on function public.fn_definir_modelo_do_evento_agenda(uuid,jsonb) to authenticated,service_role;
+
+-- O vermelho tem estado final: quem disse que não vai NÃO entra na varredura de
 -- confirmação (o aviso "Confirme a presença no compromisso" seria um pedido sem
 -- saída certa — cancelar apagaria o registro vermelho do Google, "faltou" ligaria
 -- o follow-up de falta para quem avisou). Cópia da ÚLTIMA definição, com o filtro

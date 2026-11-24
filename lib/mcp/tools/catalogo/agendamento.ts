@@ -249,7 +249,11 @@ export const TOOLS_AGENDAMENTO = declararTools([
     // `atencao`: "não vai" libera o horário, mas o registro fica e se desfaz
     // registrando de novo.
     risco: "atencao",
-    pacotes: ["vender"],
+    // NÃO entra em "vender": "vender" é o pacote com que o agente nasce, e uma
+    // capacidade a mais nele faz nenhuma outra jornada caber no teto
+    // (`tests/unit/pacote-reserva-vaga-da-critica.test.ts`). Confirmar presença
+    // é segurar o cliente no horário — "reter". Quem precisa liga à mão.
+    pacotes: ["reter"],
   },
   {
     name: "crm_set_appointment_outcome",

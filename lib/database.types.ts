@@ -3759,7 +3759,7 @@ export type Database = {
           description: string | null
           duration_minutes: number
           id: string
-          lead_presence_colors: boolean
+          lead_presence_enabled: boolean
           is_active: boolean
           location_details: string | null
           location_kind: string
@@ -3793,7 +3793,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
-          lead_presence_colors?: boolean
+          lead_presence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string
@@ -3827,7 +3827,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
-          lead_presence_colors?: boolean
+          lead_presence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string
