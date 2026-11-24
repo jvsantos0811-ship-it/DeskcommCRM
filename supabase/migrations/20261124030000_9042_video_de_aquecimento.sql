@@ -27,7 +27,7 @@ create table if not exists public.agenda_video_aquecimento (
   bytes            integer not null check (bytes > 0 and bytes <= 16777216),
   texto            text check (texto is null or char_length(texto) <= 500),
   trocado_em       timestamptz not null default now(),
-  trocado_por      uuid,
+  trocado_por      uuid references auth.users(id) on delete set null,
   updated_at       timestamptz not null default now()
 );
 

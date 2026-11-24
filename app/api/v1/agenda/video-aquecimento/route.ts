@@ -3,8 +3,10 @@
  *
  * GET    — o vídeo atual (formato, tamanho, texto, data da troca) e um link
  *          assinado de 10 min para a prévia. Sem vídeo: `{ video: null }`.
- * POST   — envia ou TROCA o vídeo (multipart: `arquivo`, `texto` opcional).
- *          mp4 ou 3gp até 16 MB; recusa com o motivo. O antigo sai do Storage.
+ * POST   — envia ou TROCA o vídeo, em dois passos (link assinado de upload →
+ *          o navegador sobe direto ao Storage → confirmar). mp4 ou 3gp até
+ *          16 MB, conferidos no objeto que subiu; recusa com o motivo. O
+ *          antigo sai do Storage.
  * PATCH  — troca só o texto que acompanha o vídeo.
  * DELETE — tira o vídeo: a confirmação volta a sair sozinha, como antes.
  *
@@ -18,11 +20,13 @@ import { z } from "zod";
 
 import {
   BUCKET_DO_VIDEO,
+  cabecalhoDeMp4,
   caminhoDoVideo,
   conferirVideo,
   TEXTO_MAX,
   videoPertenceAOrg,
   type MimeDoVideo,
+  type RecusaDoVideo,
 } from "@/lib/agenda/video-aquecimento";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -87,6 +91,45 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
+/** Os dois passos do envio: pedir o link assinado; confirmar o que subiu. */
+const postSchema = z.discriminatedUnion("etapa", [
+  z.strictObject({ etapa: z.literal("link"), mime: z.string().max(100), bytes: z.number().int().nonnegative() }),
+  z.strictObject({ etapa: z.literal("confirmar"), caminho: z.string().max(300), texto: z.string().trim().max(TEXTO_MAX).default("") }),
+]);
+
+function recusa(motivo: RecusaDoVideo | "conteudo", requestId: string): NextResponse {
+  const mensagem =
+    motivo === "tamanho"
+      ? "O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo."
+      : motivo === "formato"
+        ? "Formato não aceito: envie um vídeo .mp4."
+        : motivo === "conteudo"
+          ? "O arquivo não é um vídeo .mp4 de verdade (só a extensão foi trocada). Exporte o vídeo como .mp4 e envie de novo."
+          : "O arquivo está vazio.";
+  return fail("video_recusado", mensagem, 422, { requestId, details: { motivo } });
+}
+
+/** Os primeiros bytes do objeto, por link assinado com Range (sem baixar 16 MB). */
+async function primeirosBytes(caminho: string): Promise<Uint8Array | null> {
+  const { data } = await createAdminClient().storage.from(BUCKET_DO_VIDEO).createSignedUrl(caminho, 60);
+  if (!data?.signedUrl) return null;
+  try {
+    const r = await fetch(data.signedUrl, { headers: { Range: "bytes=0-15" }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) return null;
+    return new Uint8Array(await r.arrayBuffer()).slice(0, 16);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST em dois passos, porque o corpo de requisição do app tem teto de 10 MB e
+ * o vídeo vai a 16 MB: (1) `etapa: "link"` confere formato e tamanho DECLARADOS
+ * e devolve um link de upload assinado para `<org>/aquecimento/<uuid>.mp4`; o
+ * navegador sobe o arquivo direto ao Storage; (2) `etapa: "confirmar"` confere
+ * o objeto que REALMENTE subiu (tamanho, tipo e cabeçalho mp4), grava a linha e
+ * tira o antigo. Recusa = o objeto sai do Storage e a tela mostra o motivo.
+ */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -95,28 +138,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
 
-  const form = await req.formData().catch(() => null);
-  const arquivo = form?.get("arquivo");
-  if (!(arquivo instanceof File)) return fail("validation_failed", "Envie o arquivo do vídeo.", 400, { requestId });
-  const recusa = conferirVideo({ type: arquivo.type, size: arquivo.size });
-  if (recusa) {
-    const motivo =
-      recusa === "tamanho"
-        ? "O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo."
-        : recusa === "formato"
-          ? "Formato não aceito: envie um vídeo .mp4."
-          : "O arquivo está vazio.";
-    return fail("video_recusado", motivo, 422, { requestId, details: { motivo: recusa } });
-  }
-  const texto = z.string().trim().max(TEXTO_MAX).safeParse(form?.get("texto") ?? "");
-  if (!texto.success) return fail("validation_failed", "Texto longo demais (até 500 caracteres).", 400, { requestId });
-
-  const caminho = caminhoDoVideo(orgId, arquivo.type as MimeDoVideo);
+  const corpo = postSchema.safeParse(await req.json().catch(() => null));
+  if (!corpo.success) return fail("validation_failed", "Pedido inválido.", 400, { requestId });
   const admin = createAdminClient();
-  const { error: erroUpload } = await admin.storage
-    .from(BUCKET_DO_VIDEO)
-    .upload(caminho, Buffer.from(await arquivo.arrayBuffer()), { contentType: arquivo.type, upsert: false });
-  if (erroUpload) return fail("internal_error", "Não foi possível guardar o vídeo.", 500, { requestId });
+
+  if (corpo.data.etapa === "link") {
+    const motivo = conferirVideo({ type: corpo.data.mime, size: corpo.data.bytes });
+    if (motivo) return recusa(motivo, requestId);
+    const caminho = caminhoDoVideo(orgId, corpo.data.mime as MimeDoVideo);
+    const { data, error } = await admin.storage.from(BUCKET_DO_VIDEO).createSignedUploadUrl(caminho);
+    if (error || !data) return fail("internal_error", "Não foi possível preparar o envio do vídeo.", 500, { requestId });
+    return ok({ caminho, token: data.token }, { requestId });
+  }
+
+  // etapa "confirmar": o caminho é desta organização e da pasta do aquecimento.
+  const { caminho } = corpo.data;
+  if (!videoPertenceAOrg(caminho, orgId)) return fail("forbidden", "Arquivo de outra organização.", 403, { requestId });
+  const { data: info, error: erroInfo } = await admin.storage.from(BUCKET_DO_VIDEO).info(caminho);
+  if (erroInfo || !info) return fail("not_found", "O vídeo não chegou ao armazenamento. Envie de novo.", 404, { requestId });
+  const mime = (info.contentType ?? "").split(";")[0]!.trim();
+  const bytes = Number(info.size ?? 0);
+  const motivo = conferirVideo({ type: mime, size: bytes });
+  const cabecalho = motivo ? null : await primeirosBytes(caminho);
+  if (motivo || !cabecalho || !cabecalhoDeMp4(cabecalho)) {
+    await apagarArquivo(caminho, orgId);
+    return recusa(motivo ?? "conteudo", requestId);
+  }
+  const texto = corpo.data.texto;
 
   let antigo: Linha | null = null;
   try {
@@ -128,9 +176,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     {
       organization_id: orgId,
       storage_path: caminho,
-      mime: arquivo.type,
-      bytes: arquivo.size,
-      texto: texto.data === "" ? null : texto.data,
+      mime,
+      bytes,
+      texto: texto === "" ? null : texto,
       trocado_em: new Date().toISOString(),
       trocado_por: authz.user.id,
     },
@@ -149,7 +197,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     resourceType: "organization",
     resourceId: orgId,
     requestId,
-    metadata: { mime: arquivo.type, bytes: arquivo.size, com_texto: texto.data !== "", trocou: antigo !== null },
+    metadata: { mime, bytes, com_texto: texto !== "", trocou: antigo !== null },
   });
   return ok({ salvo: true }, { status: 201, requestId });
 }

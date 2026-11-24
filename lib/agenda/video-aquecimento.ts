@@ -3,12 +3,14 @@
  * uma vez por compromisso logo depois da confirmação do agendamento.
  *
  * Decisão do João (22/11/2026): configurado por ORGANIZAÇÃO e fácil de trocar.
- * O arquivo mora no bucket privado de mídia, em `<org>/aquecimento/<uuid>.mp4`;
+ * O arquivo mora no bucket privado de mídia, em `<org>/aquecimento/<uuid>.mp4`,
+ * e sobe DIRETO do navegador para o Storage por um link assinado (o corpo de
+ * requisição do app tem teto de 10 MB, abaixo do limite de 16 MB do WhatsApp);
  * na hora de enviar ele é COPIADO para a pasta da conversa — a regra de posse
  * do envio (`isMediaPathOwnedBy`) só aceita mídia da própria conversa — e sai
  * pelo caminho de toda mídia. Sem vídeo cadastrado = como antes.
  */
-import { randomUUID } from "node:crypto";
+import { randomId } from "@/lib/random-id";
 
 /** Limite do WhatsApp para vídeo: 16 MB. */
 export const VIDEO_MAX_BYTES = 16 * 1024 * 1024;
@@ -30,7 +32,7 @@ export function conferirVideo(arquivo: { type: string; size: number }): RecusaDo
 
 /** Onde o vídeo da organização mora. Nome novo a cada troca: o antigo some depois. */
 export function caminhoDoVideo(orgId: string, mime: MimeDoVideo): string {
-  return `${orgId}/aquecimento/${randomUUID()}.${mime === "video/3gpp" ? "3gp" : "mp4"}`;
+  return `${orgId}/aquecimento/${randomId()}.${mime === "video/3gpp" ? "3gp" : "mp4"}`;
 }
 
 /** O caminho é mesmo desta organização, na pasta do aquecimento? */
@@ -41,8 +43,20 @@ export function videoPertenceAOrg(caminho: string, orgId: string): boolean {
   return /^[A-Za-z0-9._-]{1,120}$/.test(resto) && !resto.includes("..");
 }
 
-/** A cópia para a conversa: um arquivo por compromisso. */
-export function caminhoNaConversa(orgId: string, conversationId: string, appointmentId: string, origem: string): string {
-  const ext = origem.endsWith(".3gp") ? "3gp" : "mp4";
-  return `${orgId}/${conversationId}/aquecimento-${appointmentId}.${ext}`;
+/**
+ * A cópia para a conversa, nomeada pelo ARQUIVO DE ORIGEM: a mesma conversa
+ * guarda uma cópia só de cada vídeo (dois agendamentos do mesmo contato não
+ * duplicam 16 MB no Storage); trocar o vídeo gera nome novo.
+ */
+export function caminhoNaConversa(orgId: string, conversationId: string, origem: string): string {
+  const arquivo = origem.slice(origem.lastIndexOf("/") + 1);
+  return `${orgId}/${conversationId}/aquecimento-${arquivo}`;
+}
+
+/**
+ * Pura: os primeiros bytes são de um arquivo mp4/3gp (caixa `ftyp` do ISO BMFF)?
+ * O tipo que o navegador declara vem da extensão; isto confere o conteúdo.
+ */
+export function cabecalhoDeMp4(bytes: Uint8Array): boolean {
+  return bytes.length >= 8 && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
 }

@@ -8987,10 +8987,11 @@ export const DICIONARIO: Traducoes = {
   "Não consegui salvar este passo.": { es: "No pude guardar este paso." },
 
   // PC-045 parte 2 (fork): vídeo de aquecimento.
+  "O arquivo não é um vídeo .mp4 de verdade (só a extensão foi trocada). Exporte o vídeo como .mp4 e envie de novo.": { es: "El archivo no es un video .mp4 de verdad (solo se cambió la extensión). Exporta el video como .mp4 y envíalo de nuevo." },
+  "O envio do vídeo foi interrompido. Confira a internet e tente de novo.": { es: "El envío del video se interrumpió. Revisa la conexión e inténtalo de nuevo." },
+  "Sai igual para todos os agendamentos: sem promessa de resultado nem prazo.": { es: "Sale igual para todas las citas: sin promesa de resultado ni de plazo." },
   "O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo.": { es: "El video supera 16 MB, el límite de WhatsApp. Comprímelo y envíalo de nuevo." },
   "Formato não aceito: envie um vídeo .mp4.": { es: "Formato no aceptado: envía un video .mp4." },
-  "O vídeo foi recusado: confira o formato (.mp4) e o tamanho (até 16 MB).": { es: "El video fue rechazado: revisa el formato (.mp4) y el tamaño (hasta 16 MB)." },
-  "Não foi possível guardar o vídeo.": { es: "No se pudo guardar el video." },
   "Vídeo salvo. Vale para os próximos agendamentos.": { es: "Video guardado. Vale para las próximas citas." },
   "Texto salvo.": { es: "Texto guardado." },
   "Vídeo removido. A confirmação volta a sair sozinha.": { es: "Video quitado. La confirmación vuelve a salir sola." },

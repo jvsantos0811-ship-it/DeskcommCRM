@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
-import { conferirVideo, TEXTO_MAX, VIDEO_MIMES } from "@/lib/agenda/video-aquecimento";
+import { ApiError } from "@/lib/api/types";
+import { BUCKET_DO_VIDEO, conferirVideo, TEXTO_MAX, VIDEO_MIMES } from "@/lib/agenda/video-aquecimento";
+import { createClient } from "@/lib/supabase/browser";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 
 /**
@@ -56,24 +58,47 @@ export function VideoDeAquecimento({ podeMudar }: { podeMudar: boolean }) {
     };
   }, [versao]);
 
+  const MOTIVO: Record<string, string> = {
+    tamanho: t("O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo."),
+    formato: t("Formato não aceito: envie um vídeo .mp4."),
+    vazio: t("O arquivo está vazio."),
+    conteudo: t("O arquivo não é um vídeo .mp4 de verdade (só a extensão foi trocada). Exporte o vídeo como .mp4 e envie de novo."),
+  };
+  const motivoDoErro = (e: unknown): string | null => {
+    if (!(e instanceof ApiError) || e.code !== "video_recusado") return null;
+    const m = e.details?.motivo;
+    return typeof m === "string" ? (MOTIVO[m] ?? null) : null;
+  };
+
+  /**
+   * Dois passos (o app não aceita corpo acima de 10 MB e o vídeo vai a 16):
+   * pede o link assinado, sobe o arquivo direto ao Storage, confirma. O
+   * servidor confere o arquivo que realmente subiu.
+   */
   async function enviar(arquivo: File) {
     const recusa = conferirVideo({ type: arquivo.type, size: arquivo.size });
-    if (recusa === "tamanho") return void toast.error(t("O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo."));
-    if (recusa === "formato") return void toast.error(t("Formato não aceito: envie um vídeo .mp4."));
-    if (recusa === "vazio") return void toast.error(t("O arquivo está vazio."));
+    if (recusa) return void toast.error(MOTIVO[recusa]);
     setOcupado(true);
     try {
-      const corpo = new FormData();
-      corpo.append("arquivo", arquivo);
-      corpo.append("texto", texto);
-      const r = await fetch(ROTA, { method: "POST", body: corpo, credentials: "same-origin" });
-      if (!r.ok) {
-        const erro = (await r.json().catch(() => null)) as { error?: { code?: string } } | null;
-        toast.error(erro?.error?.code === "video_recusado" ? t("O vídeo foi recusado: confira o formato (.mp4) e o tamanho (até 16 MB).") : t("Não foi possível guardar o vídeo."));
+      const { data: link } = await apiClient.post<{ data: { caminho: string; token: string } }>(ROTA, {
+        etapa: "link",
+        mime: arquivo.type,
+        bytes: arquivo.size,
+      });
+      const { error } = await createClient()
+        .storage.from(BUCKET_DO_VIDEO)
+        .uploadToSignedUrl(link.caminho, link.token, arquivo, { contentType: arquivo.type });
+      if (error) {
+        toast.error(t("O envio do vídeo foi interrompido. Confira a internet e tente de novo."));
         return;
       }
+      await apiClient.post(ROTA, { etapa: "confirmar", caminho: link.caminho, texto });
       toast.success(t("Vídeo salvo. Vale para os próximos agendamentos."));
       ler();
+    } catch (e) {
+      const motivo = motivoDoErro(e);
+      if (motivo) toast.error(motivo);
+      else showApiError(e);
     } finally {
       setOcupado(false);
       if (arquivoRef.current) arquivoRef.current.value = "";
@@ -139,6 +164,9 @@ export function VideoDeAquecimento({ podeMudar }: { podeMudar: boolean }) {
           disabled={!podeMudar || ocupado}
           onChange={(e) => setTexto(e.target.value)}
         />
+        <p className="text-xs text-muted-foreground">
+          {t("Sai igual para todos os agendamentos: sem promessa de resultado nem prazo.")}
+        </p>
       </div>
       {podeMudar && (
         <div className="flex flex-wrap gap-2">

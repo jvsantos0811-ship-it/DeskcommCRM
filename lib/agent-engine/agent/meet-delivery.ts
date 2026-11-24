@@ -40,47 +40,62 @@ function copiarVideoNoStorage(log: Logger): CopiarVideo {
   };
 }
 
+/** O vídeo pronto para sair: a cópia na pasta da conversa. */
+export interface VideoPronto {
+  destino: string;
+  mime: string;
+  texto: string;
+}
+
 /**
- * PC-045 parte 2 — o vídeo de aquecimento da organização, logo depois da
- * confirmação do agendamento. Só na 1ª confirmação (não na remarcação), só
- * quando a confirmação SAIU (então passou pela janela, pelo opt-out e pela LGPD
- * agora há pouco) e só com vídeo cadastrado. É a 2ª mensagem do MESMO job: a
- * idempotência por (job, posição) garante uma vez por compromisso. Melhor
- * esforço — falha aqui nunca derruba a confirmação, que já saiu.
+ * PC-045 parte 2 — o vídeo de aquecimento da organização, preparado ANTES da
+ * cadeia anti-ban (a cópia no Storage fica fora do lock do número). Só na 1ª
+ * confirmação (não na remarcação) e só com vídeo cadastrado; `null` = nada a
+ * mandar. Nunca lança: o pior caso é a confirmação sair sem o vídeo.
  */
-export async function enviarVideoDeAquecimento(
+export async function prepararVideoDeAquecimento(
   pool: pg.Pool,
   log: Logger,
   copiar: CopiarVideo,
-  p: {
-    orgId: string;
-    conversationId: string;
-    appointmentId: string;
-    contactId: string;
-    jobId: string;
-    jobClaim: NonNullable<ReturnType<typeof claimOfJob>>;
-    channel: RuntimeSendChannel;
-  },
-): Promise<void> {
+  p: { orgId: string; conversationId: string },
+): Promise<VideoPronto | null> {
   try {
     const { rows } = await pool.query<{ storage_path: string; mime: string; texto: string | null }>(
       "select storage_path, mime, texto from agenda_video_aquecimento where organization_id = $1",
       [p.orgId],
     );
     const video = rows[0];
-    if (!video || !videoPertenceAOrg(video.storage_path, p.orgId)) return;
-    const destino = caminhoNaConversa(p.orgId, p.conversationId, p.appointmentId, video.storage_path);
-    if (!(await copiar(video.storage_path, destino))) return;
-    const r = await p.channel.send({
-      tenantId: p.orgId,
-      leadId: p.contactId,
-      jobId: p.jobId,
-      jobClaim: p.jobClaim,
-      seq: 2,
-      conversationId: p.conversationId,
-      body: (video.texto ?? "").trim(),
-      media: { storagePath: destino, mime: video.mime, type: "video" },
+    if (!video || !videoPertenceAOrg(video.storage_path, p.orgId)) return null;
+    const destino = caminhoNaConversa(p.orgId, p.conversationId, video.storage_path);
+    if (!(await copiar(video.storage_path, destino))) return null;
+    return { destino, mime: video.mime, texto: (video.texto ?? "").trim() };
+  } catch (err) {
+    log.warn("vídeo de aquecimento não preparado — a confirmação sai sozinha", {
+      detalhe: (err instanceof Error ? err.message : String(err)).slice(0, 120),
     });
+    return null;
+  }
+}
+
+/** O intervalo anti-ban entre duas mensagens físicas: 1,2 s + até 0,8 s (CLAUDE.md, WAHA). */
+export const intervaloEntreMensagens = (rng: () => number = Math.random) => 1200 + Math.floor(rng() * 800);
+
+/**
+ * Manda o vídeo como 2ª mensagem do MESMO job, DENTRO do envio que a cadeia
+ * anti-ban liberou (sob o lock do número, depois da confirmação e do intervalo),
+ * como as fotos de produto. A idempotência por (job, posição) garante uma vez
+ * por compromisso. Melhor esforço: falha aqui só vira log — a confirmação, que
+ * já saiu, é o desfecho do job.
+ */
+export async function enviarVideoDeAquecimento(
+  log: Logger,
+  sleep: (ms: number) => Promise<void>,
+  enviar: (video: VideoPronto) => Promise<{ kind: string }>,
+  video: VideoPronto,
+): Promise<void> {
+  try {
+    await sleep(intervaloEntreMensagens());
+    const r = await enviar(video);
     if (r.kind !== "sent" && r.kind !== "already_sent") {
       log.warn("vídeo de aquecimento não saiu", { desfecho: r.kind });
     }
@@ -173,6 +188,14 @@ export function createMeetDeliveryHandler(deps: {
             ...deps.crmCfg,
             agentActorId: "agent-engine:meet-delivery",
           });
+        const motivo = (job.payload.motivo as MotivoDaEntrega | undefined) ?? "primeiro_envio";
+        const video =
+          motivo === "primeiro_envio"
+            ? await prepararVideoDeAquecimento(pool, deps.log, deps.copiarVideo ?? copiarVideoNoStorage(deps.log), {
+                orgId: job.organization_id,
+                conversationId: boundary.conversation_id,
+              })
+            : null;
         const result = await runBeforeSend({
           pool,
           log: deps.log,
@@ -199,7 +222,7 @@ export function createMeetDeliveryHandler(deps: {
           ...(deps.sleep ? { sleep: deps.sleep } : {}),
           send: async (body) => {
             await assertMeetingDeliveryPg(pool, context);
-            return channel.send({
+            const confirmacao = await channel.send({
               tenantId: job.organization_id,
               leadId: job.contact_id,
               jobId: job.id,
@@ -208,6 +231,27 @@ export function createMeetDeliveryHandler(deps: {
               conversationId: boundary.conversation_id,
               body,
             });
+            // PC-045: o vídeo só sai se a confirmação saiu, e sai aqui dentro —
+            // sob o mesmo lock do número e depois do intervalo anti-ban.
+            if (video && (confirmacao.kind === "sent" || confirmacao.kind === "already_sent")) {
+              await enviarVideoDeAquecimento(
+                deps.log,
+                deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
+                (v) =>
+                  channel.send({
+                    tenantId: job.organization_id,
+                    leadId: job.contact_id,
+                    jobId: job.id,
+                    jobClaim: claim,
+                    seq: 2,
+                    conversationId: boundary.conversation_id,
+                    body: v.texto,
+                    media: { storagePath: v.destino, mime: v.mime, type: "video" },
+                  }),
+                video,
+              );
+            }
+            return confirmacao;
           },
         });
         if (result.status === "vetoed") {
@@ -225,17 +269,6 @@ export function createMeetDeliveryHandler(deps: {
         switch (result.outcome.kind) {
           case "sent":
           case "already_sent":
-            if (((job.payload.motivo as MotivoDaEntrega | undefined) ?? "primeiro_envio") === "primeiro_envio") {
-              await enviarVideoDeAquecimento(pool, deps.log, deps.copiarVideo ?? copiarVideoNoStorage(deps.log), {
-                orgId: job.organization_id,
-                conversationId: boundary.conversation_id,
-                appointmentId: String(job.payload.appointment_id),
-                contactId: job.contact_id!,
-                jobId: job.id,
-                jobClaim: claim,
-                channel,
-              });
-            }
             await settle("sent");
             break;
           case "queued":
