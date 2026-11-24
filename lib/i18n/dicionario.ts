@@ -17934,6 +17934,8 @@ export const DICIONARIO: Traducoes = {
   "Remover mesmo": { es: "Quitar de todos modos" },
   "Não foi possível ler as enquetes. Recarregue a tela antes de salvar.": { es: "No fue posible leer las encuestas. Recargue la pantalla antes de guardar." },
   "Este campo não pode ser o voto.": { es: "Este campo no puede ser el voto." },
+  // PC-050 (2ª volta)
+  "O código de uma enquete gravada não muda: os votos dependem dele.": { es: "El código de una encuesta guardada no cambia: los votos dependen de él." },
 };
 
 /**

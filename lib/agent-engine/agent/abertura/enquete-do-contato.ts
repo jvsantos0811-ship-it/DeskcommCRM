@@ -7,8 +7,9 @@
  * ela veio — senão abre como se fosse um contato frio e repete o que o modelo
  * já disse. O bloco diz a enquete, a opção e o que a opção quer dizer.
  *
- * Só entra com a chave da organização LIGADA (`enquetes_config.ligada`) e voto
- * dos últimos `VOTO_VALE_DIAS` dias. Sem voto, devolve '' e não paga token.
+ * Só entra com a chave da organização LIGADA (`enquetes_config.ligada`), enquete
+ * ATIVA (desativar faz o voto parar de valer) e voto dos últimos
+ * `VOTO_VALE_DIAS` dias. Sem voto, devolve '' e não paga token.
  * Falha de leitura devolve '' e o turno segue como antes.
  */
 import { logger } from "@/lib/logger";
@@ -84,7 +85,7 @@ export async function buildEnqueteBlock(
               (select o->>'significado' from jsonb_array_elements(e.opcoes) o where o->>'valor' = v.opcao limit 1) as significado,
               v.chamar
          from enquetes_votos v
-         join enquetes_do_grupo e on e.id = v.enquete_id and e.organization_id = v.organization_id
+         join enquetes_do_grupo e on e.id = v.enquete_id and e.organization_id = v.organization_id and e.ativa
          join enquetes_config c on c.organization_id = v.organization_id and c.ligada
         where v.organization_id = $1
           and v.contact_id = $2

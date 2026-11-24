@@ -32,6 +32,8 @@ interface Enquete {
   pergunta: string;
   opcoes: Opcao[];
   ativa: boolean;
+  /** Só na tela: a linha já está gravada (código travado, remover pede confirmação). */
+  gravada?: boolean;
 }
 interface Estado {
   ligada: boolean;
@@ -49,8 +51,6 @@ export function EnquetesDoGrupo() {
   // Leitura que falhou não pode virar "lista vazia" salvável: salvar apagaria as
   // enquetes cadastradas (e os votos delas).
   const [leituraFalhou, setLeituraFalhou] = useState(false);
-  // Códigos que já estão gravados: remover um deles apaga os votos — pede confirmação.
-  const [salvas, setSalvas] = useState<string[]>([]);
   const [confirmar, setConfirmar] = useState<number | null>(null);
 
   useEffect(() => {
@@ -59,8 +59,7 @@ export function EnquetesDoGrupo() {
       .get<{ data: Estado }>(ROTA)
       .then(({ data }) => {
         if (!vivo) return;
-        setEstado(data);
-        setSalvas(data.enquetes.map((e) => e.codigo));
+        setEstado({ ...data, enquetes: data.enquetes.map((e) => ({ ...e, gravada: true })) });
       })
       .catch(() => {
         if (!vivo) return;
@@ -79,7 +78,8 @@ export function EnquetesDoGrupo() {
     setEstado({ ...estado, enquetes: estado.enquetes.filter((_, j) => j !== i) });
   };
   const pedirRemocao = (i: number) => {
-    if (salvas.includes(estado.enquetes[i]!.codigo.trim().toLowerCase())) setConfirmar(i);
+    // Remover enquete gravada apaga os votos dela ao salvar: pede confirmação.
+    if (estado.enquetes[i]!.gravada) setConfirmar(i);
     else tirar(i);
   };
 
@@ -92,13 +92,13 @@ export function EnquetesDoGrupo() {
     if (!estado || leituraFalhou) return;
     setSalvando(true);
     try {
-      const enquetes = estado.enquetes.map((e) => ({
+      const enquetes = estado.enquetes.map(({ gravada: _gravada, ...e }) => ({
         ...e,
         codigo: e.codigo.trim().toLowerCase(),
         opcoes: e.opcoes.filter((o) => o.valor.trim() !== ""),
       }));
       await apiClient.put(ROTA, { ligada: estado.ligada, campo_do_voto: estado.campo_do_voto, enquetes });
-      setSalvas(enquetes.map((e) => e.codigo));
+      setEstado({ ...estado, enquetes: enquetes.map((e) => ({ ...e, gravada: true })) });
       setConfirmar(null);
       toast.success(t("Enquetes salvas."));
     } catch (e) {
@@ -147,7 +147,15 @@ export function EnquetesDoGrupo() {
       {estado.enquetes.map((e, i) => (
         <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-3">
           <div className="grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
-            <Input aria-label={t("Código da enquete")} placeholder={t("código (ex.: reparadora)")} value={e.codigo} onChange={(v) => mudarEnquete(i, { codigo: v.target.value })} />
+            {/* Código de enquete gravada fica travado: trocá-lo apagaria a enquete e os votos ao salvar. */}
+            <Input
+              aria-label={t("Código da enquete")}
+              placeholder={t("código (ex.: reparadora)")}
+              value={e.codigo}
+              readOnly={e.gravada === true}
+              title={e.gravada ? t("O código de uma enquete gravada não muda: os votos dependem dele.") : undefined}
+              onChange={(v) => mudarEnquete(i, { codigo: v.target.value })}
+            />
             <Input aria-label={t("Pergunta da enquete")} placeholder={t("Pergunta da enquete")} value={e.pergunta} onChange={(v) => mudarEnquete(i, { pergunta: v.target.value })} />
             <Button variant="ghost" size="sm" onClick={() => pedirRemocao(i)}>
               {t("Remover")}

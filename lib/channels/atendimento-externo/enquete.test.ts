@@ -47,7 +47,7 @@ describe("o voto que o diálogo manda (PC-050)", () => {
   it("⭐ campo de conteúdo nunca é o voto: nem na lista da tela, nem escolhido", () => {
     const corpo = { texto_mensagem: "oi", nome: "x", celular: "1", email: "a@b", responsavel_nome: "y", link_chat: "l", bot_context: "v" };
     expect(nomesDosCampos(corpo)).toEqual(["bot_context"]);
-    for (const c of ["texto_mensagem", "nome", "celular", "email", "username", "chat_id", "phone_id", "datetime_post", "tipo_mensagem", "responsavel_email", "campos_personalizados"]) {
+    for (const c of ["texto_mensagem", "nome", "celular", "email", "username", "chat_id", "phone_id", "datetime_post", "tipo_mensagem", "responsavel_email", "campos_personalizados", "bsuid", "chat_created", "executado_por", "tags", "ctwa_ad", "campanha_nome"]) {
       expect(campoPodeSerVoto(c), c).toBe(false);
     }
     expect(campoPodeSerVoto("bot_context")).toBe(true);

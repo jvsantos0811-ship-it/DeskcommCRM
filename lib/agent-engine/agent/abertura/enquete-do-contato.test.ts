@@ -32,6 +32,7 @@ describe("o voto na enquete, para o agente (PC-050)", () => {
     expect(await buildEnqueteBlock(db as never, "org-1", "contato-1", new Date("2026-11-24T00:00:00Z"))).toContain("reparadora");
     expect(sql.replace(/\s+/g, " ")).toContain("where v.organization_id = $1 and v.contact_id = $2");
     expect(sql).toContain("c.ligada");
+    expect(sql).toContain("e.ativa");
     expect(params.slice(0, 2)).toEqual(["org-1", "contato-1"]);
     const quebrado = { query: async () => { throw new Error("db caiu"); } };
     await expect(buildEnqueteBlock(quebrado as never, "org-1", "contato-1", new Date())).resolves.toBe("");

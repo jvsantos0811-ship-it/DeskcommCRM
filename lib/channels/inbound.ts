@@ -510,7 +510,7 @@ async function atendimentoExternoInbound(
   // que a pessoa escreveu. Não é ingerido e a IA não roda — ela entra quando a
   // pessoa responder. O mesmo voto de novo (`mudou: false`) é conversa e segue.
   if (enquete.status === "registrado" && enquete.mudou) {
-    return { ok: true, body: { status: "enquete_registrada", mudou: true } };
+    return { ok: true, body: { status: "enquete_registrada", mudou: true, reason: "enquete_ativacao" } };
   }
 
   const leitura = lerEntrada(input.rawBody);
@@ -529,8 +529,8 @@ async function atendimentoExternoInbound(
         ok: true,
         body:
           enquete.status === "registrado"
-            ? { status: "enquete_registrada", mudou: enquete.mudou }
-            : { status: "enquete_sem_contato" },
+            ? { status: "enquete_registrada", mudou: enquete.mudou, reason: "enquete_ativacao" }
+            : { status: "enquete_sem_contato", reason: "enquete_sem_contato" },
       };
     }
     if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
@@ -549,5 +549,12 @@ async function atendimentoExternoInbound(
   // Falha de ESCRITA sobe como exceção: a rota responde 500 e a plataforma
   // reentrega — o evento era bom, nós é que não gravamos.
   if (r.status === "failed") throw new Error(`ingestao_falhou: ${r.reason}`.slice(0, 200));
+  // PC-050: quem votou "não quero contato" sem ser contato e ESCREVEU agora
+  // acabou de virar contato pela mensagem. O voto é gravado já (o resultado não
+  // muda esta entrega); sem isto, o POST seguinte traria o mesmo voto como
+  // "novo" e seria lido como ativação — engolindo uma mensagem real.
+  if (enquete.status === "sem_contato") {
+    await tratarEnqueteDoPost(admin, { orgId: input.session.organization_id, corpo: corpoDoPost(input.rawBody) });
+  }
   return { ok: true, body: { ...r } };
 }

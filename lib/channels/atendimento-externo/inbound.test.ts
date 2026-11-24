@@ -159,7 +159,7 @@ describe("entrada do canal — o voto na enquete do grupo (PC-050)", () => {
   it("⭐ voto NOVO é a ativação: mesmo COM texto, nada é ingerido e a IA não roda", async () => {
     enquete.mockResolvedValueOnce({ ...VOTO, mudou: true });
     const r = await entregar(corpo({ texto_mensagem: "Olá! Vi que você votou na enquete." }));
-    expect(r).toEqual({ ok: true, body: { status: "enquete_registrada", mudou: true } });
+    expect(r).toEqual({ ok: true, body: { status: "enquete_registrada", mudou: true, reason: "enquete_ativacao" } });
     expect(ingest).not.toHaveBeenCalled();
   });
 
@@ -174,12 +174,12 @@ describe("entrada do canal — o voto na enquete do grupo (PC-050)", () => {
     enquete.mockResolvedValueOnce({ ...VOTO, mudou: false });
     expect(await entregar(JSON.stringify({ celular: "5500900000001", phone_id: "fone-da-empresa-a" }))).toEqual({
       ok: true,
-      body: { status: "enquete_registrada", mudou: false },
+      body: { status: "enquete_registrada", mudou: false, reason: "enquete_ativacao" },
     });
     enquete.mockResolvedValueOnce({ status: "sem_contato" });
     expect(await entregar(JSON.stringify({ celular: "5500900000001", phone_id: "fone-da-empresa-a" }))).toEqual({
       ok: true,
-      body: { status: "enquete_sem_contato" },
+      body: { status: "enquete_sem_contato", reason: "enquete_sem_contato" },
     });
     expect(ingest).not.toHaveBeenCalled();
   });
@@ -188,6 +188,34 @@ describe("entrada do canal — o voto na enquete do grupo (PC-050)", () => {
     enquete.mockResolvedValueOnce({ status: "sem_contato" });
     await entregar(corpo({ texto_mensagem: "mudei de ideia" }));
     expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("⭐ 'não quero contato' com o voto no chat em TODO POST: 3 mensagens, 3 ingeridas (nenhuma engolida)", async () => {
+    // Estado de verdade, como o banco: o contato nasce na 1ª mensagem; o voto é
+    // gravado logo depois dela; dali em diante o mesmo voto é "mudou: false".
+    let contatoExiste = false;
+    let votoGravado = false;
+    enquete.mockImplementation(async () => {
+      if (!contatoExiste) return { status: "sem_contato" };
+      if (!votoGravado) {
+        votoGravado = true;
+        return { ...VOTO, mudou: true };
+      }
+      return { ...VOTO, mudou: false };
+    });
+    ingest.mockImplementation(async () => {
+      contatoExiste = true;
+      return { status: "ingested", messageId: "m-1", conversationId: "c-1" };
+    });
+    for (const texto of ["oi", "mudei de ideia", "pode me chamar"]) {
+      const r = await entregar(corpo({ texto_mensagem: texto, bot_context: "enquete:reparadora:Agora não" }));
+      expect(r.ok).toBe(true);
+    }
+    expect(ingest).toHaveBeenCalledTimes(3);
+    enquete.mockReset();
+    enquete.mockImplementation(async () => ({ status: "sem_enquete" }));
+    ingest.mockReset();
+    ingest.mockImplementation(async () => ({ status: "ingested", messageId: "m-1", conversationId: "c-1" }));
   });
 
   it("chave desligada: a enquete não muda nada na entrada", async () => {

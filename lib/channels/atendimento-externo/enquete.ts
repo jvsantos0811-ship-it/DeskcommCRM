@@ -48,6 +48,11 @@ const CAMPOS_QUE_NAO_SAO_VOTO = new Set([
   "phone_id",
   "datetime_post",
   "tipo_mensagem",
+  "bsuid",
+  "chat_created",
+  "executado_por",
+  "tags",
+  "ctwa_ad",
   // O objeto inteiro dos campos personalizados: o voto é UM deles, pelo nome.
   "campos_personalizados",
 ]);
@@ -57,7 +62,7 @@ export function campoPodeSerVoto(nome: string): boolean {
   if (!CAMPO_DO_VOTO.test(nome)) return false;
   const raiz = nome.split(".")[0]!.toLowerCase();
   if (nome.includes(".")) return raiz === "campos_personalizados";
-  return !CAMPOS_QUE_NAO_SAO_VOTO.has(raiz) && !raiz.startsWith("responsavel");
+  return !CAMPOS_QUE_NAO_SAO_VOTO.has(raiz) && !raiz.startsWith("responsavel") && !raiz.startsWith("campanha");
 }
 
 export const opcaoDaEnqueteSchema = z.strictObject({
