@@ -75,6 +75,33 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  {
+    tabela: "enquetes_config",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
+  {
+    tabela: "enquetes_do_grupo",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
+  {
+    tabela: "enquetes_votos",
+    razao:
+      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9041 (fork, PC-050).",
+  },
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
   { tabela: "golden_candidates", razao: "tests/invariants/golden-candidates.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
   { tabela: "jev_observacoes", razao: "tests/invariants/jev-observacoes.test.ts — dois tenants reais por JWT (agent): leitura positiva local e ZERO do vizinho nos dois sentidos, a tabela inteira sem filtro igual à própria, anon recusado, e insert/update/delete de authenticated sem efeito (só o servidor grava)." },
@@ -416,33 +443,6 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "INSTALAÇÃO, sem policy e sem grant a anon/authenticated: com o pagamento da própria " +
       "organização existindo (controle positivo), o admin dessa organização por JWT e o anon " +
       "recebem `permission denied` em SELECT, INSERT e DELETE. Migration 9030 (fork, PC-028).",
-  },
-  {
-    tabela: "enquetes_config",
-    razao:
-      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
-      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
-      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
-      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
-      "organização da sessão. Migration 9041 (fork, PC-050).",
-  },
-  {
-    tabela: "enquetes_do_grupo",
-    razao:
-      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
-      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
-      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
-      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
-      "organização da sessão. Migration 9041 (fork, PC-050).",
-  },
-  {
-    tabela: "enquetes_votos",
-    razao:
-      "tests/invariants/enquete-do-grupo.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
-      "policy e sem grant a anon/authenticated: com as linhas da própria organização existindo " +
-      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
-      "denied` em SELECT, UPDATE e DELETE (e INSERT no voto). A tela lê e grava pela rota, com a " +
-      "organização da sessão. Migration 9041 (fork, PC-050).",
   },
 ];
 
