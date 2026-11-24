@@ -68,7 +68,7 @@ interface LinhaParaPintar {
 export async function pintarPresencasPendentes(
   admin: Admin,
   opcoes: { limite?: number; fetchImpl?: typeof fetch } = {},
-): Promise<{ pintados: number; falhas: number }> {
+): Promise<{ pintados: number; falhas: number; porOrganizacao: Map<string, number> }> {
   const fetchImpl = opcoes.fetchImpl ?? fetch;
   let data: unknown[] | null = null;
   try {
@@ -79,7 +79,13 @@ export async function pintarPresencasPendentes(
       .is("lead_presence_painted", null)
       .not("google_event_id", "is", null)
       .not("google_base_projection", "is", null)
+      .not("google_connection_id", "is", null)
+      .not("google_calendar_id", "is", null)
       .in("status", ["pending", "confirmed"])
+      // Compromisso que já acabou sai da fila: a cor era para a agenda do dia, e
+      // uma falha permanente (conexão desligada, agenda sem acesso) num horário
+      // passado não pode ficar na frente de todo mundo para sempre.
+      .gte("ends_at", new Date().toISOString())
       .order("starts_at", { ascending: true })
       .limit(opcoes.limite ?? LIMITE_POR_RODADA);
     if (r.error) throw new Error(r.error.message);
@@ -90,18 +96,21 @@ export async function pintarPresencasPendentes(
     logger.warn("[presenca] leitura dos compromissos a pintar falhou", {
       error: e instanceof Error ? e.message : "erro",
     });
-    return { pintados: 0, falhas: 1 };
+    return { pintados: 0, falhas: 1, porOrganizacao: new Map() };
   }
   const pendentes = (data ?? []) as LinhaParaPintar[];
 
   let pintados = 0;
   let falhas = 0;
+  const porOrganizacao = new Map<string, number>();
   for (const linha of pendentes) {
     const ok = await pintarUm(admin, linha, fetchImpl);
-    if (ok) pintados += 1;
-    else falhas += 1;
+    if (ok) {
+      pintados += 1;
+      porOrganizacao.set(linha.organization_id, (porOrganizacao.get(linha.organization_id) ?? 0) + 1);
+    } else falhas += 1;
   }
-  return { pintados, falhas };
+  return { pintados, falhas, porOrganizacao };
 }
 
 async function pintarUm(admin: Admin, linha: LinhaParaPintar, fetchImpl: typeof fetch): Promise<boolean> {
@@ -119,6 +128,18 @@ async function pintarUm(admin: Admin, linha: LinhaParaPintar, fetchImpl: typeof 
         cache: "no-store",
       },
     );
+    if (resposta.status === 404 || resposta.status === 410) {
+      // O evento não existe mais no Google: não há o que pintar. Marca como
+      // resolvido para sair da fila (a recriação, se houver, nasce com a cor
+      // certa pelo POST do sync).
+      await admin
+        .from("calendar_appointments")
+        .update({ lead_presence_painted: linha.lead_presence })
+        .eq("organization_id", linha.organization_id)
+        .eq("id", linha.id)
+        .eq("lead_presence", linha.lead_presence as string);
+      return false;
+    }
     if (!resposta.ok) {
       logger.warn("[presenca] o Google recusou a cor", {
         organization_id: linha.organization_id,

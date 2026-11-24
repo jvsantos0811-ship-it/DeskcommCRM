@@ -1243,20 +1243,40 @@ export const crmRegistrarPresenca: McpToolDefinition<typeof presencaShape> = {
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
-  handler: async (input, ctx) =>
-    semDerrubarOTurno("registrado", async () => {
-      const r = await alterarAgendamentoHandler(
+  handler: async (input, ctx) => {
+    const r = await semDerrubarOTurno("registrado", async () => {
+      const salvo = await alterarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
         { id: input.appointment_id, lead_presence: input.presenca },
       );
       return {
+        ok: true,
         registrado: true,
         presenca: input.presenca,
         horario_liberado: input.presenca === "nao_vai",
-        compromisso: compromissoComHorarioLocal(r),
+        compromisso: compromissoComHorarioLocal(salvo),
       };
-    }),
+    });
+    if ("motivo" in r && r.registrado === false) {
+      // `ok: false` explícito: a recusa precisa ser lida antes de qualquer frase
+      // ao cliente. E o caso de voltar de "não vai" para um horário que já foi
+      // dado a outra pessoa tem ensino próprio — "a equipe confirma" seria
+      // deixar o cliente achando que está confirmado.
+      return {
+        ...r,
+        ok: false,
+        ...(r.motivo === "agenda_horario_indisponivel"
+          ? {
+              mensagem:
+                "esse horário foi ocupado depois que o cliente disse que não ia. NÃO diga que está confirmado: " +
+                "ofereça horários novos com `crm_find_free_slots` e marque um compromisso novo.",
+            }
+          : {}),
+      };
+    }
+    return r;
+  },
 };
 
 const desfechoShape = {

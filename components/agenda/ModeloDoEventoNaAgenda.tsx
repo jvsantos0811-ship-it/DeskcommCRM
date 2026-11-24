@@ -227,6 +227,13 @@ export function ModeloDoEventoNaAgenda({
                   "O cliente não recebe convite do Google, mesmo com e-mail na ficha, e por isso a descrição vai em todos os compromissos.",
                 )}
               </span>
+              {modeloInicial?.agenda_interna === true && !agendaInterna ? (
+                <span className="text-xs text-text-muted" data-testid="modelo-do-evento-agenda-interna-aviso">
+                  {t(
+                    "⚠ Ao desligar, o cliente com e-mail na ficha passa a ser convidado na próxima mudança do compromisso — e recebe por e-mail a descrição que já está no evento.",
+                  )}
+                </span>
+              ) : null}
             </span>
           </label>
 

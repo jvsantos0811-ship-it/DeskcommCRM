@@ -92,15 +92,17 @@ export async function emailDoContato(
     // PC-052 — "agenda interna": o contato nunca vira convidado do evento. Sem
     // e-mail aqui, o POST não o convida e o PATCH (`delta`) não o acrescenta —
     // e também não tira quem já estava, então ninguém recebe cancelamento.
-    // A leitura da opção não derruba o convite: se falhar, vale o de sempre.
-    let interna = false;
-    try {
-      const { data: daOrg } = await db.from("organizations").select("settings").eq("id", org).maybeSingle();
-      interna = agendaInterna((daOrg as { settings?: unknown } | null)?.settings);
-    } catch {
-      interna = false;
-    }
-    if (interna) return null;
+    // Leitura da opção que FALHA não convida: na agenda interna, convidar por
+    // engano mandaria por e-mail ao cliente a descrição completa (a qualificação).
+    // Sem convite o compromisso continua indo para a agenda de quem atende, e a
+    // próxima reconciliação tenta de novo.
+    const { data: daOrg, error: erroDaOrg } = await db
+      .from("organizations")
+      .select("settings")
+      .eq("id", org)
+      .maybeSingle();
+    if (erroDaOrg) return null;
+    if (agendaInterna((daOrg as { settings?: unknown } | null)?.settings)) return null;
     const { data, error } = await db
       .from("contacts")
       .select("email,name,display_name,is_anonymized")

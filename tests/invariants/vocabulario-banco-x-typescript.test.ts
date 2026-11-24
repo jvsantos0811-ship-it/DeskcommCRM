@@ -545,6 +545,13 @@ const PARES: Array<{
     arquivo: "lib/external-db/types.ts",
     simbolo: "TipoBanco",
   },
+  {
+    // PC-052 (migration 9040): a presença do cliente no compromisso.
+    tabela: "calendar_appointments",
+    coluna: "lead_presence",
+    arquivo: "lib/agenda/presenca-cor.ts",
+    simbolo: "PRESENCAS",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */
