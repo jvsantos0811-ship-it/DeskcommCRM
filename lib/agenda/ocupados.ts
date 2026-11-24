@@ -15,6 +15,7 @@
  * Por isso, na dúvida, OCUPA. Vale para status que ainda não existe no
  * vocabulário, para evento tentativo, e para a conexão do Google que caiu.
  */
+import { presencaLiberaOHorario } from "./presenca-cor";
 import {
   CONEXAO_CONTA_COMO_OCUPACAO,
   SITUACOES_DO_AGENDAMENTO,
@@ -29,6 +30,8 @@ export interface LinhaDeAgendamento {
   starts_at: string;
   ends_at: string;
   status: string;
+  /** PC-052 — `nao_vai` libera o horário como `cancelled` (o vermelho fica só como registro). */
+  lead_presence?: string | null;
 }
 
 /**
@@ -103,6 +106,7 @@ export function ocupadosDoDono(
 
   for (const linha of agendamentos) {
     if (LIBERAM_O_HORARIO.has(linha.status)) continue;
+    if (presencaLiberaOHorario(linha.lead_presence)) continue;
     const intervalo = intervaloValido(linha.starts_at, linha.ends_at);
     if (intervalo) ocupados.push(intervalo);
   }

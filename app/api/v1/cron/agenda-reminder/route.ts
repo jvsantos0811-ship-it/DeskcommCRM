@@ -579,6 +579,10 @@ async function handle(req: NextRequest): Promise<Response> {
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_meta_template_name, reminder_meta_template_language, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
+    // PC-052: quem disse que não vai não recebe lembrete (o compromisso fica só
+    // como registro vermelho). `is null` primeiro: `neq` sozinho descartaria a
+    // presença nula, que é o compromisso de sempre.
+    .or("lead_presence.is.null,lead_presence.neq.nao_vai")
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
     // ocupar a janela da varredura enquanto a org segue parada.
     .eq("organizations.status", STATUS_OPERANTE)

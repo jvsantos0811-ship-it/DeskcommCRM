@@ -748,6 +748,8 @@ export const AUDIT_ACTIONS = [
   "agenda.settings_updated",
   "agenda.endereco_salvo",
   "agenda.appointment_rescheduled",
+  /** PC-052 — o lead confirmou ou disse que não vai (presença com cor no Google). */
+  "agenda.appointment_presence_recorded",
   "agenda.appointment_cancelled",
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
   // de fora chama. Só audita quando alguma tarefa mexeu em dado.

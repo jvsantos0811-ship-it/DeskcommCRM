@@ -4,7 +4,7 @@
  * O teto do plano (`cobranca_planos.teto_ia_usd_cents`) bloqueia a chave da
  * instalação quando o gasto do mês o alcança. Com crédito pago que ainda vale,
  * o teto do mês passa a ser `teto do plano + crédito`
- * (`fn_credito_de_ia_disponivel`, migration 9040) — a régua mora no banco e é a
+ * (`fn_credito_de_ia_disponivel`, migration 9044) — a régua mora no banco e é a
  * mesma no gate do engine (`SQL_TETO_DO_PLANO`) e no caminho legado.
  *
  * Aqui mora o que a TELA e a COBRANÇA precisam:

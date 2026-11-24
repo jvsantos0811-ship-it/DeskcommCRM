@@ -1,5 +1,5 @@
 -- manifest: PC-051 — crédito de IA comprado pelo CRM quando o teto do plano acaba: pacotes da INSTALAÇÃO (`cobranca_pacotes_credito_ia`, preço em reais e quanto de IA libera), oferta por plano (`cobranca_planos.oferece_credito_ia`, desligada), compras e cortesias por organização (`ia_creditos`, só o servidor lê e escreve) e `fn_credito_de_ia_disponivel(org)`, que soma ao teto do mês o crédito pago que ainda vale (vence no fim do mês seguinte ao pagamento; consome primeiro o incluído no plano, depois o crédito mais antigo)
--- 9040: crédito de IA (PC-051).
+-- 9044: crédito de IA (PC-051).
 --
 -- ─── O que existe antes ─────────────────────────────────────────────────────
 --
@@ -42,7 +42,7 @@
 --     régua de `fn_gasto_de_ia_do_mes` (soma de `llm_calls.cost_cents`); o gate
 --     só chama esta função quando o gasto do mês já alcançou o teto do plano.
 --
--- Sem dado migrado. Número 9040, faixa do fork. Idempotente; apêndice igual no
+-- Sem dado migrado. Número 9044, faixa do fork (9040 foi da presença com cor, PC-052). Idempotente; apêndice igual no
 -- `baseline.sql`, antes da VARREDURA anon.
 
 create table if not exists public.cobranca_pacotes_credito_ia (
@@ -58,7 +58,7 @@ create table if not exists public.cobranca_pacotes_credito_ia (
 );
 
 comment on table public.cobranca_pacotes_credito_ia is
-  'PC-051 (migration 9040): pacotes de crédito de IA da INSTALAÇÃO — preço em centavos de real e quanto de IA o pacote libera (centavos de dólar). Arquivado sai da oferta. RLS ligada sem policy: só o service_role (rotas /api/v1/admin/cobranca/creditos-ia e /api/v1/cobranca/credito-ia).';
+  'PC-051 (migration 9044): pacotes de crédito de IA da INSTALAÇÃO — preço em centavos de real e quanto de IA o pacote libera (centavos de dólar). Arquivado sai da oferta. RLS ligada sem policy: só o service_role (rotas /api/v1/admin/cobranca/creditos-ia e /api/v1/cobranca/credito-ia).';
 
 alter table public.cobranca_planos
   add column if not exists oferece_credito_ia boolean not null default false;
@@ -91,7 +91,7 @@ create table if not exists public.ia_creditos (
 );
 
 comment on table public.ia_creditos is
-  'PC-051 (migration 9040): crédito de IA de cada organização — compra (nasce pendente, vira pago só com o pagamento relido no provedor) ou cortesia do dono (nasce paga, com motivo). Vence no fim do mês seguinte ao do pagamento. Só o servidor lê e escreve: RLS ligada sem policy, sem grant a anon/authenticated.';
+  'PC-051 (migration 9044): crédito de IA de cada organização — compra (nasce pendente, vira pago só com o pagamento relido no provedor) ou cortesia do dono (nasce paga, com motivo). Vence no fim do mês seguinte ao do pagamento. Só o servidor lê e escreve: RLS ligada sem policy, sem grant a anon/authenticated.';
 
 create unique index if not exists ia_creditos_pagamento_unico
   on public.ia_creditos (provedor, pagamento_ref)

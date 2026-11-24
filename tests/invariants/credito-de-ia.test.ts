@@ -4,7 +4,7 @@ import pg from "pg";
 import { SQL_TETO_DO_PLANO } from "@/lib/agent-engine/edge/llm/orcamento";
 
 /**
- * O CRÉDITO DE IA CONTRA O POSTGRES DE VERDADE (PC-051, migration 9040).
+ * O CRÉDITO DE IA CONTRA O POSTGRES DE VERDADE (PC-051, migration 9044).
  *
  *   1. As duas tabelas são só do servidor: anon e o admin da própria
  *      organização (JWT) recebem `permission denied` em SELECT, INSERT, UPDATE e
@@ -114,7 +114,7 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("crédito de IA (9040)", () => {
+describe("crédito de IA (9044)", () => {
   it("⭐ só o service_role: anon e o admin da organização não leem, não escrevem nem executam", async () => {
     await pool.query(`insert into cobranca_pacotes_credito_ia (nome, preco_cents, ia_usd_cents) values ('Controle', 10000, 1500)`);
     await pagarCredito(ORG_C, 100, 0);
