@@ -1,5 +1,6 @@
 import {claimOfJob,type JobClaim} from "../queue/claim";
 import {resultadoDoEnvioDoFollowup} from "../edge/crm/send-ledger";
+import { SEQ_DO_DIALOGO_DA_PLATAFORMA } from "../edge/crm/seq-do-dialogo";
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -771,8 +772,8 @@ async function enviarRoteiroDoFluxo(
   };
 }
 
-/** `seq` do recibo do diálogo no `send_ledger`: fora da faixa das mensagens do turno. */
-const SEQ_DO_ROTEIRO = 101;
+/** `seq` do recibo do diálogo no `send_ledger` — o aviso de IA o exclui da contagem. */
+const SEQ_DO_ROTEIRO = SEQ_DO_DIALOGO_DA_PLATAFORMA;
 
 /** A conexão do alvo fala fora da janela por diálogo da plataforma? */
 async function conexaoFalaPorRoteiro(pool: pg.Pool, target: ReentrySendTarget): Promise<boolean> {
