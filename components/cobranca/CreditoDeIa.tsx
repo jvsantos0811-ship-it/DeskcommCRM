@@ -76,7 +76,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
   }
 
   const ROTULO_DO_STATUS: Record<string, string> = {
-    pendente: t("Aguardando pagamento"),
+    pendente: t("Pagamento em aberto"),
     pago: t("Liberado"),
     cancelado: t("Cancelado"),
   };
@@ -129,7 +129,7 @@ export function CreditoDeIa({ extrato, fuso }: { extrato: ExtratoDeCredito; fuso
 
       {extrato.pendentes.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium">{t("Aguardando pagamento")}</h3>
+          <h3 className="text-sm font-medium">{t("Pagamento em aberto")}</h3>
           <ul className="space-y-2">
             {extrato.pendentes.map((p) => {
               const link = linkDePagamentoSeguro(p.link);

@@ -106,7 +106,7 @@ export function CreditosDeIaDaInstalacao({
       <header>
         <h3 className="text-sm font-semibold">{t("Crédito de IA")}</h3>
         <p className="text-xs text-muted-foreground">
-          {t("Quando o teto de IA do plano acaba, a empresa pode comprar um pacote em Plano e cobrança, se o plano dela vende crédito. O crédito entra só com o pagamento confirmado e vale até o fim do mês seguinte. A empresa vê tudo em reais.")}
+          {t("Quando o teto de IA do plano acaba, a empresa pode comprar um pacote em Plano e cobrança, se o plano dela vende crédito. O crédito entra só com o pagamento confirmado e vale até o fim do mês seguinte. A empresa nunca vê dólar: vê o uso em porcentagem e o que pagou em reais.")}
         </p>
       </header>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
