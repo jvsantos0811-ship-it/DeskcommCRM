@@ -140,7 +140,6 @@ export const DICIONARIO: Traducoes = {
   "Já há três imagens. Remova uma para enviar outra.": { es: "Ya hay tres imágenes. Quita una para subir otra." },
   "Diga o que remover: o vídeo ou qual imagem.": { es: "Indica qué quitar: el video o cuál imagen." },
   "Essa mídia não existe mais.": { es: "Ese archivo ya no existe." },
-  "hoje": { es: "hoy" },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
