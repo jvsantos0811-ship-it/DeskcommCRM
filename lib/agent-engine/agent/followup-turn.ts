@@ -53,6 +53,10 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
+import { loadChannelKnobs } from '../pacing/store';
+import { enviarRoteiroForaDaJanela, type UsoForaDaJanela } from '@/lib/channels/roteiro-fora-da-janela';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { etapaQueExigeHumano, passarParaHumanoPelaEtapa } from './etapa-exige-humano';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
@@ -109,6 +113,8 @@ export const followupTurnPayloadSchema = z
     template_id: z.string().uuid().optional(),
     /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
     fallback_template_id: z.string().uuid().optional(),
+    /** action mode `ai_message` — PC-052 parte 3b: o diálogo da conexão (T1..T5) com a janela fechada. */
+    fallback_roteiro: z.enum(['followup_1', 'followup_2', 'followup_3', 'followup_4', 'followup_5']).optional(),
     volta_index: z.number().int().optional(),
     volta_total: z.number().int().optional(),
     classes: z.array(z.string()).optional(),
@@ -594,6 +600,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           fixedMediaUrl: payload.fixed_media_url,
           templateId: payload.template_id,
           fallbackTemplateId: payload.fallback_template_id,
+          fallbackRoteiro: payload.fallback_roteiro,
           voltaIndex: payload.volta_index,
           voltaTotal: payload.volta_total,
           classes: payload.classes,
@@ -653,6 +660,61 @@ type EnvioFixoDesfecho =
   | { kind: "sent" }
   | { kind: "deferred"; until: Date; reason: string }
   | { kind: "skipped" };
+
+/**
+ * PC-052 parte 3b — o passo do follow-up fora da janela, pelo DIÁLOGO da conexão.
+ *
+ * O diálogo não passa pela cadeia `before_send` (quem manda a mensagem é a
+ * plataforma), então as portas que valem para o texto do fluxo são cobradas
+ * AQUI, as mesmas e na mesma ordem: pessoa no comando ou opt-out, etapa "só
+ * atendimento humano", e a janela de ENVIO do número (8h–20h, domingo) — fora
+ * dela o passo é ADIADO para a abertura, nunca disparado. A recusa da
+ * plataforma não reenvia: vira `skipped` com o motivo (envio em dobro é pior que
+ * não-envio).
+ */
+async function enviarRoteiroDoFluxo(
+  deps: InboundTurnDeps,
+  pool: pg.Pool,
+  clock: () => Date,
+  target: ReentrySendTarget,
+  uso: UsoForaDaJanela,
+  runLog: Pick<ReturnType<typeof withFields>, 'info' | 'warn'>,
+): Promise<{ kind: 'sent' } | { kind: 'deferred'; until: Date; reason: string } | { kind: 'skipped'; reason: string }> {
+  const { tenantId, leadId, channelSessionId, conversationId } = target;
+  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+    return { kind: 'skipped', reason: 'O cliente está com a equipe ou pediu para parar: o diálogo do follow-up não saiu.' };
+  }
+  if ((await etapaQueExigeHumano(pool, tenantId, leadId)) !== null) {
+    return { kind: 'skipped', reason: 'O negócio está numa etapa "só atendimento humano": o diálogo do follow-up não saiu.' };
+  }
+  const { knobs } = await loadChannelKnobs(pool, tenantId, channelSessionId, deps.log);
+  const agora = clock();
+  if (!janelaDeEnvioAberta(agora, knobs)) {
+    return {
+      kind: 'deferred',
+      until: proximaAberturaDaJanela(agora, knobs),
+      reason: 'fora da janela de envio do número — o diálogo sai na abertura',
+    };
+  }
+  const r = await enviarRoteiroForaDaJanela(createAdminClient(), {
+    organizationId: tenantId,
+    channelSessionId,
+    conversationId,
+    uso,
+  });
+  if (r.ok) {
+    runLog.info('passo do fluxo saiu pelo diálogo da conexão (janela de 24 h fechada)', { uso });
+    return { kind: 'sent' };
+  }
+  runLog.warn('diálogo da conexão não saiu', { uso, motivo: r.motivo });
+  return {
+    kind: 'skipped',
+    reason:
+      r.motivo === 'sem_roteiro'
+        ? 'A janela de 24 horas está fechada e a conexão não tem diálogo escolhido para este passo do follow-up.'
+        : 'A janela de 24 horas está fechada e a plataforma não executou o diálogo do follow-up.',
+  };
+}
 
 interface ReentrySendTarget {
   tenantId: string;
@@ -741,6 +803,7 @@ async function runFlowDrivenTurn(
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
     fallbackTemplateId: string | undefined;
+    fallbackRoteiro: UsoForaDaJanela | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
     classes: string[] | undefined;
@@ -774,6 +837,32 @@ async function runFlowDrivenTurn(
       (await janelaFechada(pool, target, clock()))
     ) {
       passo = await resolveModeloAprovado(pool, target.tenantId, target.channelSessionId, input.fallbackTemplateId);
+    }
+    // PC-052 parte 3b — O PLANO B NO CANAL QUE ATENDE DENTRO DE OUTRA PLATAFORMA.
+    // Lá o CRM não manda modelo da Meta: com a janela fechada, executa o diálogo
+    // que a conexão escolheu para este passo (`roteiros_fora_da_janela`). Só
+    // quando o passo não tem modelo aprovado (que é o caminho do canal oficial).
+    if (
+      passo === null &&
+      input.fallbackTemplateId === undefined &&
+      input.fallbackRoteiro !== undefined &&
+      (await janelaFechada(pool, target, clock()))
+    ) {
+      const desfecho = await enviarRoteiroDoFluxo(deps, pool, clock, target, input.fallbackRoteiro, runLog);
+      await complete(pool, {
+        jobId: job.id,
+        jobClaim: claimOfJob(job),
+        organizationId: target.tenantId,
+        enrollmentId,
+        nodeId,
+        result:
+          desfecho.kind === 'sent'
+            ? { kind: 'sent' }
+            : desfecho.kind === 'deferred'
+              ? { kind: 'deferred', until: desfecho.until, reason: desfecho.reason }
+              : { kind: 'skipped', reason: desfecho.reason },
+      });
+      return;
     }
     if (passo !== null && passo.tipo === 'recusado') {
       runLog.info('passo do fluxo pulado — o modelo não pode sair', { motivo: passo.motivo });

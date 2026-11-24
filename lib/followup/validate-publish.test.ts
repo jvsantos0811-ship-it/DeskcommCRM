@@ -196,6 +196,16 @@ describe('validateFlowForPublish', () => {
     expect(validateFlowForPublish(g).ok).toBe(true);
   });
 
+  it('does not flag long_wait_needs_template when the connection dialog (fallback_roteiro) is set', () => {
+    const a1 = actionAiMessage('a1');
+    a1.config = { mode: 'ai_message', prompt_hint: 'hint', fallback_roteiro: 'followup_1' } as FlowNode['config'];
+    const g = graph(
+      [trigger('t1'), wait('w1', { mode: 'fixed', duration_ms: 86_400_000 }), a1, end('e1')],
+      [edge('t1', 'w1', always()), edge('w1', 'a1', always()), edge('a1', 'e1', always())]
+    );
+    expect(validateFlowForPublish(g).ok).toBe(true);
+  });
+
   // Revisão do #1729: o plano B só sai com a janela de 24 h fechada, e o seletor
   // dele só oferece modelo aprovado. Numa organização cujos canais não têm janela,
   // exigi-lo travava o publish de "espera 1 dia -> IA escreve".

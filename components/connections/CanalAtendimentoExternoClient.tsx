@@ -64,7 +64,17 @@ interface Estado {
   } | null;
 }
 
-type UsoForaDaJanela = "confirmacao_vespera" | "confirmacao_do_dia" | "lembrete";
+type UsoForaDaJanela =
+  | "confirmacao_vespera"
+  | "confirmacao_do_dia"
+  | "lembrete"
+  | "followup_1"
+  | "followup_2"
+  | "followup_3"
+  | "followup_4"
+  | "followup_5";
+
+const FOLLOWUPS = ["followup_1", "followup_2", "followup_3", "followup_4", "followup_5"] as const;
 
 // Espelha `MAXIMO_DE_ACOES` de `lib/channels/atendimento-externo/config.ts` (PC-052).
 const MAXIMO_DE_ACOES = 15;
@@ -121,6 +131,11 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
     confirmacao_vespera: estado?.config?.roteiros_fora_da_janela?.confirmacao_vespera ?? "",
     confirmacao_do_dia: estado?.config?.roteiros_fora_da_janela?.confirmacao_do_dia ?? "",
     lembrete: estado?.config?.roteiros_fora_da_janela?.lembrete ?? "",
+    followup_1: estado?.config?.roteiros_fora_da_janela?.followup_1 ?? "",
+    followup_2: estado?.config?.roteiros_fora_da_janela?.followup_2 ?? "",
+    followup_3: estado?.config?.roteiros_fora_da_janela?.followup_3 ?? "",
+    followup_4: estado?.config?.roteiros_fora_da_janela?.followup_4 ?? "",
+    followup_5: estado?.config?.roteiros_fora_da_janela?.followup_5 ?? "",
   }));
   const [salvando, setSalvando] = useState<"conta" | "config" | "segredo" | null>(null);
 
@@ -157,6 +172,11 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
             confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
             confirmacao_do_dia: roteiros.confirmacao_do_dia.trim() || null,
             lembrete: roteiros.lembrete.trim() || null,
+            followup_1: roteiros.followup_1.trim() || null,
+            followup_2: roteiros.followup_2.trim() || null,
+            followup_3: roteiros.followup_3.trim() || null,
+            followup_4: roteiros.followup_4.trim() || null,
+            followup_5: roteiros.followup_5.trim() || null,
           },
         },
       });
@@ -422,6 +442,25 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
                   autoComplete="off"
                 />
               </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("Follow-up: o passo do fluxo escolhe qual destes diálogos sai quando a janela fechou.")}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-5">
+              {FOLLOWUPS.map((uso, i) => (
+                <div key={uso} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`ae-roteiro-${uso}`}>
+                    {t("Follow-up")} {i + 1}
+                  </Label>
+                  <Input
+                    id={`ae-roteiro-${uso}`}
+                    value={roteiros[uso]}
+                    onChange={(e) => setRoteiros((r) => ({ ...r, [uso]: e.target.value }))}
+                    placeholder={t("ID do diálogo")}
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

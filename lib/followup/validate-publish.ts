@@ -630,6 +630,8 @@ function analyzeCondensedPaths(
         node.type === 'action' &&
         node.config.mode === 'ai_message' &&
         !node.config.fallback_template_id &&
+        // PC-052 parte 3b: o diálogo da conexão (ChatGuru) também é plano B.
+        !node.config.fallback_roteiro &&
         totalWait >= LONG_WAIT_THRESHOLD_MS
       ) {
         longWaitNodeIds.add(id);
@@ -1093,7 +1095,7 @@ export function validateFlowForPublish(
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',
-        message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
+        message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id (ou do diálogo da conexão, fallback_roteiro).`,
       });
     }
     if (maxStepsExceeded) {

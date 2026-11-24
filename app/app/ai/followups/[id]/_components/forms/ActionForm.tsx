@@ -149,6 +149,11 @@ export function ActionForm({
   const [fallbackTemplateId, setFallbackTemplateId] = useState(
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
   );
+  // PC-052 parte 3b — no canal que atende dentro do ChatGuru, o plano B é o
+  // diálogo que a CONEXÃO escolheu para este passo (T1..T5).
+  const [fallbackRoteiro, setFallbackRoteiro] = useState<string>(
+    config.mode === "ai_message" ? (config.fallback_roteiro ?? "") : "",
+  );
   const [templateId, setTemplateId] = useState(config.mode === "template" ? config.template_id : "");
   // #2734 — mídia OPCIONAL do passo: com uma imagem ou PDF, o texto acima vira a
   // LEGENDA. O upload pela tela ainda não existe nesta fatia — o campo é a URL.
@@ -163,6 +168,7 @@ export function ActionForm({
     mediaUrl: string;
     promptHint: string;
     fallbackTemplateId: string;
+    fallbackRoteiro: string;
     templateId: string;
   }) => {
     const candidate =
@@ -177,6 +183,7 @@ export function ActionForm({
               mode: "ai_message" as const,
               prompt_hint: next.promptHint,
               ...(next.fallbackTemplateId.trim() ? { fallback_template_id: next.fallbackTemplateId } : {}),
+              ...(next.fallbackRoteiro ? { fallback_roteiro: next.fallbackRoteiro } : {}),
             }
           : { mode: "template" as const, template_id: next.templateId };
     const parsed = actionConfigSchema.safeParse(candidate);
@@ -188,7 +195,7 @@ export function ActionForm({
     onChange(parsed.data);
   };
 
-  const fields = { body, mediaUrl, promptHint, fallbackTemplateId, templateId };
+  const fields = { body, mediaUrl, promptHint, fallbackTemplateId, fallbackRoteiro, templateId };
 
   return (
     <div className="space-y-3">
@@ -276,6 +283,32 @@ export function ActionForm({
                 commit({ mode, ...fields, fallbackTemplateId: v });
               }}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="action-fallback-roteiro">
+              {t("No ChatGuru, com a janela de 24 horas fechada, executar o diálogo da conexão")}
+            </Label>
+            <select
+              id="action-fallback-roteiro"
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+              value={fallbackRoteiro}
+              onChange={(e) => {
+                setFallbackRoteiro(e.target.value);
+                commit({ mode, ...fields, fallbackRoteiro: e.target.value });
+              }}
+            >
+              <option value="">{t("Nenhum")}</option>
+              <option value="followup_1">{t("Follow-up 1 da conexão")}</option>
+              <option value="followup_2">{t("Follow-up 2 da conexão")}</option>
+              <option value="followup_3">{t("Follow-up 3 da conexão")}</option>
+              <option value="followup_4">{t("Follow-up 4 da conexão")}</option>
+              <option value="followup_5">{t("Follow-up 5 da conexão")}</option>
+            </select>
+            <p className="text-xs text-text-muted">
+              {t(
+                "Vale só quando o passo não tem modelo aprovado. O diálogo de cada número é escolhido em Conexões › ChatGuru › Fora da janela de 24 horas.",
+              )}
+            </p>
           </div>
         </>
       ) : (
