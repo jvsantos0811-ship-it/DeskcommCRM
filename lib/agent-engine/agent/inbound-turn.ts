@@ -3014,13 +3014,14 @@ async function executarTurnoDoAgente(
       ? (preview.notes ?? []).map((n) => n.headline + ': ' + n.body).join('\n')
       : buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens),
     preview?.kind === 'sandbox' ? '' : buildCompromissosBlock(pool, tenantId, leadId, new Date()),
-    // PC-050: o voto na enquete do grupo entra junto da origem (os dois dizem de onde o contato veio).
+    // PC-050: o voto na enquete do grupo entra junto da origem (os dois dizem de
+    // onde o contato veio). Lido DEPOIS da origem, no mesmo trilho: em paralelo
+    // seria a 5ª consulta em voo do turno, acima do teto de 4 (turno-le-em-paralelo).
     preview
       ? ''
-      : Promise.all([
-          buildOrigemBlock(pool, tenantId, leadId, new Date()),
-          buildEnqueteBlock(pool, tenantId, leadId, new Date()),
-        ]).then(([origem, enquete]) => juntarOrigemEEnquete(origem, enquete)),
+      : buildOrigemBlock(pool, tenantId, leadId, new Date()).then(async (origem) =>
+          juntarOrigemEEnquete(origem, await buildEnqueteBlock(pool, tenantId, leadId, new Date())),
+        ),
     preview
       ? null
       : pool
