@@ -17936,7 +17936,6 @@ export const DICIONARIO: Traducoes = {
   "Quando o teto de IA do plano acaba, a empresa pode comprar um pacote em Plano e cobrança, se o plano dela vende crédito. O crédito entra só com o pagamento confirmado e vale até o fim do mês seguinte. A empresa vê tudo em reais.": { es: "Cuando se agota el tope de IA del plan, la empresa puede comprar un paquete en Plan y facturación, si su plan vende crédito. El crédito entra solo con el pago confirmado y vale hasta el fin del mes siguiente. La empresa ve todo en reales." },
   "Novo pacote de crédito": { es: "Nuevo paquete de crédito" },
   "Nome do pacote": { es: "Nombre del paquete" },
-  "IA liberada (US$)": { es: "IA liberada (US$)" },
   "Salvar pacote": { es: "Guardar paquete" },
   "Nenhum pacote ainda: sem pacote, o teto do plano bloqueia como sempre e ninguém vê a compra.": { es: "Todavía no hay paquetes: sin paquete, el tope del plan bloquea como siempre y nadie ve la compra." },
   "Cortesia de crédito": { es: "Cortesía de crédito" },
@@ -17949,6 +17948,10 @@ export const DICIONARIO: Traducoes = {
   "Uso de IA incluído no plano, neste mês": { es: "Uso de IA incluido en el plan, este mes" },
   "Do crédito que vale neste mês, ainda resta": { es: "Del crédito válido este mes, aún queda" },
   "O consumo é primeiro o incluído no plano, depois o crédito comprado mais antigo.": { es: "El consumo es primero lo incluido en el plan y después el crédito comprado más antiguo." },
+  // PC-051 (rótulos únicos no painel)
+  "Preço do pacote (R$)": { es: "Precio del paquete (R$)" },
+  "IA liberada pelo pacote (US$)": { es: "IA liberada por el paquete (US$)" },
+  "IA liberada na cortesia (US$)": { es: "IA liberada en la cortesía (US$)" },
 };
 
 /**

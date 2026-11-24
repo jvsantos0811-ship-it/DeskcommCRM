@@ -118,11 +118,11 @@ export function CreditosDeIaDaInstalacao({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label htmlFor="pacote-preco">{t("Preço (R$)")}</Label>
+              <Label htmlFor="pacote-preco">{t("Preço do pacote (R$)")}</Label>
               <Input id="pacote-preco" inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="pacote-ia">{t("IA liberada (US$)")}</Label>
+              <Label htmlFor="pacote-ia">{t("IA liberada pelo pacote (US$)")}</Label>
               <Input id="pacote-ia" inputMode="decimal" value={ia} onChange={(e) => setIa(e.target.value)} />
             </div>
           </div>
@@ -171,7 +171,7 @@ export function CreditosDeIaDaInstalacao({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="cortesia-ia">{t("IA liberada (US$)")}</Label>
+            <Label htmlFor="cortesia-ia">{t("IA liberada na cortesia (US$)")}</Label>
             <Input id="cortesia-ia" inputMode="decimal" value={iaCortesia} onChange={(e) => setIaCortesia(e.target.value)} />
           </div>
           <div className="space-y-1">
