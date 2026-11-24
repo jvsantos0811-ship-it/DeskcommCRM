@@ -4,7 +4,7 @@ vi.mock("../contato-por-telefone", () => ({ encontrarContatoPorTelefone: vi.fn(a
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { interpretarVoto, nomesDosCampos, tratarEnqueteDoPost, valorDoCampo, type EnqueteCadastrada } from "./enquete";
+import { campoPodeSerVoto, interpretarVoto, nomesDosCampos, tratarEnqueteDoPost, valorDoCampo, type EnqueteCadastrada } from "./enquete";
 
 const REPARADORA: EnqueteCadastrada = {
   id: "e1",
@@ -41,7 +41,18 @@ describe("o voto que o diálogo manda (PC-050)", () => {
     expect(valorDoCampo(corpo, "bot_context")).toBe("enquete:reparadora:Agora não");
     expect(valorDoCampo(corpo, "campos_personalizados.ia_origem")).toBe("x");
     expect(valorDoCampo({ campos_personalizados: { ia_origem: "y" } }, "campos_personalizados.ia_origem")).toBe("y");
-    expect(nomesDosCampos(corpo)).toEqual(["bot_context", "campos_personalizados", "campos_personalizados.ia_origem", "celular"]);
+    expect(nomesDosCampos(corpo)).toEqual(["bot_context", "campos_personalizados.ia_origem"]);
+  });
+
+  it("⭐ campo de conteúdo nunca é o voto: nem na lista da tela, nem escolhido", () => {
+    const corpo = { texto_mensagem: "oi", nome: "x", celular: "1", email: "a@b", responsavel_nome: "y", link_chat: "l", bot_context: "v" };
+    expect(nomesDosCampos(corpo)).toEqual(["bot_context"]);
+    for (const c of ["texto_mensagem", "nome", "celular", "email", "username", "chat_id", "phone_id", "datetime_post", "tipo_mensagem", "responsavel_email", "campos_personalizados"]) {
+      expect(campoPodeSerVoto(c), c).toBe(false);
+    }
+    expect(campoPodeSerVoto("bot_context")).toBe(true);
+    expect(campoPodeSerVoto("campos_personalizados.ia_origem")).toBe(true);
+    expect(campoPodeSerVoto("outro.ia_origem")).toBe(false);
   });
 });
 
@@ -83,6 +94,26 @@ describe("tratarEnqueteDoPost", () => {
     const repetido = adminFalso({ config, enquetes: [REPARADORA], votoAtual: { id: "v1", opcao: "Quero que me chamem" } });
     expect(await tratarEnqueteDoPost(repetido.admin, { orgId: "org", corpo: POST })).toMatchObject({ status: "registrado", mudou: false });
     expect(repetido.escritas).toHaveLength(0);
+  });
+
+  it("⭐ 'não quero contato' de quem não é contato: não cria contato nem grava voto", async () => {
+    const config = { ligada: true, campo_do_voto: "bot_context", campos_vistos: nomesDosCampos(POST) };
+    const f = adminFalso({ config, enquetes: [REPARADORA] });
+    expect(await tratarEnqueteDoPost(f.admin, { orgId: "org", corpo: { ...POST, bot_context: "enquete:reparadora:Agora não" } })).toEqual({ status: "sem_contato" });
+    expect(f.rpc).not.toHaveBeenCalled();
+    expect(f.escritas).toHaveLength(0);
+  });
+
+  it("nomes vistos SOMAM: POST com menos campos não escreve; nome novo escreve a união", async () => {
+    const config = { ligada: false, campo_do_voto: null, campos_vistos: ["bot_context", "campos_personalizados.ia_origem"] };
+    const menos = adminFalso({ config, enquetes: [] });
+    await tratarEnqueteDoPost(menos.admin, { orgId: "org", corpo: { celular: "5511999990000", bot_context: "x" } });
+    expect(menos.escritas).toHaveLength(0);
+    const mais = adminFalso({ config, enquetes: [] });
+    await tratarEnqueteDoPost(mais.admin, { orgId: "org", corpo: { celular: "5511999990000", origem: "y" } });
+    expect(mais.escritas).toEqual([
+      { tabela: "enquetes_config", v: expect.objectContaining({ campos_vistos: ["bot_context", "campos_personalizados.ia_origem", "origem"] }) },
+    ]);
   });
 
   it("grupo nunca vira contato; valor que não é voto não grava nada", async () => {

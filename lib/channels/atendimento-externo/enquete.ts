@@ -32,8 +32,33 @@ import { canonicalPhoneBR } from "../phone-variants";
 export const CODIGO_DA_ENQUETE = /^[a-z0-9_-]{1,40}$/;
 /** Nome de campo do POST, ou `campos_personalizados.<nome>`. Só nome. */
 export const CAMPO_DO_VOTO = /^[A-Za-z0-9_$-]{1,60}(\.[A-Za-z0-9_$ -]{1,60})?$/;
-/** Voto vale como contexto da conversa por este tempo. */
-export const VOTO_VALE_DIAS = 14;
+/**
+ * Campos do POST que carregam CONTEÚDO da conversa ou dado de quem escreve
+ * (texto, nome, telefone, e-mail, link, horário, responsável). Nunca são o
+ * campo do voto: não aparecem na lista da tela e a rota recusa escolhê-los.
+ */
+const CAMPOS_QUE_NAO_SAO_VOTO = new Set([
+  "texto_mensagem",
+  "nome",
+  "celular",
+  "email",
+  "username",
+  "link_chat",
+  "chat_id",
+  "phone_id",
+  "datetime_post",
+  "tipo_mensagem",
+  // O objeto inteiro dos campos personalizados: o voto é UM deles, pelo nome.
+  "campos_personalizados",
+]);
+
+/** O nome pode ser escolhido como campo do voto? Pura. */
+export function campoPodeSerVoto(nome: string): boolean {
+  if (!CAMPO_DO_VOTO.test(nome)) return false;
+  const raiz = nome.split(".")[0]!.toLowerCase();
+  if (nome.includes(".")) return raiz === "campos_personalizados";
+  return !CAMPOS_QUE_NAO_SAO_VOTO.has(raiz) && !raiz.startsWith("responsavel");
+}
 
 export const opcaoDaEnqueteSchema = z.strictObject({
   valor: z.string().trim().min(1).max(100),
@@ -57,16 +82,16 @@ export interface EnqueteCadastrada {
   ativa: boolean;
 }
 
-/** Os NOMES dos campos de um POST: os de cima e os de `campos_personalizados`. */
+/** Os NOMES dos campos de um POST que podem ser o voto: os de cima e os de `campos_personalizados`. */
 export function nomesDosCampos(corpo: Record<string, unknown>): string[] {
   const nomes = new Set<string>();
   for (const k of Object.keys(corpo)) {
-    if (CAMPO_DO_VOTO.test(k)) nomes.add(k);
+    if (campoPodeSerVoto(k)) nomes.add(k);
   }
   const pers = camposPersonalizados(corpo);
   for (const k of Object.keys(pers)) {
     const nome = `campos_personalizados.${k}`;
-    if (CAMPO_DO_VOTO.test(nome)) nomes.add(nome);
+    if (campoPodeSerVoto(nome)) nomes.add(nome);
   }
   return [...nomes].sort().slice(0, 80);
 }
@@ -164,6 +189,8 @@ export async function lerEnquetes(admin: SupabaseClient, orgId: string): Promise
 export type DesfechoDaEnquete =
   | { status: "sem_enquete" }
   | { status: "registrado"; enqueteId: string; contactId: string; opcao: string; mudou: boolean }
+  /** Voto numa opção que NÃO pede contato, de quem ainda não é contato: nada é gravado. */
+  | { status: "sem_contato" }
   | { status: "nao_reconhecido" };
 
 /**
@@ -194,6 +221,8 @@ export async function tratarEnqueteDoPost(
 
     const telefone = `+${celular}`;
     const existente = await encontrarContatoPorTelefone(admin, p.orgId, telefone);
+    // Quem votou "não quero contato" e ainda não é contato não vira contato.
+    if (!voto.opcao.chamar && !existente) return { status: "sem_contato" };
     const phone = existente?.phone_number ? canonicalPhoneBR(existente.phone_number) : canonicalPhoneBR(telefone);
     const { data: contactId, error: erroContato } = await admin.rpc(
       "fn_upsert_wa_contact" as never,
@@ -239,7 +268,11 @@ export async function tratarEnqueteDoPost(
   }
 }
 
-/** Guarda os nomes do último POST só quando mudaram (uma escrita rara, nunca por mensagem). */
+/**
+ * Guarda os nomes que podem ser o voto, SOMANDO aos já vistos: só escreve quando
+ * aparece nome novo (uma escrita rara, nunca por mensagem — um POST com menos
+ * campos não apaga o que a tela já ofereceu).
+ */
 async function anotarCamposVistos(
   admin: SupabaseClient,
   orgId: string,
@@ -247,10 +280,10 @@ async function anotarCamposVistos(
   corpo: Record<string, unknown>,
   agora: () => Date,
 ): Promise<void> {
-  const nomes = nomesDosCampos(corpo);
-  if (nomes.length === 0) return;
-  const iguais = config !== null && config.camposVistos.length === nomes.length && config.camposVistos.every((n, i) => n === nomes[i]);
-  if (iguais) return;
+  const vistos = (config?.camposVistos ?? []).filter(campoPodeSerVoto);
+  const novos = nomesDosCampos(corpo).filter((n) => !vistos.includes(n));
+  if (novos.length === 0 && vistos.length === (config?.camposVistos.length ?? 0)) return;
+  const nomes = [...new Set([...vistos, ...novos])].sort().slice(0, 80);
   const { error } = await admin
     .from("enquetes_config")
     .upsert({ organization_id: orgId, campos_vistos: nomes, campos_vistos_em: agora().toISOString() }, { onConflict: "organization_id" });

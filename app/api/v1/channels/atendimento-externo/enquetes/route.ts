@@ -20,6 +20,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   CAMPO_DO_VOTO,
+  campoPodeSerVoto,
   enqueteSchema,
   lerConfigDaEnquete,
   lerEnquetes,
@@ -34,7 +35,8 @@ const RECURSO = "enquetes_do_grupo";
 
 const corpoSchema = z.strictObject({
   ligada: z.boolean(),
-  campo_do_voto: z.string().trim().regex(CAMPO_DO_VOTO).nullable(),
+  // Campo de conteúdo (texto, nome, telefone…) nunca é o voto: a enquete não lê a conversa.
+  campo_do_voto: z.string().trim().regex(CAMPO_DO_VOTO).refine(campoPodeSerVoto, "Este campo não pode ser o voto.").nullable(),
   enquetes: z.array(enqueteSchema).max(30),
 });
 

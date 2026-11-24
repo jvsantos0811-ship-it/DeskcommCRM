@@ -113,8 +113,12 @@ export function ritualBlocks(
         ]
       : []),
     // Só entra quando o contato veio de anúncio: ausência não custa token.
+    // PC-050: quando o bloco já começa com o próprio título (o voto na enquete do
+    // grupo, sem anúncio), ele entra como está — sem o título do anúncio em cima.
     ...(origemBlock.trim() !== ''
-      ? ['## Origem deste contato — o anúncio que ele clicou ou a enquete em que votou', origemBlock, '']
+      ? origemBlock.startsWith('## ')
+        ? [origemBlock, '']
+        : ['## Origem deste contato — o anúncio que ele clicou', origemBlock, '']
       : []),
     '## Contexto do lead (contato + últimas mensagens)',
     // Campo de cadastro VAZIO não é prova de que a informação não existe.

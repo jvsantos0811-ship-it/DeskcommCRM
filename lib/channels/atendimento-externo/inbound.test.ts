@@ -9,11 +9,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Um corpo que diga ser de outro número, ou que traga dados de outra empresa,
  * não escolhe onde a mensagem é gravada.
  */
-const { ingest, phoneDaSessao } = vi.hoisted(() => ({
+const { ingest, phoneDaSessao, enquete } = vi.hoisted(() => ({
   ingest: vi.fn(async (..._args: unknown[]) => ({ status: "ingested", messageId: "m-1", conversationId: "c-1" })),
   phoneDaSessao: vi.fn(async (..._args: unknown[]) => "fone-da-empresa-a" as string | null),
+  enquete: vi.fn(async (..._args: unknown[]) => ({ status: "sem_enquete" }) as Record<string, unknown>),
 }));
 vi.mock("./ingest", () => ({ ingestAtendimentoExterno: ingest }));
+vi.mock("./enquete", () => ({ tratarEnqueteDoPost: enquete }));
 vi.mock("./sessao", async (original) => ({
   ...((await original()) as Record<string, unknown>),
   phoneIdDaSessao: phoneDaSessao,
@@ -44,6 +46,7 @@ function corpo(extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   ingest.mockClear();
   phoneDaSessao.mockClear();
+  enquete.mockClear();
 });
 
 describe("entrada do canal dentro da plataforma — segredo", () => {
@@ -140,5 +143,56 @@ describe("entrada do canal dentro da plataforma — isolamento entre organizaç�
         secret: SEGREDO_A,
       }),
     ).rejects.toThrow(/ingestao_falhou/);
+  });
+});
+
+describe("entrada do canal — o voto na enquete do grupo (PC-050)", () => {
+  const entregar = (rawBody: string) =>
+    handleInboundWebhook(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody,
+      headers: new Headers({ [HEADER_DO_SEGREDO]: SEGREDO_A }),
+      secret: SEGREDO_A,
+    });
+  const VOTO = { status: "registrado", enqueteId: "e1", contactId: "c1", opcao: "Quero que me chamem" };
+
+  it("⭐ voto NOVO é a ativação: mesmo COM texto, nada é ingerido e a IA não roda", async () => {
+    enquete.mockResolvedValueOnce({ ...VOTO, mudou: true });
+    const r = await entregar(corpo({ texto_mensagem: "Olá! Vi que você votou na enquete." }));
+    expect(r).toEqual({ ok: true, body: { status: "enquete_registrada", mudou: true } });
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it("o mesmo voto de novo com texto é conversa: entra como sempre", async () => {
+    enquete.mockResolvedValueOnce({ ...VOTO, mudou: false });
+    const r = await entregar(corpo({ texto_mensagem: "quero saber mais" }));
+    expect(r.ok).toBe(true);
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("ativação SEM texto termina aqui, com ou sem contato", async () => {
+    enquete.mockResolvedValueOnce({ ...VOTO, mudou: false });
+    expect(await entregar(JSON.stringify({ celular: "5500900000001", phone_id: "fone-da-empresa-a" }))).toEqual({
+      ok: true,
+      body: { status: "enquete_registrada", mudou: false },
+    });
+    enquete.mockResolvedValueOnce({ status: "sem_contato" });
+    expect(await entregar(JSON.stringify({ celular: "5500900000001", phone_id: "fone-da-empresa-a" }))).toEqual({
+      ok: true,
+      body: { status: "enquete_sem_contato" },
+    });
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it("quem votou 'não quero contato' e depois ESCREVE: a mensagem entra (o voto não engole conversa)", async () => {
+    enquete.mockResolvedValueOnce({ status: "sem_contato" });
+    await entregar(corpo({ texto_mensagem: "mudei de ideia" }));
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("chave desligada: a enquete não muda nada na entrada", async () => {
+    const r = await entregar(corpo());
+    expect(r.ok).toBe(true);
+    expect(ingest).toHaveBeenCalledTimes(1);
   });
 });

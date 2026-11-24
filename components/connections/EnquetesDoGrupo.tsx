@@ -16,8 +16,8 @@ import { apiClient } from "@/lib/api/client";
  * Quem vota numa enquete do grupo recebe, pelo diálogo da plataforma, a
  * mensagem de abertura pelo número oficial; o diálogo manda ao CRM um campo com
  * a enquete e a opção. Aqui o escritório liga a chave (desligada de fábrica),
- * escolhe de qual campo vem o voto (a lista mostra só os NOMES dos campos do
- * último aviso recebido) e cadastra as enquetes: código, pergunta e, por opção,
+ * escolhe de qual campo vem o voto (a lista mostra só os NOMES dos campos vistos
+ * nos avisos, nunca os de conteúdo) e cadastra as enquetes: código, pergunta e, por opção,
  * o que ela quer dizer e se a IA chama no privado.
  */
 const ROTA = "/api/v1/channels/atendimento-externo/enquetes";
@@ -46,16 +46,26 @@ export function EnquetesDoGrupo() {
   const t = useT();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Leitura que falhou não pode virar "lista vazia" salvável: salvar apagaria as
+  // enquetes cadastradas (e os votos delas).
+  const [leituraFalhou, setLeituraFalhou] = useState(false);
+  // Códigos que já estão gravados: remover um deles apaga os votos — pede confirmação.
+  const [salvas, setSalvas] = useState<string[]>([]);
+  const [confirmar, setConfirmar] = useState<number | null>(null);
 
   useEffect(() => {
     let vivo = true;
     apiClient
       .get<{ data: Estado }>(ROTA)
       .then(({ data }) => {
-        if (vivo) setEstado(data);
+        if (!vivo) return;
+        setEstado(data);
+        setSalvas(data.enquetes.map((e) => e.codigo));
       })
       .catch(() => {
-        if (vivo) setEstado({ ligada: false, campo_do_voto: null, campos_vistos: [], enquetes: [] });
+        if (!vivo) return;
+        setLeituraFalhou(true);
+        setEstado({ ligada: false, campo_do_voto: null, campos_vistos: [], enquetes: [] });
       });
     return () => {
       vivo = false;
@@ -64,24 +74,32 @@ export function EnquetesDoGrupo() {
 
   if (!estado) return null;
 
+  const tirar = (i: number) => {
+    setConfirmar(null);
+    setEstado({ ...estado, enquetes: estado.enquetes.filter((_, j) => j !== i) });
+  };
+  const pedirRemocao = (i: number) => {
+    if (salvas.includes(estado.enquetes[i]!.codigo.trim().toLowerCase())) setConfirmar(i);
+    else tirar(i);
+  };
+
   const mudarEnquete = (i: number, parte: Partial<Enquete>) =>
     setEstado({ ...estado, enquetes: estado.enquetes.map((e, j) => (j === i ? { ...e, ...parte } : e)) });
   const mudarOpcao = (i: number, k: number, parte: Partial<Opcao>) =>
     mudarEnquete(i, { opcoes: estado.enquetes[i]!.opcoes.map((o, j) => (j === k ? { ...o, ...parte } : o)) });
 
   async function salvar() {
-    if (!estado) return;
+    if (!estado || leituraFalhou) return;
     setSalvando(true);
     try {
-      await apiClient.put(ROTA, {
-        ligada: estado.ligada,
-        campo_do_voto: estado.campo_do_voto,
-        enquetes: estado.enquetes.map((e) => ({
-          ...e,
-          codigo: e.codigo.trim().toLowerCase(),
-          opcoes: e.opcoes.filter((o) => o.valor.trim() !== ""),
-        })),
-      });
+      const enquetes = estado.enquetes.map((e) => ({
+        ...e,
+        codigo: e.codigo.trim().toLowerCase(),
+        opcoes: e.opcoes.filter((o) => o.valor.trim() !== ""),
+      }));
+      await apiClient.put(ROTA, { ligada: estado.ligada, campo_do_voto: estado.campo_do_voto, enquetes });
+      setSalvas(enquetes.map((e) => e.codigo));
+      setConfirmar(null);
       toast.success(t("Enquetes salvas."));
     } catch (e) {
       showApiError(e);
@@ -131,10 +149,21 @@ export function EnquetesDoGrupo() {
           <div className="grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
             <Input aria-label={t("Código da enquete")} placeholder={t("código (ex.: reparadora)")} value={e.codigo} onChange={(v) => mudarEnquete(i, { codigo: v.target.value })} />
             <Input aria-label={t("Pergunta da enquete")} placeholder={t("Pergunta da enquete")} value={e.pergunta} onChange={(v) => mudarEnquete(i, { pergunta: v.target.value })} />
-            <Button variant="ghost" size="sm" onClick={() => setEstado({ ...estado, enquetes: estado.enquetes.filter((_, j) => j !== i) })}>
+            <Button variant="ghost" size="sm" onClick={() => pedirRemocao(i)}>
               {t("Remover")}
             </Button>
           </div>
+          {confirmar === i && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted p-2 text-xs" role="alert">
+              <span>{t("Remover apaga a enquete e os votos dela ao salvar. Para só parar de valer, desmarque \"Enquete ativa\".")}</span>
+              <Button variant="outline" size="sm" onClick={() => tirar(i)}>
+                {t("Remover mesmo")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmar(null)}>
+                {t("Cancelar")}
+              </Button>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={e.ativa} onChange={(v) => mudarEnquete(i, { ativa: v.target.checked })} />
             {t("Enquete ativa")}
@@ -163,10 +192,15 @@ export function EnquetesDoGrupo() {
         <Button variant="outline" size="sm" onClick={() => setEstado({ ...estado, enquetes: [...estado.enquetes, { ...NOVA, opcoes: [...NOVA.opcoes] }] })}>
           {t("Adicionar enquete")}
         </Button>
-        <Button size="sm" onClick={() => void salvar()} disabled={salvando}>
+        <Button size="sm" onClick={() => void salvar()} disabled={salvando || leituraFalhou}>
           {salvando ? t("Salvando…") : t("Salvar enquetes")}
         </Button>
       </div>
+      {leituraFalhou && (
+        <p className="text-xs text-destructive" role="alert">
+          {t("Não foi possível ler as enquetes. Recarregue a tela antes de salvar.")}
+        </p>
+      )}
     </Card>
   );
 }

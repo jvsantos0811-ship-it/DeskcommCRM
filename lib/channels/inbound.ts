@@ -499,22 +499,39 @@ async function atendimentoExternoInbound(
   }
 
   // PC-050: o voto na enquete do grupo, quando a chave da organização está
-  // ligada. Grava só o voto (nenhuma mensagem, nenhuma IA); a ativação que chega
-  // SEM texto termina aqui. Desligada = como antes. Nunca lança.
+  // ligada. Grava só o voto (nenhuma mensagem, nenhuma IA). Desligada = como
+  // antes. Nunca lança.
   const enquete = await tratarEnqueteDoPost(admin, {
     orgId: input.session.organization_id,
     corpo: corpoDoPost(input.rawBody),
   });
+  // O POST que traz um voto NOVO (ou trocado) é a ATIVAÇÃO do diálogo: o texto
+  // dele, se vier, é o do diálogo ou o do modelo que a plataforma mandou, não o
+  // que a pessoa escreveu. Não é ingerido e a IA não roda — ela entra quando a
+  // pessoa responder. O mesmo voto de novo (`mudou: false`) é conversa e segue.
+  if (enquete.status === "registrado" && enquete.mudou) {
+    return { ok: true, body: { status: "enquete_registrada", mudou: true } };
+  }
 
   const leitura = lerEntrada(input.rawBody);
   if (!leitura.ok) {
+    // Ativação SEM texto: termina aqui. Inclui quem votou "não quero contato"
+    // sem ser contato (`sem_contato`: nada gravado, contato nenhum criado). Se
+    // essa pessoa escrever de verdade, a mensagem entra como qualquer outra —
+    // um campo de voto que fica no chat não pode engolir conversa.
     if (
-      enquete.status === "registrado" &&
+      (enquete.status === "registrado" || enquete.status === "sem_contato") &&
       leitura.motivo === "contrato_violado" &&
       leitura.campos.length === 1 &&
       leitura.campos[0] === "texto_mensagem"
     ) {
-      return { ok: true, body: { status: "enquete_registrada", mudou: enquete.mudou } };
+      return {
+        ok: true,
+        body:
+          enquete.status === "registrado"
+            ? { status: "enquete_registrada", mudou: enquete.mudou }
+            : { status: "enquete_sem_contato" },
+      };
     }
     if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
     return {

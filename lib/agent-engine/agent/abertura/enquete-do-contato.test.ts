@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildEnqueteBlock, montarBlocoDeEnquete } from "./enquete-do-contato";
+import { buildEnqueteBlock, juntarOrigemEEnquete, montarBlocoDeEnquete, TITULO_DO_BLOCO_DE_ENQUETE } from "./enquete-do-contato";
+import { ritualBlocks } from "./ritual";
 
 const VOTO = { pergunta: "Quer saber se o seu caso tem reparadora?", opcao: "Quero que me chamem", significado: "Pede contato no privado", chamar: true };
 
@@ -17,8 +18,11 @@ describe("o voto na enquete, para o agente (PC-050)", () => {
     expect(bloco).not.toContain("NÃO pede contato");
   });
 
-  it("opção que não pede contato: não insistir", () => {
-    expect(montarBlocoDeEnquete({ ...VOTO, chamar: false })).toContain("NÃO pede contato");
+  it("opção que não pede contato: não insistir, e não diz que recebeu abertura", () => {
+    const bloco = montarBlocoDeEnquete({ ...VOTO, chamar: false });
+    expect(bloco).toContain("NÃO pede contato");
+    expect(bloco).not.toContain("mensagem de abertura");
+    expect(bloco).toContain("não como regra por frase");
   });
 
   it("⭐ a leitura isola a organização e exige a chave ligada; falha não derruba o turno", async () => {
@@ -31,5 +35,32 @@ describe("o voto na enquete, para o agente (PC-050)", () => {
     expect(params.slice(0, 2)).toEqual(["org-1", "contato-1"]);
     const quebrado = { query: async () => { throw new Error("db caiu"); } };
     await expect(buildEnqueteBlock(quebrado as never, "org-1", "contato-1", new Date())).resolves.toBe("");
+  });
+});
+
+describe("o voto entra no ritual sob título próprio (PC-050)", () => {
+  const contexto = { contact: { name: "Cliente", email: null }, messages: [] } as never;
+  const ORIGEM = "Este contato chegou por um ANÚNCIO pago. Campanha X";
+  const ENQUETE = montarBlocoDeEnquete(VOTO);
+  const ritual = (origem: string) => ritualBlocks(null, null, contexto, "sem notas", false, "", origem).join("\n");
+
+  it("⭐ sem voto, o prompt fica byte a byte igual ao de antes", () => {
+    expect(juntarOrigemEEnquete(ORIGEM, "")).toBe(ORIGEM);
+    expect(juntarOrigemEEnquete("", "")).toBe("");
+    expect(ritual(juntarOrigemEEnquete(ORIGEM, ""))).toBe(ritual(ORIGEM));
+    expect(ritual(ORIGEM)).toContain("## Origem deste contato — o anúncio que ele clicou\n");
+  });
+
+  it("⭐ só voto: título da enquete, nunca o título do anúncio", () => {
+    const t = ritual(juntarOrigemEEnquete("", ENQUETE));
+    expect(t).toContain(TITULO_DO_BLOCO_DE_ENQUETE);
+    expect(t).not.toContain("## Origem deste contato");
+  });
+
+  it("anúncio e voto: cada um sob o seu título", () => {
+    const t = ritual(juntarOrigemEEnquete(ORIGEM, ENQUETE));
+    expect(t.indexOf("## Origem deste contato")).toBeLessThan(t.indexOf(TITULO_DO_BLOCO_DE_ENQUETE));
+    expect(t).toContain("Campanha X");
+    expect(t).toContain("Quero que me chamem");
   });
 });

@@ -122,7 +122,7 @@ import { gravarTempoDoTurno } from "./tempo-do-turno";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
-import { buildEnqueteBlock } from './abertura/enquete-do-contato';
+import { buildEnqueteBlock, juntarOrigemEEnquete } from './abertura/enquete-do-contato';
 import { agendaNoFechamento } from './abertura/agenda-no-fechamento';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
 import { podeExporScheduleFollowup } from '@/lib/followup/callback-policy';
@@ -3020,7 +3020,7 @@ async function executarTurnoDoAgente(
       : Promise.all([
           buildOrigemBlock(pool, tenantId, leadId, new Date()),
           buildEnqueteBlock(pool, tenantId, leadId, new Date()),
-        ]).then((blocos) => blocos.filter((b) => b.trim() !== '').join('\n\n')),
+        ]).then(([origem, enquete]) => juntarOrigemEEnquete(origem, enquete)),
     preview
       ? null
       : pool

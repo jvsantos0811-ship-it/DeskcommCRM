@@ -17929,6 +17929,11 @@ export const DICIONARIO: Traducoes = {
   "Adicionar opção": { es: "Agregar opción" },
   "Adicionar enquete": { es: "Agregar encuesta" },
   "Salvar enquetes": { es: "Guardar encuestas" },
+  // PC-050 (ajustes da revisão)
+  "Remover apaga a enquete e os votos dela ao salvar. Para só parar de valer, desmarque \"Enquete ativa\".": { es: "Quitar borra la encuesta y sus votos al guardar. Para que solo deje de valer, desmarque \"Encuesta activa\"." },
+  "Remover mesmo": { es: "Quitar de todos modos" },
+  "Não foi possível ler as enquetes. Recarregue a tela antes de salvar.": { es: "No fue posible leer las encuestas. Recargue la pantalla antes de guardar." },
+  "Este campo não pode ser o voto.": { es: "Este campo no puede ser el voto." },
 };
 
 /**

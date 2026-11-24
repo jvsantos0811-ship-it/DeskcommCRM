@@ -63069,7 +63069,7 @@ create table if not exists public.enquetes_config (
 );
 
 comment on table public.enquetes_config is
-  'PC-050 (migration 9041): a chave da enquete do grupo por organização (desligada) e o campo do POST do canal de atendimento de onde vem o voto. campos_vistos guarda só os NOMES dos campos do último POST, para a tela oferecer a escolha. Só o servidor: RLS sem policy.';
+  'PC-050 (migration 9041): a chave da enquete do grupo por organização (desligada) e o campo do POST do canal de atendimento de onde vem o voto. campos_vistos guarda só os NOMES dos campos vistos nos POSTs (somados; nunca os de conteúdo, como texto, nome ou telefone), para a tela oferecer a escolha. Só o servidor: RLS sem policy.';
 
 create table if not exists public.enquetes_do_grupo (
   id               uuid primary key default gen_random_uuid(),
