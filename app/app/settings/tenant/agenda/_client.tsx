@@ -43,6 +43,7 @@ export interface TipoRow {
   default_owner_user_id: string | null;
   /** PC-052 (9039): rodízio de responsáveis, na ordem da vez. */
   rotation_owner_user_ids?: string[];
+  lead_presence_enabled?: boolean;
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
@@ -818,6 +819,9 @@ export function TiposDeAgendamentoClient({
                         rotation_owner_user_ids: dados
                           .getAll("rotation_owner_user_ids")
                           .map((v) => String(v)),
+                        // PC-052: caixa desmarcada some do FormData — a comparação
+                        // manda `false` explícito, nunca omite.
+                        lead_presence_enabled: dados.get("lead_presence_enabled") === "on",
                         // Caixa desmarcada não aparece no `FormData` — daí a
                         // comparação, e não um `Boolean(...)` do valor ausente.
                         // Vazio é uma ESCOLHA (voltar a digitar na hora), e
@@ -929,6 +933,24 @@ export function TiposDeAgendamentoClient({
                       )}
                     </span>
                   </fieldset>
+                  <label
+                    className="flex items-start gap-2 text-sm text-text"
+                    data-testid={`editar-presenca-${tipo.id}`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="lead_presence_enabled"
+                      defaultChecked={tipo.lead_presence_enabled === true}
+                    />
+                    <span className="flex flex-col gap-1">
+                      {t("Presença com cor no Google")}
+                      <span className="text-xs text-text-muted">
+                        {t(
+                          "A marcação nasce amarela; fica verde quando o cliente confirma e vermelha quando ele diz que não vai. O vermelho fica na agenda como registro e libera o horário.",
+                        )}
+                      </span>
+                    </span>
+                  </label>
                   <label className="flex flex-col gap-1 text-xs text-text-muted">
                     {t("Preço padrão")}
                     <input

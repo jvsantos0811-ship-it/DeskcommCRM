@@ -25,6 +25,8 @@ export const appointmentSnapshotSchema = z.object({
   location_kind: z.enum(["in_person", "phone", "whatsapp", "video_link", "google_meet"]),
   location_details: z.string().nullable(),
   guest_email: z.string().nullable(),
+  /** PC-052 — presença do lead; vai no corpo do evento NOVO (cor). Ver `lib/agenda/presenca.ts`. */
+  lead_presence: z.enum(["aguardando", "confirmada", "nao_vai"]).nullable().default(null),
   revision: z.string(),
   google_local_revision: z.string(),
   google_synced_local_revision: z.string(),

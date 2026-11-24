@@ -37,6 +37,7 @@ import { useMarcarAgendamento } from "@/hooks/agenda/useMarcarAgendamento";
 import {
   useCancelarAgendamento,
   useRegistrarDesfecho,
+  useRegistrarPresenca,
   useRemarcarAgendamento,
 } from "@/hooks/agenda/useRemarcarAgendamento";
 import { usePessoasDaAgenda } from "@/hooks/agenda/usePessoasDaAgenda";
@@ -207,6 +208,7 @@ export function AgendaClient({
   const remarcar = useRemarcarAgendamento();
   const cancelar = useCancelarAgendamento();
   const desfecho = useRegistrarDesfecho();
+  const presenca = useRegistrarPresenca();
   // ⚠️ ERA `tiposIniciais[0] ?? null` — uma constante, sem seletor em lugar
   // nenhum. `page.tsx` ordena os tipos por NOME, então a tela marcava sempre o
   // primeiro em ordem alfabética e não havia como marcar outro: numa org com
@@ -1162,6 +1164,8 @@ export function AgendaClient({
             status: "no_show",
           })
         }
+        // PC-052 — a equipe também registra a resposta do cliente.
+        onPresenca={(id, p) => presenca.mutate({ id, lead_presence: p })}
       />
 
       {/* ⚠️ O VAZIO NÃO ESCONDE MAIS A GRADE, e o achado veio do CI.

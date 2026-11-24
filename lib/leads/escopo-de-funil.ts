@@ -124,6 +124,7 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // `funil_vem_do_lead` seria teatro — o gate procuraria um argumento que não
   // vem e liberaria 100% das vezes, com aparência de escopado.
   crm_confirm_appointment: "sem_funil",
+  crm_registrar_presenca: "sem_funil",
   crm_set_appointment_outcome: "sem_funil",
 
   // ---- não têm funil, e isso é declarado ----

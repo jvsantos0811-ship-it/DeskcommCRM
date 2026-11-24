@@ -46,7 +46,10 @@ describe("emailDoContato não derruba a publicação", () => {
 
   it("ficha com e-mail devolve o par limpo", async () => {
     const db = {
-      from: () => ({
+      from: (tabela: string) =>
+        tabela === "organizations"
+          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { settings: {} }, error: null }) }) }) }
+          : ({
         select: () => ({
           eq: () => ({
             eq: () => ({
@@ -68,5 +71,36 @@ describe("emailDoContato não derruba a publicação", () => {
       email: "lead@clinica.test",
       nome: "Ian",
     });
+  });
+
+  // PC-052: a leitura da "agenda interna" que FALHA não convida. Convidar por
+  // engano mandaria ao cliente, por e-mail, a descrição completa (a qualificação).
+  it("não conseguiu ler se a agenda é interna: não convida", async () => {
+    const db = {
+      from: (tabela: string) =>
+        tabela === "organizations"
+          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "boom" } }) }) }) }
+          : { select: () => { throw new Error("nem deveria ler o contato"); } },
+    };
+    await expect(emailDoContato(db as never, ORG, CONTATO)).resolves.toBeNull();
+  });
+
+  it("agenda interna ligada: não convida, mesmo com e-mail na ficha", async () => {
+    const db = {
+      from: (tabela: string) =>
+        tabela === "organizations"
+          ? {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: { settings: { modelo_do_evento_agenda: { titulo: "{tipo}", descricao: "completa", agenda_interna: true } } },
+                    error: null,
+                  }),
+                }),
+              }),
+            }
+          : { select: () => { throw new Error("nem deveria ler o contato"); } },
+    };
+    await expect(emailDoContato(db as never, ORG, CONTATO)).resolves.toBeNull();
   });
 });

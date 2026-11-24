@@ -240,6 +240,22 @@ export const TOOLS_AGENDAMENTO = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_registrar_presenca",
+    category: "write",
+    rotulo: "Registrar se a pessoa vai ou não ao horário",
+    explicacao:
+      "Anota a resposta da pessoa sobre o horário marcado (vai ou não vai) e muda a cor do evento na agenda do Google. Quem não vai libera o horário.",
+    oQueToca: "Agenda da equipe",
+    // `atencao`: "não vai" libera o horário, mas o registro fica e se desfaz
+    // registrando de novo.
+    risco: "atencao",
+    // NÃO entra em "vender": "vender" é o pacote com que o agente nasce, e uma
+    // capacidade a mais nele faz nenhuma outra jornada caber no teto
+    // (`tests/unit/pacote-reserva-vaga-da-critica.test.ts`). Confirmar presença
+    // é segurar o cliente no horário — "reter". Quem precisa liga à mão.
+    pacotes: ["reter"],
+  },
+  {
     name: "crm_set_appointment_outcome",
     category: "write",
     rotulo: "Registrar se a pessoa veio ou faltou",

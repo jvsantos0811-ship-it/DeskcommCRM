@@ -3325,6 +3325,8 @@ export type Database = {
           google_synced_at: string | null
           guest_email: string | null
           id: string
+          lead_presence: string | null
+          lead_presence_painted: string | null
           location_details: string | null
           location_kind: string
           meeting_url: string | null
@@ -3392,6 +3394,8 @@ export type Database = {
           google_synced_at?: string | null
           guest_email?: string | null
           id?: string
+          lead_presence?: string | null
+          lead_presence_painted?: string | null
           location_details?: string | null
           location_kind?: string
           meeting_url?: string | null
@@ -3459,6 +3463,8 @@ export type Database = {
           google_synced_at?: string | null
           guest_email?: string | null
           id?: string
+          lead_presence?: string | null
+          lead_presence_painted?: string | null
           location_details?: string | null
           location_kind?: string
           meeting_url?: string | null
@@ -3753,6 +3759,7 @@ export type Database = {
           description: string | null
           duration_minutes: number
           id: string
+          lead_presence_enabled: boolean
           is_active: boolean
           location_details: string | null
           location_kind: string
@@ -3786,6 +3793,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
+          lead_presence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string
@@ -3819,6 +3827,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number
           id?: string
+          lead_presence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string

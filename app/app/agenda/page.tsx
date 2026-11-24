@@ -138,7 +138,7 @@ export default async function AgendaPage() {
     supabase
       .from("calendar_appointments")
       .select(
-        "id, revision, title, starts_at, ends_at, status, owner_user_id, contact_id, event_type_id, location_kind, contacts(name, display_name)",
+        "id, revision, title, starts_at, ends_at, status, lead_presence, owner_user_id, contact_id, event_type_id, location_kind, contacts(name, display_name)",
       )
       .eq("organization_id", activeOrg.orgId)
       .gte("starts_at", inicio.toISOString())
@@ -303,6 +303,7 @@ export default async function AgendaPage() {
           termina: a.ends_at,
           origem: "ui" as const,
           situacao: a.status as "confirmed",
+          presenca: (a.lead_presence ?? null) as "aguardando" | "confirmada" | "nao_vai" | null,
           // "com quem" é a promessa do subtítulo desta tela, e era a única parte
           // dela que o servidor não entregava: `contact_id` vinha no select e
           // morria aqui. `dados-de-mentira.ts` preenche este campo nos 11 cards,
