@@ -23,6 +23,8 @@ interface AgendamentoListado {
   terminaEm: string;
   fuso: string;
   situacao: string;
+  /** PC-052 — presença do cliente; ausente em servidor mais velho. */
+  presenca?: string | null;
   donoId: string | null;
   contatoId: string | null;
   contatoNome: string | null;
@@ -94,6 +96,7 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
           // cliente, como já faz o `quemSeraAtendido` logo abaixo.
           origem: (a as { origem?: Agendamento["origem"] }).origem ?? "ui",
           situacao: a.situacao as Agendamento["situacao"],
+          presenca: (a.presenca ?? null) as Agendamento["presenca"],
           // Sem esta linha, montar o hook REGREDIRIA o conserto do "com quem":
           // a prop do servidor traz o nome, e o refetch o apagaria da grade.
           // Campo novo é optional e a rota pode ainda não mandá-lo — `?? undefined`

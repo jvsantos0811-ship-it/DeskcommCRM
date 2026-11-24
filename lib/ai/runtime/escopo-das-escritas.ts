@@ -56,6 +56,7 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_reschedule_appointment: { appointment_id: "compromisso" },
   crm_cancel_appointment: { appointment_id: "compromisso" },
   crm_confirm_appointment: { appointment_id: "compromisso" },
+  crm_registrar_presenca: { appointment_id: "compromisso" },
   crm_set_appointment_outcome: { appointment_id: "compromisso" },
 
   // ---- contato e conversa ----

@@ -90,6 +90,28 @@ export function useCancelarAgendamento() {
  * correto — a vaga de quem não veio não pode ficar reservada —, mas é a razão de
  * o toast dizer o que aconteceu em vez de um "ok" mudo.
  */
+/**
+ * PC-052 — a equipe registra a presença do cliente (verde ou vermelho no
+ * Google). O mesmo PATCH, com `lead_presence`.
+ */
+export function useRegistrarPresenca() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (entrada: { id: string; lead_presence: "confirmada" | "nao_vai" }) =>
+      apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
+    onSuccess: (_dados, entrada) => {
+      toast.success(
+        entrada.lead_presence === "confirmada"
+          ? t("Presença confirmada. A agenda do Google fica verde.")
+          : t("Registrado que o cliente não vai. O horário fica livre e o evento, vermelho."),
+      );
+      void qc.invalidateQueries({ queryKey: ["agenda"] });
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
 export function useRegistrarDesfecho() {
   const t = useT();
   const qc = useQueryClient();

@@ -57,7 +57,18 @@ export const TETO_DO_TITULO = 200;
 export const modeloDoEventoSchema = z.strictObject({
   titulo: z.string().trim().min(1).max(TETO_DO_TITULO),
   descricao: z.enum(NIVEIS_DA_DESCRICAO),
+  /**
+   * PC-052 — "agenda interna": o CRM nunca põe o contato como convidado no
+   * Google (mesmo com e-mail na ficha) e, por isso, a descrição vai em todos os
+   * eventos. Ausente = desligada (o de sempre).
+   */
+  agenda_interna: z.boolean().optional(),
 });
+
+/** A organização ligou "agenda interna" (PC-052)? Ausente, torto ou desligado = não. */
+export function agendaInterna(settings: unknown): boolean {
+  return lerModeloDoEvento(settings)?.agenda_interna === true;
+}
 export type ModeloDoEvento = z.infer<typeof modeloDoEventoSchema>;
 
 /** Lê o modelo da organização. Ausente ou torto = `null` (comportamento de sempre). */

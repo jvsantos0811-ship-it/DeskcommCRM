@@ -41,6 +41,8 @@ export interface CompromissoDoContato {
   status: string;
   meeting_state?: string;
   meeting_url?: string | null;
+  /** PC-052: presença do cliente (aguardando, confirmada, nao_vai). Nula = o tipo não usa. */
+  lead_presence?: string | null;
 }
 
 /** Quantos compromissos futuros cabem no bloco antes de ele passar a truncar. */
@@ -60,7 +62,7 @@ export async function compromissosDoContato(
   agora: Date,
 ): Promise<CompromissoDoContato[]> {
   const { rows } = await db.query<CompromissoDoContato>(
-    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url
+    `select id, title, starts_at, ends_at, time_zone, status, meeting_state, meeting_url, lead_presence
        from calendar_appointments
       where organization_id = $1
         and contact_id = $2
@@ -91,7 +93,19 @@ export function renderCompromissos(linhas: readonly CompromissoDoContato[]): str
     // O driver pg devolve Date; interpolá-la mostrava a hora do PROCESSO (UTC).
     // A hora de parede e o ISO com offset representam o mesmo instante, no fuso
     // da reserva. Nunca aplicar um deslocamento fixo de três horas.
-    return `- ${rotuloLocal(inicio, fuso)} (${fuso}; início: ${isoLocalComOffset(inicio, fuso)})${fim} — ${titulo} (${c.status})${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
+    // PC-052: o horário em que o cliente disse que NÃO vai fica no Google como
+    // registro vermelho, mas não é compromisso de pé. Sem este rótulo o modelo
+    // via dois "confirmed" depois de uma remarcação e podia lembrar o cliente do
+    // horário velho ou registrar a presença no errado.
+    const presenca =
+      c.lead_presence === "nao_vai"
+        ? " — o cliente disse que NÃO vai: só registro, não lembre nem confirme este horário"
+        : c.lead_presence === "confirmada"
+          ? " — presença confirmada pelo cliente"
+          : c.lead_presence === "aguardando"
+            ? " — presença ainda não confirmada"
+            : "";
+    return `- ${rotuloLocal(inicio, fuso)} (${fuso}; início: ${isoLocalComOffset(inicio, fuso)})${fim} — ${titulo} (${c.status})${presenca}${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
   });
 
   // Truncar em silêncio faria o modelo afirmar que o cliente só tem estes — a
