@@ -68,6 +68,11 @@ export type Agendamento = {
   local?: string;
   origem: OrigemDoAgendamento;
   situacao: SituacaoDoAgendamento;
+  /**
+   * PC-052 — a resposta do cliente (aguardando, confirmada, nao_vai). Ausente
+   * ou nula quando o tipo de atendimento não usa presença.
+   */
+  presenca?: "aguardando" | "confirmada" | "nao_vai" | null;
 };
 
 /** Um horário oferecido pelo painel de marcação. */

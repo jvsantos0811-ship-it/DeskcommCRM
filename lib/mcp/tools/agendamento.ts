@@ -562,6 +562,9 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         quando: rotuloLocal(new Date(a.iniciaEm), a.fuso),
         fim_quando: rotuloLocal(new Date(a.terminaEm), a.fuso),
         situacao: a.situacao,
+        // PC-052 — a resposta do lead (aguardando, confirmada, nao_vai); nula
+        // quando o tipo não usa presença.
+        presenca: a.presenca ?? null,
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
@@ -617,6 +620,11 @@ const ENSINO_POR_CODIGO: Record<string, string> = {
   agenda_ainda_nao_aconteceu:
     "esse compromisso ainda não começou, então não há desfecho a registrar. Se a pessoa avisou que " +
     "não vem, use `crm_cancel_appointment`; se ela quer outro dia, `crm_reschedule_appointment`.",
+  agenda_presenca_desligada:
+    "esse tipo de atendimento não registra presença. Se a pessoa confirmou, use `crm_confirm_appointment`; " +
+    "se ela quer outro horário, `crm_reschedule_appointment`.",
+  agenda_presenca_fora_de_hora:
+    "esse compromisso já passou ou não está mais marcado, então não há presença a registrar.",
   not_found: "não encontrei esse compromisso. Confirme com `crm_list_appointments` antes de tentar de novo.",
   internal_error: "não consegui completar agora. Avise que alguém da equipe confirma, e não repita a tentativa.",
 };
@@ -1200,6 +1208,75 @@ export const crmConfirmAppointment: McpToolDefinition<typeof confirmarShape> = {
       );
       return { confirmado: true, compromisso: compromissoComHorarioLocal(r) };
     }),
+};
+
+const presencaShape = {
+  appointment_id: z.string().uuid().describe("o compromisso, vindo de `crm_list_appointments` ou da marcação"),
+  presenca: z
+    .enum(["confirmada", "nao_vai"])
+    .describe(
+      "`confirmada` = a pessoa disse que vai (qualquer mensagem que confirme); " +
+        "`nao_vai` = disse que não vai ou pediu para remarcar",
+    ),
+};
+
+/**
+ * PC-052 parte 2 — a presença do lead, com cor no Google.
+ *
+ * NÃO é `crm_confirm_appointment`: aquela muda a situação do compromisso (que é
+ * da equipe); esta registra a resposta do LEAD e pinta o evento (verde ou
+ * vermelho). `nao_vai` libera o horário e deixa o evento vermelho como registro:
+ * a remarcação é um compromisso NOVO (`crm_book_appointment`), em cima, com a
+ * mesma especialista.
+ */
+export const crmRegistrarPresenca: McpToolDefinition<typeof presencaShape> = {
+  name: "crm_registrar_presenca",
+  description:
+    "Registra a resposta do cliente sobre ir ao compromisso: `confirmada` quando ele confirma por " +
+    "qualquer mensagem, `nao_vai` quando diz que não vai ou pede para remarcar. A cor do evento no " +
+    "Google muda sozinha (verde ou vermelho). `nao_vai` libera o horário e o evento fica vermelho como " +
+    "registro: para remarcar, marque um compromisso NOVO com `crm_book_appointment`, passando o " +
+    "`owner_user_id` do compromisso antigo (o `atendente_id` de `crm_list_appointments`). " +
+    "Só funciona em tipo de atendimento que usa presença; nos outros volta a recusa " +
+    "`agenda_presenca_desligada` (use `crm_confirm_appointment` ou `crm_reschedule_appointment`).",
+  inputSchema: presencaShape,
+  category: "write",
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const r = await semDerrubarOTurno("registrado", async () => {
+      const salvo = await alterarAgendamentoHandler(
+        ctx.supabase,
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { id: input.appointment_id, lead_presence: input.presenca },
+      );
+      return {
+        ok: true,
+        registrado: true,
+        presenca: input.presenca,
+        horario_liberado: input.presenca === "nao_vai",
+        compromisso: compromissoComHorarioLocal(salvo),
+      };
+    });
+    if ("motivo" in r && r.registrado === false) {
+      // `ok: false` explícito: a recusa precisa ser lida antes de qualquer frase
+      // ao cliente. E o caso de voltar de "não vai" para um horário que já foi
+      // dado a outra pessoa tem ensino próprio — "a equipe confirma" seria
+      // deixar o cliente achando que está confirmado.
+      return {
+        ...r,
+        ok: false,
+        ...(r.motivo === "agenda_horario_indisponivel"
+          ? {
+              mensagem:
+                "esse horário foi ocupado depois que o cliente disse que não ia. NÃO diga que está confirmado: " +
+                "ofereça horários novos com `crm_find_free_slots` e marque um compromisso novo.",
+            }
+          : {}),
+      };
+    }
+    return r;
+  },
 };
 
 const desfechoShape = {

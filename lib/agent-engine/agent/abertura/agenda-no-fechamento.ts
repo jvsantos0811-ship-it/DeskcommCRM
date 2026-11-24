@@ -11,6 +11,7 @@ const FERRAMENTAS_DE_AGENDA = new Set([
   "crm_reschedule_appointment",
   "crm_cancel_appointment",
   "crm_confirm_appointment",
+  "crm_registrar_presenca",
   "crm_set_appointment_outcome",
 ]);
 
