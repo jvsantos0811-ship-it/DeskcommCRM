@@ -92,7 +92,7 @@ const camposDoTipo = {
    */
   rotation_owner_user_ids: z.array(z.string().uuid()).max(10).nullish(),
   /** PC-052 — presença do lead com cor no Google. Desligado = o de sempre. */
-  lead_presence_colors: z.boolean().optional(),
+  lead_presence_enabled: z.boolean().optional(),
   requires_confirmation: z.boolean().optional(),
   buffer_before_minutes: z.number().int().min(0).max(720).optional(),
   buffer_after_minutes: z.number().int().min(0).max(720).optional(),
@@ -330,7 +330,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       location_details: t.localDetalhes,
       default_owner_user_id: t.donoPadraoId,
       rotation_owner_user_ids: t.rodizioIds ?? [],
-      lead_presence_colors: t.presencaComCor ?? false,
+      lead_presence_enabled: t.presencaComCor ?? false,
       requires_confirmation: t.precisaConfirmacao,
       is_active: t.ativo,
       buffer_before_minutes: t.bufferAntesMin,

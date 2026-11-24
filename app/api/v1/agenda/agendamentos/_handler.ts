@@ -348,7 +348,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, rotation_owner_user_ids, lead_presence_colors, requires_confirmation, location_kind, location_details",
+      "id, name, is_active, duration_minutes, default_owner_user_id, rotation_owner_user_ids, lead_presence_enabled, requires_confirmation, location_kind, location_details",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -478,7 +478,7 @@ async function executarCriacaoDeAgendamento(
       time_zone: consulta.fusoDaRegra,
       status: tipo.requires_confirmation ? "pending" : "confirmed",
       // PC-052: o tipo com presença nasce "aguardando" (amarelo no Google).
-      lead_presence: tipo.lead_presence_colors ? "aguardando" : null,
+      lead_presence: tipo.lead_presence_enabled ? "aguardando" : null,
       owner_user_id: donoId,
       contact_id: input.contact_id ?? null,
       conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
@@ -629,7 +629,7 @@ export async function alterarAgendamentoHandler(
     // dois compromissos no mesmo horário (ou o índice recusaria com um erro
     // genérico que a IA leria como "a equipe confirma"). Ocupado = a recusa
     // ensinada de horário indisponível: marque um novo.
-    if (atual.lead_presence === "nao_vai" && input.lead_presence !== "nao_vai") {
+    if (atual.lead_presence === "nao_vai" && input.lead_presence !== "nao_vai" && atual.owner_user_id) {
       await exigeSemSobreposicao(supabase, ctx, {
         donoId: atual.owner_user_id as string,
         inicio: new Date(atual.starts_at as string),
