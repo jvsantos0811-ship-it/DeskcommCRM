@@ -8986,6 +8986,23 @@ export const DICIONARIO: Traducoes = {
   },
   "Não consegui salvar este passo.": { es: "No pude guardar este paso." },
 
+  // PC-045 parte 2 (fork): vídeo de aquecimento.
+  "O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo.": { es: "El video supera 16 MB, el límite de WhatsApp. Comprímelo y envíalo de nuevo." },
+  "Formato não aceito: envie um vídeo .mp4.": { es: "Formato no aceptado: envía un video .mp4." },
+  "O vídeo foi recusado: confira o formato (.mp4) e o tamanho (até 16 MB).": { es: "El video fue rechazado: revisa el formato (.mp4) y el tamaño (hasta 16 MB)." },
+  "Não foi possível guardar o vídeo.": { es: "No se pudo guardar el video." },
+  "Vídeo salvo. Vale para os próximos agendamentos.": { es: "Video guardado. Vale para las próximas citas." },
+  "Texto salvo.": { es: "Texto guardado." },
+  "Vídeo removido. A confirmação volta a sair sozinha.": { es: "Video quitado. La confirmación vuelve a salir sola." },
+  "Vídeo de aquecimento": { es: "Video de calentamiento" },
+  "Enviado uma vez por agendamento, logo depois da confirmação, enquanto a conversa está aberta. Trocar vale para os próximos agendamentos; ninguém recebe de novo.": { es: "Se envía una vez por cita, justo después de la confirmación, mientras la conversación está abierta. Cambiarlo vale para las próximas citas; nadie lo recibe de nuevo." },
+  "trocado em": { es: "cambiado el" },
+  "Nenhum vídeo: a confirmação sai sozinha, como hoje.": { es: "Ningún video: la confirmación sale sola, como hoy." },
+  "Texto que acompanha o vídeo (opcional)": { es: "Texto que acompaña el video (opcional)" },
+  "Arquivo do vídeo": { es: "Archivo del video" },
+  "Trocar vídeo": { es: "Cambiar video" },
+  "Enviar vídeo": { es: "Enviar video" },
+  "Remover vídeo": { es: "Quitar video" },
   // ─── Onboarding: invite-team ───
   "Quem trabalha com ele": { es: "Quién trabaja con él" },
   "Seu funcionário não trabalha sozinho: quando ele passar uma conversa adiante, é uma dessas pessoas que atende.": {
@@ -17910,23 +17927,6 @@ export const DICIONARIO: Traducoes = {
   "Confira os campos: algum valor está fora do formato.": { es: "Revise los campos: algún valor está fuera del formato." },
   "Conecte a conta antes de configurar.": { es: "Conecte la cuenta antes de configurar." },
   "A plataforma de atendimento não recebeu a passagem: devolva o chat à equipe por lá.": { es: "La plataforma de atención no recibió el traspaso: devuelva el chat al equipo desde allí." },
-  // PC-045 parte 2 (fork): vídeo de aquecimento.
-  "O vídeo passa de 16 MB, o limite do WhatsApp. Comprima e envie de novo.": { es: "El video supera 16 MB, el límite de WhatsApp. Comprímelo y envíalo de nuevo." },
-  "Formato não aceito: envie um vídeo .mp4.": { es: "Formato no aceptado: envía un video .mp4." },
-  "O vídeo foi recusado: confira o formato (.mp4) e o tamanho (até 16 MB).": { es: "El video fue rechazado: revisa el formato (.mp4) y el tamaño (hasta 16 MB)." },
-  "Não foi possível guardar o vídeo.": { es: "No se pudo guardar el video." },
-  "Vídeo salvo. Vale para os próximos agendamentos.": { es: "Video guardado. Vale para las próximas citas." },
-  "Texto salvo.": { es: "Texto guardado." },
-  "Vídeo removido. A confirmação volta a sair sozinha.": { es: "Video quitado. La confirmación vuelve a salir sola." },
-  "Vídeo de aquecimento": { es: "Video de calentamiento" },
-  "Enviado uma vez por agendamento, logo depois da confirmação, enquanto a conversa está aberta. Trocar vale para os próximos agendamentos; ninguém recebe de novo.": { es: "Se envía una vez por cita, justo después de la confirmación, mientras la conversación está abierta. Cambiarlo vale para las próximas citas; nadie lo recibe de nuevo." },
-  "trocado em": { es: "cambiado el" },
-  "Nenhum vídeo: a confirmação sai sozinha, como hoje.": { es: "Ningún video: la confirmación sale sola, como hoy." },
-  "Texto que acompanha o vídeo (opcional)": { es: "Texto que acompaña el video (opcional)" },
-  "Arquivo do vídeo": { es: "Archivo del video" },
-  "Trocar vídeo": { es: "Cambiar video" },
-  "Enviar vídeo": { es: "Enviar video" },
-  "Remover vídeo": { es: "Quitar video" },
 };
 
 /**

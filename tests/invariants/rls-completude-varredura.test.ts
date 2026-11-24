@@ -239,6 +239,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "conversões na conta de anúncios do cliente.",
   },
   {
+    tabela: "agenda_video_aquecimento",
+    razao:
+      "tests/invariants/video-de-aquecimento.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com a linha da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, INSERT, UPDATE e DELETE. A tela lê e grava pela rota, com a " +
+      "organização da sessão. Migration 9042 (fork, PC-045 parte 2).",
+  },
+  {
     tabela: "ad_insights_connections",
     razao:
       "tests/invariants/credencial-de-anuncios-e-server-side.test.ts — mesmo " +
@@ -416,15 +425,6 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "INSTALAÇÃO, sem policy e sem grant a anon/authenticated: com o pagamento da própria " +
       "organização existindo (controle positivo), o admin dessa organização por JWT e o anon " +
       "recebem `permission denied` em SELECT, INSERT e DELETE. Migration 9030 (fork, PC-028).",
-  },
-  {
-    tabela: "agenda_video_aquecimento",
-    razao:
-      "tests/invariants/video-de-aquecimento.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
-      "policy e sem grant a anon/authenticated: com a linha da própria organização existindo " +
-      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
-      "denied` em SELECT, INSERT, UPDATE e DELETE. A tela lê e grava pela rota, com a " +
-      "organização da sessão. Migration 9042 (fork, PC-045 parte 2).",
   },
 ];
 

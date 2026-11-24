@@ -63025,32 +63025,6 @@ create unique index if not exists channel_sessions_chatguru_phone_id_ativo_uniqu
   on public.channel_sessions (chatguru_phone_id)
   where archived_at is null and chatguru_phone_id is not null;
 
--- ---- rodízio de responsáveis por tipo de atendimento (migration 9039) ----
-
-alter table public.calendar_event_types
-  add column if not exists rotation_owner_user_ids uuid[];
-
-comment on column public.calendar_event_types.rotation_owner_user_ids is
-  'PC-052: rodízio de responsáveis, na ordem da vez. Nulo/vazio = default_owner_user_id. Ids validados na rota (membro ativo) e filtrados na leitura (lib/agenda/rodizio.ts).';
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-     where conname = 'calendar_event_types_rotation_owner_user_ids_tamanho'
-       and conrelid = 'public.calendar_event_types'::regclass
-  ) then
-    -- Dados fora da régua antes da constraint (clone que gravou à mão):
-    -- corta para os 10 primeiros em vez de quebrar o update.sh.
-    update public.calendar_event_types
-       set rotation_owner_user_ids = rotation_owner_user_ids[1:10]
-     where cardinality(rotation_owner_user_ids) > 10;
-    alter table public.calendar_event_types
-      add constraint calendar_event_types_rotation_owner_user_ids_tamanho
-      check (rotation_owner_user_ids is null or cardinality(rotation_owner_user_ids) <= 10);
-  end if;
-end $$;
-
 -- ---- vídeo de aquecimento por organização (migration 9042) ----
 --
 -- PC-045 parte 2. Não cria função, então pode ficar depois da VARREDURA anon.
@@ -63078,3 +63052,29 @@ drop trigger if exists trg_agenda_video_aquecimento_touch on public.agenda_video
 create trigger trg_agenda_video_aquecimento_touch
   before update on public.agenda_video_aquecimento
   for each row execute function public.fn_touch_updated_at();
+
+-- ---- rodízio de responsáveis por tipo de atendimento (migration 9039) ----
+
+alter table public.calendar_event_types
+  add column if not exists rotation_owner_user_ids uuid[];
+
+comment on column public.calendar_event_types.rotation_owner_user_ids is
+  'PC-052: rodízio de responsáveis, na ordem da vez. Nulo/vazio = default_owner_user_id. Ids validados na rota (membro ativo) e filtrados na leitura (lib/agenda/rodizio.ts).';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'calendar_event_types_rotation_owner_user_ids_tamanho'
+       and conrelid = 'public.calendar_event_types'::regclass
+  ) then
+    -- Dados fora da régua antes da constraint (clone que gravou à mão):
+    -- corta para os 10 primeiros em vez de quebrar o update.sh.
+    update public.calendar_event_types
+       set rotation_owner_user_ids = rotation_owner_user_ids[1:10]
+     where cardinality(rotation_owner_user_ids) > 10;
+    alter table public.calendar_event_types
+      add constraint calendar_event_types_rotation_owner_user_ids_tamanho
+      check (rotation_owner_user_ids is null or cardinality(rotation_owner_user_ids) <= 10);
+  end if;
+end $$;
