@@ -15,6 +15,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { EnquetesDoGrupo } from "./EnquetesDoGrupo";
 import { FunilDoNumero } from "./FunilDoNumero";
+import { RenomearConexao } from "./RenomearConexao";
 import { ResponsavelDoNumero } from "./ResponsavelDoNumero";
 
 /**
@@ -34,6 +35,14 @@ import { ResponsavelDoNumero } from "./ResponsavelDoNumero";
  *
  * A IA do número nasce FECHADA: ninguém recebe resposta automática até o
  * operador abrir o acesso no cartão de IA desta tela.
+ *
+ * ─── Dois números (PC-053) ──────────────────────────────────────────────────
+ *
+ * Um bloco por número conectado, na ordem em que foram conectados, cada um com
+ * o seu endereço, a sua configuração e o seu acesso da IA. "Adicionar outro
+ * número" aparece quando o servidor diz que cabe (`pode_adicionar`) e pode usar
+ * a mesma chave do número já conectado: a chave nunca volta à tela, o servidor
+ * copia a cifrada.
  */
 
 const ROTA = "/api/v1/channels/atendimento-externo";
@@ -45,10 +54,8 @@ interface Acao {
   quando_usar: string;
 }
 
-interface Estado {
-  label: string;
-  connected: boolean;
-  channel_session_id: string | null;
+interface Conexao {
+  channel_session_id: string;
   servidor: string | null;
   account_id: string | null;
   phone_id: string | null;
@@ -61,6 +68,13 @@ interface Estado {
     campo_da_ia: { nome: string; valor_ao_passar: string } | null;
     acoes: (Acao & { chave: string })[];
   } | null;
+}
+
+interface Estado {
+  label: string;
+  connected: boolean;
+  conexoes?: Conexao[];
+  pode_adicionar?: boolean;
 }
 
 // Espelha `MAXIMO_DE_ACOES` de `lib/channels/atendimento-externo/config.ts` (PC-052).
@@ -89,20 +103,189 @@ function ParaColar({ rotulo, valor }: { rotulo: string; valor: string }) {
 }
 
 export function CanalAtendimentoExternoClient() {
+  const t = useT();
   const { data: estado = null, isLoading } = useQuery({
     queryKey: CHAVE_DA_CONSULTA,
     queryFn: async () => (await apiClient.get<{ data: Estado }>(ROTA)).data,
   });
-  // A chave remonta o formulário quando o estado do servidor chega (ou a conexão
-  // muda): os campos nascem com o que está gravado, e depois disso o que vale é
-  // o que o operador digita — recarregar a consulta não apaga a edição.
-  const chave = isLoading ? "carregando" : (estado?.channel_session_id ?? "novo");
-  return <FormularioDoAtendimentoExterno key={chave} estado={estado} />;
+  const [adicionando, setAdicionando] = useState(false);
+  const rotulo = estado?.label ?? t("plataforma de atendimento");
+  const conexoes = estado?.conexoes ?? [];
+  const primeira = conexoes[0] ?? null;
+
+  return (
+    <div className="flex flex-col gap-4" data-testid="canal-atendimento-externo">
+      {/* Sempre uma LISTA: sem número conectado, o formulário da primeira conexão
+          ocupa o lugar do número 1. A chave de cada bloco é a conexão dele, então
+          os campos nascem com o que está gravado e, depois, o que vale é o que o
+          operador digita — recarregar a consulta não apaga a edição. */}
+      {(conexoes.length === 0 ? [null] : conexoes).map((conexao, indice) => (
+        <FormularioDoAtendimentoExterno
+          key={isLoading ? "carregando" : (conexao?.channel_session_id ?? "novo")}
+          rotulo={rotulo}
+          conexao={conexao}
+          indice={indice}
+          varios={conexoes.length > 1}
+        />
+      ))}
+
+      {primeira && estado?.pode_adicionar && (
+        adicionando ? (
+          <AdicionarNumero rotulo={rotulo} primeira={primeira} onFechar={() => setAdicionando(false)} />
+        ) : (
+          <div>
+            <Button variant="outline" onClick={() => setAdicionando(true)}>
+              {t("Adicionar outro número")}
+            </Button>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {t(
+                "Para o outro número da mesma conta — por exemplo, o oficial e o do QR. A IA atende nos dois, cada um com o seu endereço e a sua configuração.",
+              )}
+            </p>
+          </div>
+        )
+      )}
+
+      {/* PC-050: enquetes do grupo (desligadas de fábrica). Uma por empresa. */}
+      {conexoes.length > 0 && <EnquetesDoGrupo />}
+    </div>
+  );
 }
 
-function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
+/** O segundo número da mesma conta (PC-053). */
+function AdicionarNumero({
+  rotulo,
+  primeira,
+  onFechar,
+}: {
+  rotulo: string;
+  primeira: Conexao;
+  onFechar: () => void;
+}) {
   const t = useT();
   const qc = useQueryClient();
+  const [apelido, setApelido] = useState("");
+  const [servidor, setServidor] = useState(() => primeira.servidor ?? "");
+  const [accountId, setAccountId] = useState(() => primeira.account_id ?? "");
+  const [phoneId, setPhoneId] = useState("");
+  const [mesmaChave, setMesmaChave] = useState(true);
+  const [chave, setChave] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const podeAdicionar =
+    servidor.trim().length > 0 &&
+    accountId.trim().length >= 4 &&
+    phoneId.trim().length >= 4 &&
+    (mesmaChave || chave.trim().length >= 16);
+
+  const adicionar = async () => {
+    setSalvando(true);
+    try {
+      await apiClient.post(ROTA, {
+        servidor,
+        account_id: accountId,
+        phone_id: phoneId,
+        novo: true,
+        ...(apelido.trim() ? { apelido: apelido.trim() } : {}),
+        ...(mesmaChave ? { usar_chave_de: primeira.channel_session_id } : { api_key: chave }),
+      });
+      setChave("");
+      toast.success(t("Número conectado. Agora cole o endereço de entrada dele no diálogo da plataforma."));
+      await qc.invalidateQueries({ queryKey: CHAVE_DA_CONSULTA });
+      onFechar();
+    } catch (e) {
+      toast.error(e instanceof Error ? t(e.message) : t("Não foi possível conectar."));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <Card className="flex flex-col gap-4 p-4" data-testid="adicionar-numero-atendimento-externo">
+      <div>
+        <h3 className="text-sm font-semibold">
+          {t("Adicionar outro número do")} {rotulo}
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {t("O ID do número aparece na tela de celulares da plataforma, ao lado de cada número.")}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="ae-novo-apelido">{t("Como a equipe chama este número")}</Label>
+        <Input
+          id="ae-novo-apelido"
+          value={apelido}
+          onChange={(e) => setApelido(e.target.value)}
+          placeholder={t("ex.: Número do QR")}
+          autoComplete="off"
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ae-novo-servidor">{t("Servidor da conta")}</Label>
+          <Input id="ae-novo-servidor" value={servidor} onChange={(e) => setServidor(e.target.value)} autoComplete="off" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ae-novo-conta">{t("ID da conta")}</Label>
+          <Input id="ae-novo-conta" value={accountId} onChange={(e) => setAccountId(e.target.value)} autoComplete="off" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ae-novo-numero">{t("ID do número")}</Label>
+          <Input id="ae-novo-numero" value={phoneId} onChange={(e) => setPhoneId(e.target.value)} autoComplete="off" />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={mesmaChave}
+          onChange={(e) => setMesmaChave(e.target.checked)}
+          className="size-4"
+        />
+        {t("Usar a mesma chave da API do número já conectado")}
+      </label>
+      {!mesmaChave && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ae-novo-chave">{t("Chave da API")}</Label>
+          <Input
+            id="ae-novo-chave"
+            type="password"
+            value={chave}
+            onChange={(e) => setChave(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button onClick={adicionar} disabled={salvando || !podeAdicionar}>
+          {salvando ? t("Salvando…") : t("Conectar este número")}
+        </Button>
+        <Button variant="ghost" onClick={onFechar} disabled={salvando}>
+          {t("Cancelar")}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function FormularioDoAtendimentoExterno({
+  rotulo,
+  conexao: estado,
+  indice,
+  varios,
+}: {
+  rotulo: string;
+  conexao: Conexao | null;
+  indice: number;
+  varios: boolean;
+}) {
+  const t = useT();
+  const qc = useQueryClient();
+  // Com dois números, toda escrita diz de qual deles é (PC-053).
+  const alvo = estado ? { channel_session_id: estado.channel_session_id } : {};
 
   const [servidor, setServidor] = useState(() => estado?.servidor ?? "");
   const [accountId, setAccountId] = useState(() => estado?.account_id ?? "");
@@ -117,8 +300,7 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
   const [salvando, setSalvando] = useState<"conta" | "config" | "segredo" | null>(null);
 
   const recarregar = () => qc.invalidateQueries({ queryKey: CHAVE_DA_CONSULTA });
-  const rotulo = estado?.label ?? t("plataforma de atendimento");
-  const conectado = estado?.connected ?? false;
+  const conectado = estado !== null;
 
   const erroDaTela = (e: unknown, padrao: string) =>
     toast.error(e instanceof Error ? t(e.message) : padrao);
@@ -126,7 +308,7 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
   const conectar = async () => {
     setSalvando("conta");
     try {
-      await apiClient.post(ROTA, { servidor, account_id: accountId, phone_id: phoneId, api_key: chave });
+      await apiClient.post(ROTA, { ...alvo, servidor, account_id: accountId, phone_id: phoneId, api_key: chave });
       setChave("");
       toast.success(t("Conta conectada."));
       await recarregar();
@@ -141,6 +323,7 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
     setSalvando("config");
     try {
       await apiClient.patch(ROTA, {
+        ...alvo,
         config: {
           dialogo_transferencia: transferencia.trim() || null,
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
@@ -159,7 +342,7 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
   const trocarSegredo = async () => {
     setSalvando("segredo");
     try {
-      await apiClient.patch(ROTA, { trocar_segredo: true });
+      await apiClient.patch(ROTA, { ...alvo, trocar_segredo: true });
       toast.success(t("Endereço novo gerado. Atualize o diálogo na plataforma: o antigo deixou de valer."));
       await recarregar();
     } catch (e) {
@@ -176,11 +359,12 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
     servidor.trim().length > 0 && accountId.trim().length >= 4 && phoneId.trim().length >= 4 && chave.trim().length >= 16;
 
   return (
-    <div className="flex flex-col gap-4" data-testid="canal-atendimento-externo">
+    <div className="flex flex-col gap-4" data-testid={`numero-atendimento-externo-${indice + 1}`}>
       <Card className="flex flex-col gap-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold">
+              {varios ? `${t("Número")} ${indice + 1} · ` : ""}
               {t("Atender dentro do")} {rotulo}
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -196,12 +380,19 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
           )}
         </div>
 
-        {conectado && (
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-            <p className="font-medium">{nomeDoCanal(estado ?? {}, t)}</p>
-            <p className="text-xs text-muted-foreground">
-              {estado?.servidor ?? "—"} · {estado?.status ?? "—"}
-            </p>
+        {estado && (
+          <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <div>
+              <p className="font-medium">{nomeDoCanal(estado, t)}</p>
+              <p className="text-xs text-muted-foreground">
+                {estado.servidor ?? "—"} · {estado.status ?? "—"}
+              </p>
+            </div>
+            <RenomearConexao
+              channelId={estado.channel_session_id}
+              currentName={estado.display_name}
+              onSaved={recarregar}
+            />
           </div>
         )}
 
@@ -376,8 +567,6 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
           </div>
         </Card>
       )}
-      {/* PC-050: enquetes do grupo (desligadas de fábrica). */}
-      {conectado && <EnquetesDoGrupo />}
     </div>
   );
 }
