@@ -91,7 +91,10 @@ const conectarSchema = z
     /** Copia a chave CIFRADA desta conexão (mesma organização, mesma conta). */
     usar_chave_de: z.string().uuid().optional(),
   })
-  .refine((d) => Boolean(d.api_key) || Boolean(d.usar_chave_de), { path: ["api_key"] });
+  .refine((d) => Boolean(d.api_key) || Boolean(d.usar_chave_de), { path: ["api_key"] })
+  // "Adicionar" nunca grava por cima: pedir uma conexão existente E um número
+  // novo ao mesmo tempo é contraditório, e o pedido explícito venceria.
+  .refine((d) => !(d.novo && d.channel_session_id), { path: ["novo"] });
 
 const alvoDoPatchSchema = z.object({ channel_session_id: z.string().uuid().optional() });
 

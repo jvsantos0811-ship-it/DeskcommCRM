@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -284,6 +284,9 @@ function FormularioDoAtendimentoExterno({
 }) {
   const t = useT();
   const qc = useQueryClient();
+  // Com dois blocos na tela, um id fixo se repetiria e o rótulo do número 2
+  // focaria o campo do número 1 (PC-053).
+  const uid = useId();
   // Com dois números, toda escrita diz de qual deles é (PC-053).
   const alvo = estado ? { channel_session_id: estado.channel_session_id } : {};
 
@@ -402,9 +405,9 @@ function FormularioDoAtendimentoExterno({
 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ae-servidor">{t("Servidor da conta")}</Label>
+            <Label htmlFor={`${uid}-ae-servidor`}>{t("Servidor da conta")}</Label>
             <Input
-              id="ae-servidor"
+              id={`${uid}-ae-servidor`}
               value={servidor}
               onChange={(e) => setServidor(e.target.value)}
               placeholder="s7"
@@ -412,12 +415,12 @@ function FormularioDoAtendimentoExterno({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ae-conta">{t("ID da conta")}</Label>
-            <Input id="ae-conta" value={accountId} onChange={(e) => setAccountId(e.target.value)} autoComplete="off" />
+            <Label htmlFor={`${uid}-ae-conta`}>{t("ID da conta")}</Label>
+            <Input id={`${uid}-ae-conta`} value={accountId} onChange={(e) => setAccountId(e.target.value)} autoComplete="off" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ae-numero">{t("ID do número")}</Label>
-            <Input id="ae-numero" value={phoneId} onChange={(e) => setPhoneId(e.target.value)} autoComplete="off" />
+            <Label htmlFor={`${uid}-ae-numero`}>{t("ID do número")}</Label>
+            <Input id={`${uid}-ae-numero`} value={phoneId} onChange={(e) => setPhoneId(e.target.value)} autoComplete="off" />
           </div>
         </div>
         <p className="-mt-2 text-xs text-muted-foreground">
@@ -425,9 +428,9 @@ function FormularioDoAtendimentoExterno({
         </p>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="ae-chave">{t("Chave da API")}</Label>
+          <Label htmlFor={`${uid}-ae-chave`}>{t("Chave da API")}</Label>
           <Input
-            id="ae-chave"
+            id={`${uid}-ae-chave`}
             type="password"
             value={chave}
             onChange={(e) => setChave(e.target.value)}
@@ -483,9 +486,9 @@ function FormularioDoAtendimentoExterno({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="ae-transferencia">{t("ID do diálogo de transferência")}</Label>
+            <Label htmlFor={`${uid}-ae-transferencia`}>{t("ID do diálogo de transferência")}</Label>
             <Input
-              id="ae-transferencia"
+              id={`${uid}-ae-transferencia`}
               value={transferencia}
               onChange={(e) => setTransferencia(e.target.value)}
               autoComplete="off"
@@ -494,13 +497,13 @@ function FormularioDoAtendimentoExterno({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ae-campo">{t("Campo que liga a IA no chat")}</Label>
-              <Input id="ae-campo" value={campoNome} onChange={(e) => setCampoNome(e.target.value)} autoComplete="off" />
+              <Label htmlFor={`${uid}-ae-campo`}>{t("Campo que liga a IA no chat")}</Label>
+              <Input id={`${uid}-ae-campo`} value={campoNome} onChange={(e) => setCampoNome(e.target.value)} autoComplete="off" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ae-campo-valor">{t("Valor gravado ao passar para a equipe")}</Label>
+              <Label htmlFor={`${uid}-ae-campo-valor`}>{t("Valor gravado ao passar para a equipe")}</Label>
               <Input
-                id="ae-campo-valor"
+                id={`${uid}-ae-campo-valor`}
                 value={campoValor}
                 onChange={(e) => setCampoValor(e.target.value)}
                 placeholder={t("vazio desliga")}

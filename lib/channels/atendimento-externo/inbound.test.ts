@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Um corpo que diga ser de outro número, ou que traga dados de outra empresa,
  * não escolhe onde a mensagem é gravada.
  */
-const { ingest, phoneDaSessao, enquete } = vi.hoisted(() => ({
+const { ingest, phoneDaSessao, enquete, conexoesAtivas } = vi.hoisted(() => ({
+  conexoesAtivas: vi.fn(async (..._args: unknown[]) => 1),
   ingest: vi.fn(async (..._args: unknown[]) => ({ status: "ingested", messageId: "m-1", conversationId: "c-1" })),
   phoneDaSessao: vi.fn(async (..._args: unknown[]) => "fone-da-empresa-a" as string | null),
   enquete: vi.fn(async (..._args: unknown[]) => ({ status: "sem_enquete" }) as Record<string, unknown>),
@@ -19,6 +20,7 @@ vi.mock("./enquete", () => ({ tratarEnqueteDoPost: enquete }));
 vi.mock("./sessao", async (original) => ({
   ...((await original()) as Record<string, unknown>),
   phoneIdDaSessao: phoneDaSessao,
+  contarConexoesAtivas: conexoesAtivas,
 }));
 
 import {
@@ -47,6 +49,8 @@ beforeEach(() => {
   ingest.mockClear();
   phoneDaSessao.mockClear();
   enquete.mockClear();
+  conexoesAtivas.mockReset();
+  conexoesAtivas.mockResolvedValue(1);
 });
 
 describe("entrada do canal dentro da plataforma — segredo", () => {
@@ -109,6 +113,19 @@ describe("entrada do canal dentro da plataforma — isolamento entre organizaç�
     expect(deOutro).toBe(false);
     // A pergunta foi feita escopada pela organização da sessão.
     expect(phoneDaSessao).toHaveBeenCalledWith(admin, ORG_A, "sess-a");
+  });
+
+  it("PC-053: com DOIS números na empresa, corpo sem phone_id é recusado (não dá para saber de qual número é)", async () => {
+    conexoesAtivas.mockResolvedValue(2);
+    const ok = await inboundPayloadBelongsToSession(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: JSON.stringify({ celular: "5500900000001", texto_mensagem: "oi" }),
+      headers: new Headers(),
+      secret: SEGREDO_A,
+    });
+    expect(ok).toBe(false);
+    // A contagem foi feita escopada pela organização da sessão, nunca pelo corpo.
+    expect(conexoesAtivas).toHaveBeenCalledWith(admin, ORG_A);
   });
 
   it("corpo sem phone_id passa (o segredo já diz de quem é a entrega)", async () => {

@@ -114,7 +114,7 @@ export function sessoesAtivasDoAtendimento(sessoes: SessaoDoAtendimentoExterno[]
 
 /**
  * A conexão "principal": a mais antiga em uso; sem nenhuma em uso, a
- * desconectada mais recente (a que uma reconexão traria de volta).
+ * desconectada criada por último (a que uma reconexão traria de volta).
  *
  * Com uma linha só — o caso de toda organização até o PC-053 — devolve
  * exatamente essa linha, ativa ou não: quem tem um número vê o mesmo de antes.
@@ -126,12 +126,22 @@ export function principalDoAtendimento(sessoes: SessaoDoAtendimentoExterno[]): S
   return desconectadas[desconectadas.length - 1] ?? null;
 }
 
-/** A conexão principal da organização (ver `principalDoAtendimento`). */
-export async function buscarSessaoDoAtendimentoExterno(
-  admin: SupabaseClient,
-  organizationId: string,
-): Promise<SessaoDoAtendimentoExterno | null> {
-  return principalDoAtendimento(await listarSessoesDoAtendimentoExterno(admin, organizationId));
+/**
+ * Quantas conexões deste canal estão EM USO na organização — para a guarda da
+ * entrada (PC-053): com dois números, um corpo que não diga de qual número é
+ * não pode ser atribuído a nenhum dos dois.
+ *
+ * LANÇA quando a consulta falha: "não sei" não vira "aceito".
+ */
+export async function contarConexoesAtivas(admin: SupabaseClient, organizationId: string): Promise<number> {
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("provider", CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO)
+    .is("archived_at", null);
+  if (error) throw new Error(`chatguru_session_count_failed: ${error.message}`);
+  return Array.isArray(data) ? data.length : data ? 1 : 0;
 }
 
 /**
