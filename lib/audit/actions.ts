@@ -681,6 +681,13 @@ export const AUDIT_ACTIONS = [
   // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
   // enviou: a que varreu e não achou ninguém a avisar não é mutação.
   "agenda.lembrete_enviado",
+  /** PC-052 parte 3 — a rodada da sequência depois de marcar que mandou algo. */
+  "agenda.sequencia_enviada",
+  /** PC-052 parte 3 — os horários e textos da sequência de um tipo mudaram. */
+  "agenda.sequencia_alterada",
+  /** PC-052 parte 3 — o vídeo ou uma imagem do aquecimento entrou ou saiu. */
+  "agenda.midia_do_aquecimento_atualizada",
+  "agenda.midia_do_aquecimento_removida",
   // Fechar ou abrir um dia muda quem consegue marcar, e a pergunta que aparece
   // depois é sempre "quem fechou esse dia?". O bloqueio em si pode ser apagado
   // (é regra vigente, não fato histórico); estas linhas é que guardam a autoria.

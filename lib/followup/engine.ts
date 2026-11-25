@@ -109,6 +109,8 @@ export interface FollowupJobRequest {
      * da janela o canal recusa o texto livre e o passo não manda nada.
      */
     fallback_template_id?: string;
+    /** action (mode 'ai_message') — PC-052 parte 3b: o diálogo da conexão (T1..T5) fora da janela. */
+    fallback_roteiro?: string;
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
@@ -378,6 +380,7 @@ function turnPayloadExtras(
     return {
       prompt_hint: interpolarVolta(node.config.prompt_hint, events, contexto),
       ...(node.config.fallback_template_id ? { fallback_template_id: node.config.fallback_template_id } : {}),
+      ...(node.config.fallback_roteiro ? { fallback_roteiro: node.config.fallback_roteiro } : {}),
     };
   }
   if (node.type === "action" && node.config.mode === "text") {

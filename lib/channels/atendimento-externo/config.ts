@@ -21,6 +21,11 @@
  *  3. `acoes` — até quinze diálogos (PC-052) que a IA PODE executar durante o atendimento
  *     (etiquetar, mover de funil, mandar um modelo). A IA escolhe pela `chave`,
  *     nunca por um id livre: a lista é fechada pelo operador.
+ *  4. `roteiros_fora_da_janela` — PC-052 parte 3: o diálogo (com o modelo da Meta
+ *     da conta) que sai, POR USO, quando a janela de 24 h do cliente fechou e o
+ *     CRM não pode mandar texto livre: a confirmação da véspera, a do dia, o
+ *     lembrete e os passos do follow-up (T1..T5, parte 3b). Vazio = naquele uso,
+ *     fora da janela, nada sai (o de sempre).
  */
 import { z } from "zod";
 
@@ -35,6 +40,32 @@ const NOME_DE_CAMPO = /^[A-Za-z0-9_]{1,40}$/;
  * origem, assunto e desfecho — com 5 não cabiam nem as origens.
  */
 export const MAXIMO_DE_ACOES = 15;
+
+/**
+ * Os usos que podem sair por um diálogo da plataforma fora da janela de 24 h.
+ * A lista é FECHADA: quem envia pede pelo uso, nunca por um id de diálogo.
+ */
+export const USOS_FORA_DA_JANELA = [
+  "confirmacao_vespera",
+  "confirmacao_do_dia",
+  "lembrete",
+  // PC-052 parte 3b: os passos do follow-up que caem fora da janela (T1..T5 da
+  // cadência). O passo do fluxo escolhe QUAL deles; a conexão diz o diálogo.
+  "followup_1",
+  "followup_2",
+  "followup_3",
+  "followup_4",
+  "followup_5",
+] as const;
+export type UsoForaDaJanela = (typeof USOS_FORA_DA_JANELA)[number];
+
+const idOpcional = z
+  .string()
+  .trim()
+  .nullable()
+  .optional()
+  .transform((v) => (v == null || v === "" ? null : v))
+  .refine((v) => v === null || ID_DE_DIALOGO.test(v), { message: "Id de diálogo inválido." });
 
 const acaoSchema = z.object({
   nome: z.string().trim().min(2).max(60),
@@ -60,6 +91,18 @@ export const configDoAtendimentoExternoEntrada = z.object({
     .optional()
     .transform((v) => v ?? null),
   acoes: z.array(acaoSchema).max(MAXIMO_DE_ACOES).default([]),
+  roteiros_fora_da_janela: z
+    .object({
+      confirmacao_vespera: idOpcional,
+      confirmacao_do_dia: idOpcional,
+      lembrete: idOpcional,
+      followup_1: idOpcional,
+      followup_2: idOpcional,
+      followup_3: idOpcional,
+      followup_4: idOpcional,
+      followup_5: idOpcional,
+    })
+    .optional(),
 });
 
 export interface AcaoDoAtendimento {
@@ -74,12 +117,15 @@ export interface ConfigDoAtendimentoExterno {
   dialogoTransferencia: string | null;
   campoDaIa: { nome: string; valorAoPassar: string } | null;
   acoes: AcaoDoAtendimento[];
+  /** Diálogo por uso, fora da janela de 24 h. Uso ausente = nada sai fora dela. */
+  roteirosForaDaJanela: Partial<Record<UsoForaDaJanela, string>>;
 }
 
 export const CONFIG_VAZIA: ConfigDoAtendimentoExterno = Object.freeze({
   dialogoTransferencia: null,
   campoDaIa: null,
   acoes: [],
+  roteirosForaDaJanela: {},
 }) as ConfigDoAtendimentoExterno;
 
 /** `nome` → `chave`: minúsculas, sem acento, só `a-z0-9_`, nunca vazia. */
@@ -113,6 +159,11 @@ function comChavesUnicas(acoes: z.output<typeof acaoSchema>[]): AcaoDoAtendiment
 /** O que vai para o banco, a partir do que a tela mandou (já validado). */
 export function configParaGravar(
   entrada: z.output<typeof configDoAtendimentoExternoEntrada>,
+  /**
+   * O que está gravado hoje. Uma tela anterior a PC-052 parte 3 não manda
+   * `roteiros_fora_da_janela`, e salvar por ela não pode apagar os diálogos.
+   */
+  atual: ConfigDoAtendimentoExterno = CONFIG_VAZIA,
 ): Record<string, unknown> {
   return {
     dialogo_transferencia: entrada.dialogo_transferencia,
@@ -123,6 +174,14 @@ export function configParaGravar(
       dialogo_id: a.dialogoId,
       quando_usar: a.quandoUsar,
     })),
+    roteiros_fora_da_janela: Object.fromEntries(
+      USOS_FORA_DA_JANELA.map((uso) => [
+        uso,
+        entrada.roteiros_fora_da_janela !== undefined
+          ? (entrada.roteiros_fora_da_janela[uso] ?? null)
+          : (atual.roteirosForaDaJanela[uso] ?? null),
+      ]),
+    ),
   };
 }
 
@@ -143,7 +202,21 @@ const gravadoSchema = z.object({
     )
     .max(MAXIMO_DE_ACOES)
     .optional(),
+  // Lido à parte, uso a uso (ver `lerRoteiros`): um id ilegível derruba só o seu
+  // uso, nunca as ações e a passagem que já funcionavam.
+  roteiros_fora_da_janela: z.unknown().optional(),
 });
+
+function lerRoteiros(raw: unknown): Partial<Record<UsoForaDaJanela, string>> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const r = raw as Record<string, unknown>;
+  const lidos: Partial<Record<UsoForaDaJanela, string>> = {};
+  for (const uso of USOS_FORA_DA_JANELA) {
+    const v = r[uso];
+    if (typeof v === "string" && ID_DE_DIALOGO.test(v)) lidos[uso] = v;
+  }
+  return lidos;
+}
 
 /**
  * Lê o que está gravado. NUNCA lança: configuração ilegível vira "nada
@@ -164,5 +237,6 @@ export function lerConfigDoAtendimentoExterno(raw: unknown): ConfigDoAtendimento
       dialogoId: a.dialogo_id,
       quandoUsar: a.quando_usar,
     })),
+    roteirosForaDaJanela: lerRoteiros(c.roteiros_fora_da_janela),
   };
 }

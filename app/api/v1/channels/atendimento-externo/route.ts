@@ -44,6 +44,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   configDoAtendimentoExternoEntrada,
   configParaGravar,
+  USOS_FORA_DA_JANELA,
 } from "@/lib/channels/atendimento-externo/config";
 import {
   ATENDIMENTO_EXTERNO_LABEL,
@@ -132,6 +133,10 @@ async function estadoDaConexao(
         dialogo_id: a.dialogoId,
         quando_usar: a.quandoUsar,
       })),
+      // PC-052 parte 3: diálogo por uso, fora da janela de 24 h — por número.
+      roteiros_fora_da_janela: Object.fromEntries(
+        USOS_FORA_DA_JANELA.map((uso) => [uso, sessao.config.roteirosForaDaJanela[uso] ?? null]),
+      ),
     },
   };
 }
@@ -365,7 +370,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return ok({ segredo_trocado: true }, { requestId });
   }
 
-  const config = configParaGravar(parsed.data.config);
+  // A conexão atual entra para uma tela antiga não apagar os roteiros (PC-052 parte 3).
+  const config = configParaGravar(parsed.data.config, sessao.config);
   const { error } = await salvarConfigDoAtendimentoExterno(admin, {
     organizationId: orgId,
     channelSessionId: sessao.id,
@@ -385,6 +391,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       acoes: Array.isArray(config.acoes) ? config.acoes.length : 0,
       transferencia: config.dialogo_transferencia !== null,
       campo_da_ia: config.campo_da_ia !== null,
+      roteiros_fora_da_janela: Object.values(
+        (config.roteiros_fora_da_janela ?? {}) as Record<string, string | null>,
+      ).filter((v) => v !== null).length,
     },
   });
   return ok({ salvo: true }, { requestId });

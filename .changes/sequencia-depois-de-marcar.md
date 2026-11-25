@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Sequência depois de marcar, vídeo de apresentação e modelo do ChatGuru fora da janela de 24 horas
+---
+Em Configurações › Agenda entrou a seção "Depois de marcar". Cada tipo de atendimento pode ligar dois envios automáticos. O primeiro manda o vídeo e as imagens da organização na noite do dia em que a reunião foi marcada, às 19h por padrão; se a reunião for no mesmo dia, sai logo depois de marcar. O segundo é a confirmação em hora fixa: reunião antes do meio-dia é confirmada na véspera às 17h, e reunião ao meio-dia ou depois, no próprio dia às 8h30. Quando a véspera cai num dia em que o número não envia, a confirmação recua para o último dia com envio. Horários e textos são editáveis. Na mesma tela dá para enviar um vídeo MP4 de até 16 MB e até três imagens JPG ou PNG. Nada sai fora da janela de envio do número, nem para quem pediu para parar. A sequência também para se a reunião for cancelada ou se o cliente disser que não vai, e a confirmação volta a valer para o horário novo quando a reunião é remarcada. Na tela da conexão do ChatGuru, a nova área "Fora da janela de 24 horas" permite escolher o diálogo que sai na confirmação da véspera, na do dia e no lembrete quando o cliente não escreve há mais de 24 horas. Com tudo desligado, nada muda.

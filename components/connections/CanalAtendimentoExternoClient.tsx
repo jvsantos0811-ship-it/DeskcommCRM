@@ -67,8 +67,22 @@ interface Conexao {
     dialogo_transferencia: string | null;
     campo_da_ia: { nome: string; valor_ao_passar: string } | null;
     acoes: (Acao & { chave: string })[];
+    /** PC-052 parte 3: diálogo por uso, fora da janela de 24 h. */
+    roteiros_fora_da_janela?: Partial<Record<UsoForaDaJanela, string | null>>;
   } | null;
 }
+
+type UsoForaDaJanela =
+  | "confirmacao_vespera"
+  | "confirmacao_do_dia"
+  | "lembrete"
+  | "followup_1"
+  | "followup_2"
+  | "followup_3"
+  | "followup_4"
+  | "followup_5";
+
+const FOLLOWUPS = ["followup_1", "followup_2", "followup_3", "followup_4", "followup_5"] as const;
 
 interface Estado {
   label: string;
@@ -300,6 +314,16 @@ function FormularioDoAtendimentoExterno({
   const [acoes, setAcoes] = useState<Acao[]>(() =>
     (estado?.config?.acoes ?? []).map(({ nome, dialogo_id, quando_usar }) => ({ nome, dialogo_id, quando_usar })),
   );
+  const [roteiros, setRoteiros] = useState<Record<UsoForaDaJanela, string>>(() => ({
+    confirmacao_vespera: estado?.config?.roteiros_fora_da_janela?.confirmacao_vespera ?? "",
+    confirmacao_do_dia: estado?.config?.roteiros_fora_da_janela?.confirmacao_do_dia ?? "",
+    lembrete: estado?.config?.roteiros_fora_da_janela?.lembrete ?? "",
+    followup_1: estado?.config?.roteiros_fora_da_janela?.followup_1 ?? "",
+    followup_2: estado?.config?.roteiros_fora_da_janela?.followup_2 ?? "",
+    followup_3: estado?.config?.roteiros_fora_da_janela?.followup_3 ?? "",
+    followup_4: estado?.config?.roteiros_fora_da_janela?.followup_4 ?? "",
+    followup_5: estado?.config?.roteiros_fora_da_janela?.followup_5 ?? "",
+  }));
   const [salvando, setSalvando] = useState<"conta" | "config" | "segredo" | null>(null);
 
   const recarregar = () => qc.invalidateQueries({ queryKey: CHAVE_DA_CONSULTA });
@@ -331,6 +355,16 @@ function FormularioDoAtendimentoExterno({
           dialogo_transferencia: transferencia.trim() || null,
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
           acoes: acoes.filter((a) => a.nome.trim() || a.dialogo_id.trim() || a.quando_usar.trim()),
+          roteiros_fora_da_janela: {
+            confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
+            confirmacao_do_dia: roteiros.confirmacao_do_dia.trim() || null,
+            lembrete: roteiros.lembrete.trim() || null,
+            followup_1: roteiros.followup_1.trim() || null,
+            followup_2: roteiros.followup_2.trim() || null,
+            followup_3: roteiros.followup_3.trim() || null,
+            followup_4: roteiros.followup_4.trim() || null,
+            followup_5: roteiros.followup_5.trim() || null,
+          },
         },
       });
       toast.success(t("Configuração salva."));
@@ -561,6 +595,73 @@ function FormularioDoAtendimentoExterno({
                 </Button>
               </div>
             )}
+          </div>
+
+          <div className="flex flex-col gap-2" data-testid="roteiros-fora-da-janela">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("Fora da janela de 24 horas")}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Opcional. Quando o cliente não escreve há mais de 24 horas, o CRM não pode mandar texto livre: no lugar, executa o diálogo escolhido aqui, que manda o modelo aprovado da conta. Vazio = naquele caso nada sai.",
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "O modelo do diálogo é fixo: não escreva \"amanhã\" no da véspera (quando a véspera cai num dia sem envio, ele sai antes), e lembre que o mesmo diálogo do lembrete sai em cada aviso do tipo de atendimento.",
+              )}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${uid}-ae-roteiro-vespera`}>{t("Confirmação da véspera")}</Label>
+                <Input
+                  id={`${uid}-ae-roteiro-vespera`}
+                  value={roteiros.confirmacao_vespera}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, confirmacao_vespera: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${uid}-ae-roteiro-dia`}>{t("Confirmação do dia")}</Label>
+                <Input
+                  id={`${uid}-ae-roteiro-dia`}
+                  value={roteiros.confirmacao_do_dia}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, confirmacao_do_dia: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${uid}-ae-roteiro-lembrete`}>{t("Lembrete do compromisso")}</Label>
+                <Input
+                  id={`${uid}-ae-roteiro-lembrete`}
+                  value={roteiros.lembrete}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, lembrete: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t("Follow-up: o passo do fluxo escolhe qual destes diálogos sai quando a janela fechou.")}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-5">
+              {FOLLOWUPS.map((uso, i) => (
+                <div key={uso} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`${uid}-ae-roteiro-${uso}`}>
+                    {t("Follow-up")} {i + 1}
+                  </Label>
+                  <Input
+                    id={`${uid}-ae-roteiro-${uso}`}
+                    value={roteiros[uso]}
+                    onChange={(e) => setRoteiros((r) => ({ ...r, [uso]: e.target.value }))}
+                    placeholder={t("ID do diálogo")}
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           <div>
