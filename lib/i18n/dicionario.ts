@@ -14934,8 +14934,8 @@ export const DICIONARIO: Traducoes = {
   "Usar um modelo de título e de descrição": { es: "Usar un modelo de título y de descripción" },
   "Desligado, o compromisso nasce com o título de quem marcou (ou o nome do tipo de atendimento), como sempre. Ligado, todo compromisso marcado pela IA ou pela equipe segue o modelo abaixo.":
     { es: "Desactivado, la cita nace con el título de quien la agendó (o el nombre del tipo de atención), como siempre. Activado, toda cita agendada por la IA o por el equipo sigue el modelo de abajo." },
-  "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.":
-    { es: "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (los 4 últimos dígitos) y {etapa}." },
+  "Campos: {tipo}, {primeiro_nome}, {dois_nomes} (primeiro e segundo nome), {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.":
+    { es: "Campos: {tipo}, {primeiro_nome}, {dois_nomes} (primer y segundo nombre), {nome_completo}, {telefone}, {final_telefone} (los 4 últimos dígitos) y {etapa}." },
   "Exemplo:": { es: "Ejemplo:" },
   "Modelo da Meta para lembrete fora das 24 h (número oficial)": { es: "Plantilla de Meta para el recordatorio fuera de las 24 h (número oficial)" },
   "Idioma do modelo": { es: "Idioma de la plantilla" },

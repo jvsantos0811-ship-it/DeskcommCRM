@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  doisNomes,
   lerModeloDoEvento,
   montarDescricao,
   montarTitulo,
@@ -51,6 +52,36 @@ describe("montarTitulo", () => {
     expect(montarTitulo("{nome_completo} – {telefone}", DADOS)).toBe(
       "Maria da Silva Souza – +5531987654321",
     );
+  });
+
+  it("dois nomes no padrão da agenda do escritório (PC-052)", () => {
+    expect(montarTitulo("{dois_nomes} - {final_telefone} - REPARADORA", DADOS)).toBe(
+      "Maria da Silva - 4321 - REPARADORA",
+    );
+    expect(
+      montarTitulo("{dois_nomes} - {final_telefone} - REPARADORA", { ...DADOS, nomeDoContato: "Ana Clara Souza" }),
+    ).toBe("Ana Clara - 4321 - REPARADORA");
+    // Sem nome: o campo some e o separador que sobraria também.
+    expect(
+      montarTitulo("{dois_nomes} - {final_telefone} - REPARADORA", { ...DADOS, nomeDoContato: null }),
+    ).toBe("4321 - REPARADORA");
+  });
+
+  it("doisNomes: a partícula entre os nomes não conta como nome", () => {
+    expect(doisNomes("Ana")).toBe("Ana");
+    expect(doisNomes("Ana Souza")).toBe("Ana Souza");
+    expect(doisNomes("Ana Clara Souza")).toBe("Ana Clara");
+    expect(doisNomes("Ana  Clara\tSouza")).toBe("Ana Clara");
+    // Espanhol e holandês: a tela também é usada em espanhol.
+    expect(doisNomes("Lucía de la Cruz López")).toBe("Lucía de la Cruz");
+    expect(doisNomes("Lucía de los Ríos García")).toBe("Lucía de los Ríos");
+    expect(doisNomes("Juan y Pérez Gómez")).toBe("Juan y Pérez");
+    expect(doisNomes("Ana Van Der Berg")).toBe("Ana Van Der Berg");
+    expect(doisNomes("Maria da Silva Santos")).toBe("Maria da Silva");
+    expect(doisNomes("João dos Santos")).toBe("João dos Santos");
+    expect(doisNomes("Pedro De Souza Lima")).toBe("Pedro De Souza");
+    expect(doisNomes("Maria da")).toBe("Maria da");
+    expect(doisNomes("")).toBe("");
   });
 
   it("campo sem valor some junto com o separador que sobraria", () => {
