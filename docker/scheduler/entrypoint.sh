@@ -92,6 +92,10 @@ CRONS="
 # antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
 # confirmado, futuro e ainda não avisado.
 */5 * * * *|45|api/v1/cron/agenda-reminder
+# A SEQUÊNCIA DEPOIS DE MARCAR (PC-052): vídeo e imagens na noite da marcação e
+# a confirmação em hora fixa. A cada 5 minutos porque a hora é do relógio do
+# escritório (17h, 8h30). Barato: só tipo com a sequência ligada.
+*/5 * * * *|60|api/v1/cron/agenda-sequencia
 # O LEMBRETE DE TAREFA. A cada 5 minutos porque a antecedência é escolhida
 # pela PESSOA (15 min, 1 h que é o padrão, ou 1 dia): uma varredura mais lenta
 # transformaria avisar 15 minutos antes em avisar até 20. Barato: só tarefa

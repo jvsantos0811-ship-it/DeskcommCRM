@@ -146,6 +146,7 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolverRemetenteDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
+import { enviarRoteiroForaDaJanela } from "@/lib/channels/roteiro-fora-da-janela";
 import { atualizarAvisoDeRemetente } from "@/lib/agenda/aviso-de-remetente";
 import { moldeDoDegrau } from "@/lib/agenda/lembretes";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -705,6 +706,8 @@ async function handle(req: NextRequest): Promise<Response> {
       agora,
       // PC-045: com modelo da Meta no tipo, o número oficial fora da janela serve.
       !!tipo.reminder_meta_template_name,
+      // PC-052: e a conexão com diálogo escolhido para o lembrete também.
+      "lembrete",
     );
     await atualizarAvisoDeRemetente(admin, org, linha.id, escolha.motivo);
     if (!escolha.canal) {
@@ -793,6 +796,26 @@ async function handle(req: NextRequest): Promise<Response> {
     try {
       await espacarEnvio(canal.id);
       const conversaId = await ensureConversation(admin, org, contato.id, canal.id);
+      // PC-052: fora da janela, pela conexão que fala por DIÁLOGO da plataforma.
+      // O degrau já está carimbado: a recusa vira motivo, nunca reenvio.
+      if (escolha.foraDaJanela && escolha.via === "roteiro") {
+        const roteiro = await enviarRoteiroForaDaJanela(admin, {
+          organizationId: org,
+          channelSessionId: canal.id,
+          conversationId: conversaId,
+          uso: "lembrete",
+        });
+        if (roteiro.ok) enviados += 1;
+        else {
+          logger.warn("[agenda-reminder] diálogo fora da janela não saiu", {
+            appointmentId: linha.id,
+            motivo: roteiro.motivo,
+            requestId,
+          });
+          pular(`roteiro_${roteiro.motivo}`);
+        }
+        continue;
+      }
       // `webhook_source` é o ator que esta base dá a envio nascido de worker —
       // o mesmo que `lib/followup/enviar-texto-fixo.ts` usa. O `id` é
       // o compromisso, para o audit da mensagem correlacionar com a linha que a

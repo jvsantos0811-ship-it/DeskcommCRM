@@ -60,8 +60,12 @@ interface Estado {
     dialogo_transferencia: string | null;
     campo_da_ia: { nome: string; valor_ao_passar: string } | null;
     acoes: (Acao & { chave: string })[];
+    /** PC-052 parte 3: diálogo por uso, fora da janela de 24 h. */
+    roteiros_fora_da_janela?: Partial<Record<UsoForaDaJanela, string | null>>;
   } | null;
 }
+
+type UsoForaDaJanela = "confirmacao_vespera" | "confirmacao_do_dia" | "lembrete";
 
 // Espelha `MAXIMO_DE_ACOES` de `lib/channels/atendimento-externo/config.ts` (PC-052).
 const MAXIMO_DE_ACOES = 15;
@@ -114,6 +118,11 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
   const [acoes, setAcoes] = useState<Acao[]>(() =>
     (estado?.config?.acoes ?? []).map(({ nome, dialogo_id, quando_usar }) => ({ nome, dialogo_id, quando_usar })),
   );
+  const [roteiros, setRoteiros] = useState<Record<UsoForaDaJanela, string>>(() => ({
+    confirmacao_vespera: estado?.config?.roteiros_fora_da_janela?.confirmacao_vespera ?? "",
+    confirmacao_do_dia: estado?.config?.roteiros_fora_da_janela?.confirmacao_do_dia ?? "",
+    lembrete: estado?.config?.roteiros_fora_da_janela?.lembrete ?? "",
+  }));
   const [salvando, setSalvando] = useState<"conta" | "config" | "segredo" | null>(null);
 
   const recarregar = () => qc.invalidateQueries({ queryKey: CHAVE_DA_CONSULTA });
@@ -145,6 +154,11 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
           dialogo_transferencia: transferencia.trim() || null,
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
           acoes: acoes.filter((a) => a.nome.trim() || a.dialogo_id.trim() || a.quando_usar.trim()),
+          roteiros_fora_da_janela: {
+            confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
+            confirmacao_do_dia: roteiros.confirmacao_do_dia.trim() || null,
+            lembrete: roteiros.lembrete.trim() || null,
+          },
         },
       });
       toast.success(t("Configuração salva."));
@@ -367,6 +381,54 @@ function FormularioDoAtendimentoExterno({ estado }: { estado: Estado | null }) {
                 </Button>
               </div>
             )}
+          </div>
+
+          <div className="flex flex-col gap-2" data-testid="roteiros-fora-da-janela">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("Fora da janela de 24 horas")}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Opcional. Quando o cliente não escreve há mais de 24 horas, o CRM não pode mandar texto livre: no lugar, executa o diálogo escolhido aqui, que manda o modelo aprovado da conta. Vazio = naquele caso nada sai.",
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "O modelo do diálogo é fixo: não escreva \"amanhã\" no da véspera (quando a véspera cai num dia sem envio, ele sai antes), e lembre que o mesmo diálogo do lembrete sai em cada aviso do tipo de atendimento.",
+              )}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ae-roteiro-vespera">{t("Confirmação da véspera")}</Label>
+                <Input
+                  id="ae-roteiro-vespera"
+                  value={roteiros.confirmacao_vespera}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, confirmacao_vespera: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ae-roteiro-dia">{t("Confirmação do dia")}</Label>
+                <Input
+                  id="ae-roteiro-dia"
+                  value={roteiros.confirmacao_do_dia}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, confirmacao_do_dia: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ae-roteiro-lembrete">{t("Lembrete do compromisso")}</Label>
+                <Input
+                  id="ae-roteiro-lembrete"
+                  value={roteiros.lembrete}
+                  onChange={(e) => setRoteiros((r) => ({ ...r, lembrete: e.target.value }))}
+                  placeholder={t("ID do diálogo")}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
           </div>
 
           <div>

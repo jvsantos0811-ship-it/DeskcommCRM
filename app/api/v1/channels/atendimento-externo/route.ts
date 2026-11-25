@@ -32,6 +32,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   configDoAtendimentoExternoEntrada,
   configParaGravar,
+  USOS_FORA_DA_JANELA,
 } from "@/lib/channels/atendimento-externo/config";
 import {
   ATENDIMENTO_EXTERNO_LABEL,
@@ -109,6 +110,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
               dialogo_id: a.dialogoId,
               quando_usar: a.quandoUsar,
             })),
+            roteiros_fora_da_janela: Object.fromEntries(
+              USOS_FORA_DA_JANELA.map((uso) => [uso, ativa.config.roteirosForaDaJanela[uso] ?? null]),
+            ),
           }
         : null,
     },
@@ -242,7 +246,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return ok({ segredo_trocado: true }, { requestId });
   }
 
-  const config = configParaGravar(parsed.data.config);
+  const config = configParaGravar(parsed.data.config, sessao.config);
   const { error } = await salvarConfigDoAtendimentoExterno(admin, {
     organizationId: orgId,
     channelSessionId: sessao.id,
@@ -262,6 +266,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       acoes: Array.isArray(config.acoes) ? config.acoes.length : 0,
       transferencia: config.dialogo_transferencia !== null,
       campo_da_ia: config.campo_da_ia !== null,
+      roteiros_fora_da_janela: Object.values(
+        (config.roteiros_fora_da_janela ?? {}) as Record<string, string | null>,
+      ).filter((v) => v !== null).length,
     },
   });
   return ok({ salvo: true }, { requestId });

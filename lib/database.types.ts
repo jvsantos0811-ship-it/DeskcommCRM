@@ -3327,6 +3327,8 @@ export type Database = {
           id: string
           lead_presence: string | null
           lead_presence_painted: string | null
+          confirmation_sent_for: string | null
+          warmup_sent_at: string | null
           location_details: string | null
           location_kind: string
           meeting_url: string | null
@@ -3396,6 +3398,8 @@ export type Database = {
           id?: string
           lead_presence?: string | null
           lead_presence_painted?: string | null
+          confirmation_sent_for?: string | null
+          warmup_sent_at?: string | null
           location_details?: string | null
           location_kind?: string
           meeting_url?: string | null
@@ -3465,6 +3469,8 @@ export type Database = {
           id?: string
           lead_presence?: string | null
           lead_presence_painted?: string | null
+          confirmation_sent_for?: string | null
+          warmup_sent_at?: string | null
           location_details?: string | null
           location_kind?: string
           meeting_url?: string | null
@@ -3760,6 +3766,8 @@ export type Database = {
           duration_minutes: number
           id: string
           lead_presence_enabled: boolean
+          post_booking_sequence: Json
+          post_booking_sequence_enabled: boolean
           is_active: boolean
           location_details: string | null
           location_kind: string
@@ -3794,6 +3802,8 @@ export type Database = {
           duration_minutes?: number
           id?: string
           lead_presence_enabled?: boolean
+          post_booking_sequence?: Json
+          post_booking_sequence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string
@@ -3828,6 +3838,8 @@ export type Database = {
           duration_minutes?: number
           id?: string
           lead_presence_enabled?: boolean
+          post_booking_sequence?: Json
+          post_booking_sequence_enabled?: boolean
           is_active?: boolean
           location_details?: string | null
           location_kind?: string
