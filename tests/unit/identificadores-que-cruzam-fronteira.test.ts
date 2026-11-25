@@ -99,6 +99,10 @@ const FRONTEIRAS: Fronteira[] = [
         nomeDoArquivoParaOCliente("Procuração “ad judicia” — Ação nº 12/2026 & substabelecimento"),
       ).split("/"),
       ...caminhoDoAssinado(ORG, ORG).split("/"),
+      // PC-052 parte 3: os nomes da mídia do aquecimento (`app/api/v1/agenda/midia`).
+      `video-${VERSAO}.mp4`,
+      `imagem-${VERSAO}.jpg`,
+      `imagem-${VERSAO}.png`,
     ],
   },
   {
@@ -217,6 +221,10 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "lib/contratos/gerar-do-modelo.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "lib/contratos/acompanhar.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/contracts/[id]/decide/route.ts", fronteira: "storage.chave-de-objeto" },
+  // PC-052 parte 3 (fork, 9043): a mídia do aquecimento em `agenda-media`, chave
+  // `<org>/<video|imagem>-<uuid>.<mp4|jpg|png>` — uuid, palavra fixa e extensão
+  // tirada do tipo farejado nos bytes, nunca do nome que a pessoa mandou.
+  { arquivo: "app/api/v1/agenda/midia/route.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },

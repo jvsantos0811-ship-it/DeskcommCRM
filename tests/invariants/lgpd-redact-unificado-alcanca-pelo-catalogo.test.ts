@@ -391,6 +391,15 @@ const DECISOES: Record<string, Decisao> = {
     decidida: "manter",
     razao: "token/utm/query de aterrissagem da Meta, mesmo motivo do gclid: identificador de campanha que só serve enquanto existir — apagar desfaz a atribuição sem proteger texto de ninguém.",
   },
+  enquetes_votos: {
+    decidida: "manter",
+    razao:
+      "9041 (fork, PC-050): o voto do contato numa enquete do grupo — a enquete e o VALOR da " +
+      "opção cadastrada pelo escritório (vocabulário fechado da própria enquete, nunca texto da " +
+      "pessoa), e se a opção pede contato. A tela obriga opções neutras (todo o grupo vê o " +
+      "voto), então não há dado sensível; é contexto do atendimento, legível sem identificar a " +
+      "pessoa além do próprio contato, que já está anonimizado.",
+  },
   send_ledger: {
     decidida: "manter",
     razao: "body_hash é IRREVERSÍVEL (a própria doutrina do invariante irmão manda `_hash` ficar de fora) e last_error/status são código; é a prova de que a mensagem saiu, sem guardar o que ela dizia.",
