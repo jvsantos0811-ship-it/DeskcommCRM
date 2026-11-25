@@ -39,6 +39,7 @@ import { z } from "zod";
 export const CAMPOS_DO_TITULO = [
   "tipo",
   "primeiro_nome",
+  "dois_nomes",
   "nome_completo",
   "telefone",
   "final_telefone",
@@ -100,6 +101,22 @@ function digitos(v: string | null | undefined): string {
   return (v ?? "").replace(/\D/g, "");
 }
 
+/** Ligações do nome que não contam como nome ("Maria da Silva" = dois nomes). */
+const PARTICULAS = new Set(["da", "das", "de", "di", "do", "dos", "du", "e", "del", "della", "van", "von"]);
+
+/**
+ * PC-052 (Samantha, 25/11) — o primeiro e o segundo nome, como o escritório
+ * escreve na agenda: "Laura Beatriz Martins" vira "Laura Beatriz". A partícula
+ * entre os dois não conta como nome: "Maria da Silva Santos" vira
+ * "Maria da Silva", nunca "Maria da". Nome de uma palavra só fica como está.
+ */
+export function doisNomes(nomeCompleto: string): string {
+  const partes = nomeCompleto.split(" ").filter(Boolean);
+  if (partes.length <= 2) return partes.join(" ");
+  const fim = partes.findIndex((p, i) => i > 0 && !PARTICULAS.has(p.toLowerCase()));
+  return fim === -1 ? partes.join(" ") : partes.slice(0, fim + 1).join(" ");
+}
+
 function valorDoCampo(campo: CampoDoTitulo, d: DadosDoEvento): string {
   const nome = limpo(d.nomeDoContato);
   switch (campo) {
@@ -109,6 +126,8 @@ function valorDoCampo(campo: CampoDoTitulo, d: DadosDoEvento): string {
       return nome;
     case "primeiro_nome":
       return nome.split(" ")[0] ?? "";
+    case "dois_nomes":
+      return doisNomes(nome);
     case "telefone": {
       const t = digitos(d.telefone);
       return t ? `+${t}` : "";

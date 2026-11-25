@@ -154,7 +154,7 @@ export function ModeloDoEventoNaAgenda({
           />
           <p className="text-xs text-text-muted">
             {t(
-              "Campos: {tipo}, {primeiro_nome}, {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.",
+              "Campos: {tipo}, {primeiro_nome}, {dois_nomes} (primeiro e segundo nome), {nome_completo}, {telefone}, {final_telefone} (os 4 últimos dígitos) e {etapa}.",
             )}
           </p>
           <p className="text-xs text-text-muted" data-testid="modelo-do-evento-convidado">
