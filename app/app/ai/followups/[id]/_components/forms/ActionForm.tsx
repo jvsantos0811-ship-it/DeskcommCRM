@@ -149,7 +149,7 @@ export function ActionForm({
   const [fallbackTemplateId, setFallbackTemplateId] = useState(
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
   );
-  // PC-052 parte 3b — no canal que atende dentro do ChatGuru, o plano B é o
+  // PC-052 parte 3b — no canal que atende dentro de outra plataforma, o plano B é o
   // diálogo que a CONEXÃO escolheu para este passo (T1..T5).
   const [fallbackRoteiro, setFallbackRoteiro] = useState<string>(
     config.mode === "ai_message" ? (config.fallback_roteiro ?? "") : "",
@@ -286,7 +286,7 @@ export function ActionForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="action-fallback-roteiro">
-              {t("No ChatGuru, com a janela de 24 horas fechada, executar o diálogo da conexão")}
+              {t("Na plataforma de atendimento externa, com a janela de 24 horas fechada, executar o diálogo da conexão")}
             </Label>
             <select
               id="action-fallback-roteiro"
@@ -306,7 +306,7 @@ export function ActionForm({
             </select>
             <p className="text-xs text-text-muted">
               {t(
-                "Vale só quando o passo não tem modelo aprovado. O diálogo de cada número é escolhido em Conexões › ChatGuru › Fora da janela de 24 horas.",
+                "Vale só quando o passo não tem modelo aprovado. O diálogo de cada número é escolhido na tela da conexão da plataforma de atendimento, em Fora da janela de 24 horas.",
               )}
             </p>
           </div>

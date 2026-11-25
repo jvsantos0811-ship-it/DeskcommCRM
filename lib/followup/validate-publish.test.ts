@@ -3,7 +3,14 @@ import { algumCanalExigeModeloForaDaJanela, CONTA_NO_TETO, custoNoMotorDoFluxo, 
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
 import { idsDeEtapaCitados } from './etapas-citadas';
 import { flowGraphSchema, NODE_TYPES, type FlowGraph, type FlowNode, type FlowEdge } from './graph-schema';
-import { CHANNEL_CAPABILITIES, PROVIDERS_DE_MENSAGEM, PROVIDERS_SEM_MENSAGEM } from '../channels/capabilities';
+import {
+  CHANNEL_CAPABILITIES,
+  CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO as EXTERNO,
+  CHANNEL_PROVIDER_META,
+  DEFAULT_CHANNEL_PROVIDER as CANAL_POR_QR,
+  PROVIDERS_DE_MENSAGEM,
+  PROVIDERS_SEM_MENSAGEM,
+} from '../channels/capabilities';
 
 const pos = { x: 0, y: 0 };
 const TEMPLATE_ID = '00000000-0000-4000-8000-000000000000';
@@ -211,10 +218,10 @@ describe('validateFlowForPublish', () => {
   });
 
   it('roteiroBastaForaDaJanela: só a plataforma que fala por diálogo, sozinha, basta', () => {
-    expect(roteiroBastaForaDaJanela(['chatguru'])).toBe(true);
-    expect(roteiroBastaForaDaJanela(['chatguru', 'waha'])).toBe(true); // o QR não tem janela
-    expect(roteiroBastaForaDaJanela(['chatguru', 'meta_cloud'])).toBe(false);
-    expect(roteiroBastaForaDaJanela(['meta_cloud'])).toBe(false);
+    expect(roteiroBastaForaDaJanela([EXTERNO])).toBe(true);
+    expect(roteiroBastaForaDaJanela([EXTERNO, CANAL_POR_QR])).toBe(true); // o QR não tem janela
+    expect(roteiroBastaForaDaJanela([EXTERNO, CHANNEL_PROVIDER_META])).toBe(false);
+    expect(roteiroBastaForaDaJanela([CHANNEL_PROVIDER_META])).toBe(false);
     expect(roteiroBastaForaDaJanela([])).toBe(false);
   });
 

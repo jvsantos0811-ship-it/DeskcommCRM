@@ -262,7 +262,7 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     fallback_template_id: z.string().uuid().optional(),
     /**
      * PC-052 parte 3b — o plano B no canal que atende DENTRO de outra plataforma
-     * (o ChatGuru): com a janela de 24 h fechada, executa o diálogo que a CONEXÃO
+     * (a plataforma de atendimento externa): com a janela de 24 h fechada, executa o diálogo que a CONEXÃO
      * escolheu para este passo (T1..T5). O passo diz qual; a conexão diz o diálogo.
      */
     fallback_roteiro: z.enum(['followup_1', 'followup_2', 'followup_3', 'followup_4', 'followup_5']).optional(),

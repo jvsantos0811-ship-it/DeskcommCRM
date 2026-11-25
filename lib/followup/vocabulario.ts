@@ -628,7 +628,7 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
 };
 
 /**
- * PC-052 parte 3b — qual diálogo da CONEXÃO (ChatGuru) o passo de IA executa com
+ * PC-052 parte 3b — qual diálogo da CONEXÃO (plataforma de atendimento externa) o passo de IA executa com
  * a janela de 24 h fechada (`fallback_roteiro`). O diálogo em si é escolhido na
  * tela da conexão; o passo só aponta o número.
  */
