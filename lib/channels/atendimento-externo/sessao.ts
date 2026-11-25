@@ -39,10 +39,27 @@ export interface SessaoDoAtendimentoExterno {
   segredoCifrado: string | null;
   config: ConfigDoAtendimentoExterno;
   archivedAt: string | null;
+  createdAt: string | null;
+  /**
+   * A chave da API, CIFRADA. Só existe para "usar a mesma chave" ao adicionar o
+   * segundo número da mesma conta (PC-053): copia-se o valor cifrado, sem
+   * decifrar. Nunca vai para a tela nem para um GET.
+   */
+  chaveCifrada: string | null;
 }
 
 const COLUNAS =
-  "id, chatguru_servidor, chatguru_account_id, chatguru_phone_id, chatguru_api_key_encrypted, chatguru_config, display_name, status, webhook_path_token, webhook_secret_encrypted, archived_at";
+  "id, chatguru_servidor, chatguru_account_id, chatguru_phone_id, chatguru_api_key_encrypted, chatguru_config, display_name, status, webhook_path_token, webhook_secret_encrypted, archived_at, created_at";
+
+/**
+ * Quantos números ATIVOS uma organização pode ter neste canal (PC-053).
+ *
+ * Dois: o caso que existe é o escritório com o número oficial (anúncios e
+ * modelos da Meta) e o número por QR (grupos e enquete), a IA atendendo nos
+ * dois (João, 25/11/2026). O limite de canais do PLANO continua valendo por
+ * cima deste — quem recusa é o gatilho do plano, e a rota traduz a recusa.
+ */
+export const MAXIMO_DE_NUMEROS = 2;
 
 function paraSessao(row: Record<string, unknown> | null): SessaoDoAtendimentoExterno | null {
   if (!row) return null;
@@ -58,30 +75,153 @@ function paraSessao(row: Record<string, unknown> | null): SessaoDoAtendimentoExt
     segredoCifrado: (row.webhook_secret_encrypted as string) ?? null,
     config: lerConfigDoAtendimentoExterno(row.chatguru_config),
     archivedAt: (row.archived_at as string) ?? null,
+    createdAt: (row.created_at as string) ?? null,
+    chaveCifrada: (row.chatguru_api_key_encrypted as string) ?? null,
   };
 }
 
 /**
- * A conexão deste canal na organização — a ATIVA primeiro. Reconectar por cima
- * de uma arquivada traz a linha de volta, não cria outra ao lado dela.
+ * TODAS as conexões deste canal na organização — as desconectadas inclusive,
+ * porque reconectar por cima de uma desconectada a traz de volta. Ordem: a mais
+ * antiga primeiro; é ela a "principal", e a ordem estável faz a tela mostrar os
+ * números sempre na mesma sequência.
  *
  * LANÇA quando a consulta falha: "não há conexão" e "não consegui perguntar"
- * levam a desfechos diferentes (conectar × tentar depois).
+ * levam a desfechos diferentes (conectar × tentar depois). Tratada como "nenhum
+ * número", uma falha de leitura faria a troca da chave criar uma linha nova.
  */
-export async function buscarSessaoDoAtendimentoExterno(
+export async function listarSessoesDoAtendimentoExterno(
   admin: SupabaseClient,
   organizationId: string,
-): Promise<SessaoDoAtendimentoExterno | null> {
+): Promise<SessaoDoAtendimentoExterno[]> {
   const { data, error } = await admin
     .from("channel_sessions")
     .select(COLUNAS)
     .eq("organization_id", organizationId)
     .eq("provider", CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO)
-    .order("archived_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .order("created_at", { ascending: true });
   if (error) throw new Error(`chatguru_session_lookup_failed: ${error.message}`);
-  return paraSessao((data as Record<string, unknown>[] | null)?.[0] ?? null);
+  return ((data as Record<string, unknown>[] | null) ?? [])
+    .map((l) => paraSessao(l))
+    .filter((s): s is SessaoDoAtendimentoExterno => s !== null)
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+}
+
+/** As conexões em uso (não desconectadas), na ordem da lista. */
+export function sessoesAtivasDoAtendimento(sessoes: SessaoDoAtendimentoExterno[]): SessaoDoAtendimentoExterno[] {
+  return sessoes.filter((s) => !s.archivedAt);
+}
+
+/**
+ * A conexão "principal": a mais antiga em uso; sem nenhuma em uso, a
+ * desconectada criada por último (a que uma reconexão traria de volta).
+ *
+ * Com uma linha só — o caso de toda organização até o PC-053 — devolve
+ * exatamente essa linha, ativa ou não: quem tem um número vê o mesmo de antes.
+ */
+export function principalDoAtendimento(sessoes: SessaoDoAtendimentoExterno[]): SessaoDoAtendimentoExterno | null {
+  const ativas = sessoesAtivasDoAtendimento(sessoes);
+  if (ativas.length > 0) return ativas[0] ?? null;
+  const desconectadas = sessoes.filter((s) => s.archivedAt);
+  return desconectadas[desconectadas.length - 1] ?? null;
+}
+
+/**
+ * Quantas conexões deste canal estão EM USO na organização — para a guarda da
+ * entrada (PC-053): com dois números, um corpo que não diga de qual número é
+ * não pode ser atribuído a nenhum dos dois.
+ *
+ * LANÇA quando a consulta falha: "não sei" não vira "aceito".
+ */
+export async function contarConexoesAtivas(admin: SupabaseClient, organizationId: string): Promise<number> {
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("provider", CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO)
+    .is("archived_at", null);
+  if (error) throw new Error(`chatguru_session_count_failed: ${error.message}`);
+  return Array.isArray(data) ? data.length : data ? 1 : 0;
+}
+
+/**
+ * Qual linha uma credencial colada grava (PC-053). O número da plataforma
+ * (`phone_id`) é o que identifica a conexão — o mesmo servidor, conta e chave
+ * servem aos dois números.
+ *
+ * A ordem importa e cada degrau tem motivo:
+ *   1. `channelSessionId` pedido → aquela, e só ela (trocar a credencial de um
+ *      número). Se o número colado já é de OUTRA conexão em uso, recusa.
+ *   2. O número já está em uso nesta organização → aquela linha (trocar a chave
+ *      dele). Mas, se o pedido era "Adicionar", recusa: gravar por cima mudaria
+ *      a conexão que já atende, e o operador achou que estava criando outra.
+ *   3. O número é de uma conexão DESCONECTADA desta organização → ela volta
+ *      (com as conversas e a configuração de antes).
+ *   4. `novo` → linha nova.
+ *   5. Sem dizer qual: com um (ou nenhum) número é a principal, como antes do
+ *      PC-053; com dois, adivinhar trocaria um número em uso, então recusa.
+ * Trazer de volta uma linha desconectada também ocupa vaga: passa pelo teto.
+ */
+export type AlvoDaConexao =
+  | { tipo: "existente"; sessao: SessaoDoAtendimentoExterno }
+  | { tipo: "nova" }
+  | { tipo: "nao_encontrada" }
+  | { tipo: "numero_em_outra_conexao" }
+  | { tipo: "numero_ja_conectado" }
+  | { tipo: "numero_nao_informado" }
+  | { tipo: "teto"; maximo: number };
+
+export function escolherAlvoDaConexao(
+  sessoes: SessaoDoAtendimentoExterno[],
+  pedido: { phoneId: string; channelSessionId?: string | null; novo?: boolean },
+): AlvoDaConexao {
+  const numero = pedido.phoneId.trim();
+  const ativas = sessoesAtivasDoAtendimento(sessoes);
+  const teto: AlvoDaConexao = { tipo: "teto", maximo: MAXIMO_DE_NUMEROS };
+  const cabe = (alvo: SessaoDoAtendimentoExterno): AlvoDaConexao =>
+    alvo.archivedAt && ativas.length >= MAXIMO_DE_NUMEROS ? teto : { tipo: "existente", sessao: alvo };
+
+  if (pedido.channelSessionId) {
+    const pedida = sessoes.find((s) => s.id === pedido.channelSessionId);
+    if (!pedida) return { tipo: "nao_encontrada" };
+    const outra = ativas.find((s) => s.id !== pedida.id && s.phoneId === numero);
+    return outra ? { tipo: "numero_em_outra_conexao" } : cabe(pedida);
+  }
+
+  const mesmoNumero = sessoes.filter((s) => s.phoneId === numero);
+  const ativaComONumero = mesmoNumero.find((s) => !s.archivedAt);
+  if (ativaComONumero) {
+    return pedido.novo ? { tipo: "numero_ja_conectado" } : { tipo: "existente", sessao: ativaComONumero };
+  }
+  const desconectada = mesmoNumero[mesmoNumero.length - 1];
+  if (desconectada) return cabe(desconectada);
+
+  if (pedido.novo) return ativas.length >= MAXIMO_DE_NUMEROS ? teto : { tipo: "nova" };
+
+  if (ativas.length >= 2) return { tipo: "numero_nao_informado" };
+  const principal = principalDoAtendimento(sessoes);
+  return principal ? cabe(principal) : { tipo: "nova" };
+}
+
+/**
+ * Qual conexão em uso uma configuração (ou a troca do endereço) atinge: a
+ * pedida, se for desta organização e estiver em uso; sem pedido, a única em
+ * uso. Com dois números e nenhum pedido, `null` + motivo — adivinhar gravaria
+ * a configuração no número errado.
+ */
+export function escolherConexaoEmUso(
+  sessoes: SessaoDoAtendimentoExterno[],
+  channelSessionId: string | null | undefined,
+): { sessao: SessaoDoAtendimentoExterno } | { motivo: "nenhuma" | "nao_encontrada" | "numero_nao_informado" } {
+  const ativas = sessoesAtivasDoAtendimento(sessoes);
+  if (channelSessionId) {
+    const pedida = ativas.find((s) => s.id === channelSessionId);
+    return pedida ? { sessao: pedida } : { motivo: "nao_encontrada" };
+  }
+  if (ativas.length === 0) return { motivo: "nenhuma" };
+  const unica = ativas[0];
+  if (ativas.length > 1 || !unica) return { motivo: ativas.length > 1 ? "numero_nao_informado" : "nenhuma" };
+  return { sessao: unica };
 }
 
 /** Um segredo novo, em texto, para cifrar e mostrar na tela. */

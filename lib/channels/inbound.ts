@@ -24,7 +24,7 @@ import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO, CHANNEL_PROVIDER_DATAFY, CHANNEL_
 import { corpoDoPost, lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
 import { tratarEnqueteDoPost } from "./atendimento-externo/enquete";
 import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
-import { phoneIdDaSessao } from "./atendimento-externo/sessao";
+import { contarConexoesAtivas, phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -150,10 +150,15 @@ export async function inboundPayloadBelongsToSession(admin: SupabaseClient, inpu
   if (input.session.provider === CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO) {
     // A conta da plataforma pode ter mais de um número (o oficial e o por QR),
     // e um diálogo mal configurado entregaria os chats dos dois. Só entra o do
-    // número DESTA conexão. Corpo sem `phone_id` passa: o segredo já diz de
-    // quem é a entrega, e recusar por ausência cegaria uma conta de um número só.
+    // número DESTA conexão. Corpo sem `phone_id` passa quando a empresa tem um
+    // número só: o segredo já diz de quem é a entrega, e recusar por ausência
+    // cegaria essa conta. Com DOIS números (PC-053), um endereço colado no
+    // diálogo do outro número cairia na conexão errada e a IA responderia pelo
+    // número errado: sem `phone_id`, recusa.
     const doCorpo = phoneIdDoCorpo(input.rawBody);
-    if (doCorpo === null) return true;
+    if (doCorpo === null) {
+      return (await contarConexoesAtivas(admin, input.session.organization_id)) <= 1;
+    }
     const daSessao = await phoneIdDaSessao(admin, input.session.organization_id, input.session.id);
     return daSessao !== null && daSessao === doCorpo;
   }

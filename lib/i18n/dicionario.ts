@@ -37,6 +37,21 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // PC-053 (fork): dois números da plataforma de atendimento na mesma empresa.
+  "Para usar a mesma chave, o servidor e o ID da conta têm de ser os do número já conectado. Senão, cole a chave.": { es: "Para usar la misma clave, el servidor y el ID de la cuenta deben ser los del número ya conectado. Si no, pega la clave." },
+  "Conexão não encontrada nesta empresa.": { es: "Conexión no encontrada en esta empresa." },
+  "Este número já está conectado nesta empresa.": { es: "Este número ya está conectado en esta empresa." },
+  "Esta empresa tem dois números conectados: diga qual deles quer trocar.": { es: "Esta empresa tiene dos números conectados: indica cuál quieres cambiar." },
+  "Esta empresa tem dois números conectados: diga qual deles quer configurar.": { es: "Esta empresa tiene dos números conectados: indica cuál quieres configurar." },
+  "Esta empresa já tem o máximo de números conectados neste canal.": { es: "Esta empresa ya tiene el máximo de números conectados en este canal." },
+  "Para o outro número da mesma conta — por exemplo, o oficial e o do QR. A IA atende nos dois, cada um com o seu endereço e a sua configuração.": { es: "Para el otro número de la misma cuenta — por ejemplo, el oficial y el del QR. La IA atiende en los dos, cada uno con su dirección y su configuración." },
+  "Número conectado. Agora cole o endereço de entrada dele no diálogo da plataforma.": { es: "Número conectado. Ahora pega su dirección de entrada en el diálogo de la plataforma." },
+  "Adicionar outro número do": { es: "Agregar otro número de" },
+  "O ID do número aparece na tela de celulares da plataforma, ao lado de cada número.": { es: "El ID del número aparece en la pantalla de celulares de la plataforma, junto a cada número." },
+  "Como a equipe chama este número": { es: "Cómo llama el equipo a este número" },
+  "ex.: Número do QR": { es: "ej.: Número del QR" },
+  "Usar a mesma chave da API do número já conectado": { es: "Usar la misma clave de API del número ya conectado" },
+  "Conectar este número": { es: "Conectar este número" },
   // PC-050 (fork): enquetes do grupo.
   "Enquetes salvas.": { es: "Encuestas guardadas." },
   "Enquetes do grupo": { es: "Encuestas del grupo" },

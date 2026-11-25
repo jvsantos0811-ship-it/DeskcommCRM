@@ -21,6 +21,18 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * A chave da API. A tela sabe que existe, não qual é. O endereço da entrada
  * (com o segredo) volta, para o administrador colar no disparo da plataforma:
  * é o único jeito de ele chegar lá, e trocar é um clique (PATCH).
+ *
+ * ─── Dois números (PC-053) ──────────────────────────────────────────────────
+ *
+ * A conta da plataforma pode ter o número oficial e o número por QR, e a IA
+ * atende nos dois. Cada número é uma conexão própria — endereço de entrada,
+ * segredo, configuração e acesso da IA dele —, até `MAXIMO_DE_NUMEROS`. O GET
+ * devolve a lista em `conexoes`; os campos de cima continuam sendo os da
+ * conexão principal (a mais antiga), e quem tem um número vê o de antes. POST e
+ * PATCH dizem a qual conexão se referem por `channel_session_id`; sem ele, com
+ * um número só, vale a única (o comportamento de antes), e com dois a rota
+ * recusa em vez de adivinhar. "Usar a mesma chave" copia a chave CIFRADA de
+ * outra conexão da mesma conta: o valor nunca volta à tela.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
@@ -41,11 +53,17 @@ import {
   SERVIDOR_VALIDO,
 } from "@/lib/channels/atendimento-externo/credenciais";
 import {
-  buscarSessaoDoAtendimentoExterno,
+  MAXIMO_DE_NUMEROS,
+  escolherAlvoDaConexao,
+  escolherConexaoEmUso,
+  listarSessoesDoAtendimentoExterno,
+  principalDoAtendimento,
   salvarConfigDoAtendimentoExterno,
   salvarSessaoDoAtendimentoExterno,
   segredoNovo,
+  sessoesAtivasDoAtendimento,
   trocarSegredoDaEntrada,
+  type SessaoDoAtendimentoExterno,
 } from "@/lib/channels/atendimento-externo/sessao";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -58,19 +76,70 @@ export const runtime = "nodejs";
 
 const RECURSO = "channels_atendimento_externo";
 
-const conectarSchema = z.object({
-  servidor: z.string().trim().toLowerCase().regex(SERVIDOR_VALIDO),
-  account_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
-  phone_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
-  api_key: z.string().trim().regex(CHAVE_VALIDA),
-  /** Como a equipe chama esta conexão; vazio = mantém o que já tem (ou a marca). */
-  apelido: z.string().trim().min(1).max(80).optional(),
-});
+const conectarSchema = z
+  .object({
+    servidor: z.string().trim().toLowerCase().regex(SERVIDOR_VALIDO),
+    account_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
+    phone_id: z.string().trim().regex(ID_DA_CONTA_VALIDO),
+    /** Obrigatória, a não ser que `usar_chave_de` aponte outra conexão da mesma conta. */
+    api_key: z.string().trim().regex(CHAVE_VALIDA).optional(),
+    /** Como a equipe chama esta conexão; vazio = mantém o que já tem (ou a marca). */
+    apelido: z.string().trim().min(1).max(80).optional(),
+    /** Qual conexão esta credencial troca (PC-053). Sem ele: ver `escolherAlvoDaConexao`. */
+    channel_session_id: z.string().uuid().optional(),
+    /** "Adicionar outro número": nunca grava por cima de uma conexão em uso. */
+    novo: z.boolean().optional(),
+    /** Copia a chave CIFRADA desta conexão (mesma organização, mesma conta). */
+    usar_chave_de: z.string().uuid().optional(),
+  })
+  .refine((d) => Boolean(d.api_key) || Boolean(d.usar_chave_de), { path: ["api_key"] })
+  // "Adicionar" nunca grava por cima: pedir uma conexão existente E um número
+  // novo ao mesmo tempo é contraditório, e o pedido explícito venceria.
+  .refine((d) => !(d.novo && d.channel_session_id), { path: ["novo"] });
+
+const alvoDoPatchSchema = z.object({ channel_session_id: z.string().uuid().optional() });
 
 const patchSchema = z.union([
   z.object({ trocar_segredo: z.literal(true) }),
   z.object({ config: configDoAtendimentoExternoEntrada }),
 ]);
+
+async function estadoDaConexao(
+  req: NextRequest,
+  admin: ReturnType<typeof createAdminClient>,
+  sessao: SessaoDoAtendimentoExterno,
+) {
+  const segredo = sessao.segredoCifrado ? await decryptWebhookSecret(admin, sessao.segredoCifrado) : null;
+  return {
+    channel_session_id: sessao.id,
+    servidor: sessao.servidor,
+    account_id: sessao.accountId,
+    phone_id: sessao.phoneId,
+    tem_chave: sessao.temChave,
+    display_name: sessao.displayName,
+    status: sessao.status,
+    endereco_de_entrada:
+      sessao.webhookPathToken && segredo
+        ? `${basePublicaDaInstalacao(req)}/api/v1/webhooks/channel/${sessao.webhookPathToken}/${segredo}`
+        : null,
+    config: {
+      dialogo_transferencia: sessao.config.dialogoTransferencia,
+      campo_da_ia: sessao.config.campoDaIa
+        ? { nome: sessao.config.campoDaIa.nome, valor_ao_passar: sessao.config.campoDaIa.valorAoPassar }
+        : null,
+      acoes: sessao.config.acoes.map((a) => ({
+        chave: a.chave,
+        nome: a.nome,
+        dialogo_id: a.dialogoId,
+        quando_usar: a.quandoUsar,
+      })),
+      // PC-052 parte 3: diálogo por uso, fora da janela de 24 h — por número.
+      roteiros_fora_da_janela: Object.fromEntries(
+        USOS_FORA_DA_JANELA.map((uso) => [uso, sessao.config.roteirosForaDaJanela[uso] ?? null]),
+      ),
+    },
+  };
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
@@ -79,42 +148,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!authz.ok) return authz.response;
 
   const admin = createAdminClient();
-  const sessao = await buscarSessaoDoAtendimentoExterno(admin, authz.org.orgId);
-  const ativa = sessao && !sessao.archivedAt ? sessao : null;
-  const segredo = ativa?.segredoCifrado ? await decryptWebhookSecret(admin, ativa.segredoCifrado) : null;
+  const sessoes = await listarSessoesDoAtendimentoExterno(admin, authz.org.orgId);
+  const ativas = sessoesAtivasDoAtendimento(sessoes);
+  const conexoes = await Promise.all(ativas.map((s) => estadoDaConexao(req, admin, s)));
+  const principal = principalDoAtendimento(sessoes);
+  const principalEmUso = principal && !principal.archivedAt ? principal : null;
+  const ativaPrincipal = principalEmUso ? conexoes.find((c) => c.channel_session_id === principalEmUso.id) : null;
 
   return ok(
     {
       label: ATENDIMENTO_EXTERNO_LABEL,
-      connected: Boolean(ativa),
-      channel_session_id: ativa?.id ?? null,
-      servidor: ativa?.servidor ?? null,
-      account_id: ativa?.accountId ?? null,
-      phone_id: ativa?.phoneId ?? null,
-      tem_chave: Boolean(ativa?.temChave),
-      display_name: ativa?.displayName ?? null,
-      status: ativa?.status ?? null,
-      endereco_de_entrada:
-        ativa?.webhookPathToken && segredo
-          ? `${basePublicaDaInstalacao(req)}/api/v1/webhooks/channel/${ativa.webhookPathToken}/${segredo}`
-          : null,
-      config: ativa
-        ? {
-            dialogo_transferencia: ativa.config.dialogoTransferencia,
-            campo_da_ia: ativa.config.campoDaIa
-              ? { nome: ativa.config.campoDaIa.nome, valor_ao_passar: ativa.config.campoDaIa.valorAoPassar }
-              : null,
-            acoes: ativa.config.acoes.map((a) => ({
-              chave: a.chave,
-              nome: a.nome,
-              dialogo_id: a.dialogoId,
-              quando_usar: a.quandoUsar,
-            })),
-            roteiros_fora_da_janela: Object.fromEntries(
-              USOS_FORA_DA_JANELA.map((uso) => [uso, ativa.config.roteirosForaDaJanela[uso] ?? null]),
-            ),
-          }
-        : null,
+      connected: conexoes.length > 0,
+      // Os campos de cima são os da conexão principal: quem tem um número só
+      // (todo mundo até o PC-053) lê exatamente o que lia antes.
+      channel_session_id: ativaPrincipal?.channel_session_id ?? null,
+      servidor: ativaPrincipal?.servidor ?? null,
+      account_id: ativaPrincipal?.account_id ?? null,
+      phone_id: ativaPrincipal?.phone_id ?? null,
+      tem_chave: Boolean(ativaPrincipal?.tem_chave),
+      display_name: principalEmUso?.displayName ?? null,
+      status: ativaPrincipal?.status ?? null,
+      endereco_de_entrada: ativaPrincipal?.endereco_de_entrada ?? null,
+      config: ativaPrincipal?.config ?? null,
+      conexoes,
+      maximo_de_numeros: MAXIMO_DE_NUMEROS,
+      pode_adicionar: conexoes.length > 0 && conexoes.length < MAXIMO_DE_NUMEROS,
     },
     { requestId },
   );
@@ -141,7 +199,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const admin = createAdminClient();
-  const chaveCifrada = await encryptWebhookSecret(admin, parsed.data.api_key);
+  const sessoes = await listarSessoesDoAtendimentoExterno(admin, orgId);
+
+  // A chave: a colada, ou a CIFRADA de outra conexão em uso desta organização
+  // e da mesma conta (a chave da plataforma é da conta, não do número).
+  let chaveCifrada: string | null = null;
+  if (parsed.data.api_key) {
+    chaveCifrada = await encryptWebhookSecret(admin, parsed.data.api_key);
+  } else {
+    const origem = sessoesAtivasDoAtendimento(sessoes).find((s) => s.id === parsed.data.usar_chave_de);
+    if (
+      !origem?.chaveCifrada ||
+      origem.servidor !== parsed.data.servidor ||
+      origem.accountId !== parsed.data.account_id
+    ) {
+      return fail(
+        "invalid_request",
+        t("Para usar a mesma chave, o servidor e o ID da conta têm de ser os do número já conectado. Senão, cole a chave."),
+        422,
+        { requestId },
+      );
+    }
+    chaveCifrada = origem.chaveCifrada;
+  }
   const segredoCifrado = await encryptWebhookSecret(admin, segredoNovo());
   if (!chaveCifrada || !segredoCifrado) {
     // Sem a cifra, gravar a chave em claro seria pior que recusar.
@@ -150,7 +230,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  const existente = await buscarSessaoDoAtendimentoExterno(admin, orgId);
+  const alvo = escolherAlvoDaConexao(sessoes, {
+    phoneId: parsed.data.phone_id,
+    channelSessionId: parsed.data.channel_session_id ?? null,
+    novo: parsed.data.novo ?? false,
+  });
+  if (alvo.tipo === "nao_encontrada") {
+    return fail("not_found", t("Conexão não encontrada nesta empresa."), 404, { requestId });
+  }
+  if (alvo.tipo === "numero_em_outra_conexao" || alvo.tipo === "numero_ja_conectado") {
+    return fail("state_conflict", t("Este número já está conectado nesta empresa."), 409, { requestId });
+  }
+  if (alvo.tipo === "numero_nao_informado") {
+    return fail("invalid_request", t("Esta empresa tem dois números conectados: diga qual deles quer trocar."), 422, {
+      requestId,
+    });
+  }
+  if (alvo.tipo === "teto") {
+    return fail(
+      "state_conflict",
+      t("Esta empresa já tem o máximo de números conectados neste canal."),
+      409,
+      { requestId, details: { maximo: alvo.maximo } },
+    );
+  }
+  const existente = alvo.tipo === "existente" ? alvo.sessao : null;
+
   // O apelido só batiza a conexão; depois dela o nome é do operador (Renomear),
   // e trocar a credencial não o apaga.
   const apelidoDaConexao = parsed.data.apelido ?? (existente?.displayName ? existente.displayName : ATENDIMENTO_EXTERNO_LABEL);
@@ -190,11 +295,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       resourceType: "channel_session",
       resourceId: channelSessionId,
       requestId,
-      metadata: { canal: "atendimento_externo", etapa: existente ? "credencial_trocada" : "conexao" },
+      metadata: {
+        canal: "atendimento_externo",
+        etapa: existente ? "credencial_trocada" : "conexao",
+        chave_reaproveitada: !parsed.data.api_key,
+      },
     });
   }
 
-  return ok({ connected: true, apelido: apelidoDaConexao }, { requestId });
+  return ok({ connected: true, apelido: apelidoDaConexao, channel_session_id: channelSessionId }, { requestId });
 }
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
@@ -207,19 +316,34 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
-  const parsed = patchSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
+  const corpo = await req.json().catch(() => null);
+  const parsed = patchSchema.safeParse(corpo);
+  const alvoPedido = alvoDoPatchSchema.safeParse(corpo ?? {});
+  if (!parsed.success || !alvoPedido.success) {
+    const issues = [...(parsed.success ? [] : parsed.error.issues), ...(alvoPedido.success ? [] : alvoPedido.error.issues)];
     return fail("invalid_request", t("Confira os campos: algum valor está fora do formato."), 422, {
       requestId,
-      details: { campos: parsed.error.issues.map((i) => i.path.join(".")) },
+      details: { campos: issues.map((i) => i.path.join(".")) },
     });
   }
 
   const admin = createAdminClient();
-  const sessao = await buscarSessaoDoAtendimentoExterno(admin, orgId);
-  if (!sessao || sessao.archivedAt) {
+  const escolha = escolherConexaoEmUso(
+    await listarSessoesDoAtendimentoExterno(admin, orgId),
+    alvoPedido.data.channel_session_id ?? null,
+  );
+  if ("motivo" in escolha) {
+    if (escolha.motivo === "numero_nao_informado") {
+      return fail("invalid_request", t("Esta empresa tem dois números conectados: diga qual deles quer configurar."), 422, {
+        requestId,
+      });
+    }
+    if (escolha.motivo === "nao_encontrada") {
+      return fail("not_found", t("Conexão não encontrada nesta empresa."), 404, { requestId });
+    }
     return fail("state_conflict", t("Conecte a conta antes de configurar."), 409, { requestId });
   }
+  const sessao = escolha.sessao;
 
   if ("trocar_segredo" in parsed.data) {
     const cifrado = await encryptWebhookSecret(admin, segredoNovo());
@@ -246,6 +370,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return ok({ segredo_trocado: true }, { requestId });
   }
 
+  // A conexão atual entra para uma tela antiga não apagar os roteiros (PC-052 parte 3).
   const config = configParaGravar(parsed.data.config, sessao.config);
   const { error } = await salvarConfigDoAtendimentoExterno(admin, {
     organizationId: orgId,
