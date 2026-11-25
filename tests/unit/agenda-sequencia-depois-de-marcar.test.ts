@@ -314,10 +314,17 @@ describe("o diálogo da conexão fora da janela", () => {
   it("salvar por uma tela antiga (sem o campo) não apaga os diálogos", () => {
     const atual = lerConfigDoAtendimentoExterno({ roteiros_fora_da_janela: { lembrete: "dlg_lembrete" } });
     const entrada = configDoAtendimentoExternoEntrada.parse({ acoes: [] });
+    // A 3b acrescentou os usos do follow-up (followup_1 a followup_5): o que a
+    // tela antiga não mandou continua como estava, e o que nunca existiu fica nulo.
     expect(configParaGravar(entrada, atual).roteiros_fora_da_janela).toEqual({
       confirmacao_vespera: null,
       confirmacao_do_dia: null,
       lembrete: "dlg_lembrete",
+      followup_1: null,
+      followup_2: null,
+      followup_3: null,
+      followup_4: null,
+      followup_5: null,
     });
   });
 

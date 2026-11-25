@@ -9,6 +9,7 @@
  * nunca do body — regra dura nº 1). Sem ponteiro = org não configurou disclosure (o gate
  * vira no-op) — opt-in por publicar um template.
  */
+import { SEQ_DO_DIALOGO_DA_PLATAFORMA } from '../../edge/crm/seq-do-dialogo';
 import type pg from 'pg';
 import type { Queryable } from '../../queue/queue';
 
@@ -92,12 +93,15 @@ export async function loadDisclosureTemplate(db: Queryable, tenantId: string): P
  * quando aquela região estiver livre.
  */
 export async function countPriorAcceptedSends(db: Queryable, tenantId: string, leadId: string): Promise<number> {
+  // O recibo de um diálogo da plataforma (PC-052 parte 3b) NÃO conta: é o modelo
+  // do escritório, não uma fala da IA — contá-lo faria a primeira mensagem da IA
+  // depois dele sair sem dizer que é uma IA.
   const { rows } = await db.query<{ existe: boolean }>(
     `select exists(
        select 1 from send_ledger
-       where organization_id = $1 and contact_id = $2 and status = 'accepted'
+       where organization_id = $1 and contact_id = $2 and status = 'accepted' and seq <> $3
      ) as existe`,
-    [tenantId, leadId],
+    [tenantId, leadId, SEQ_DO_DIALOGO_DA_PLATAFORMA],
   );
   return rows[0]?.existe ? 1 : 0;
 }

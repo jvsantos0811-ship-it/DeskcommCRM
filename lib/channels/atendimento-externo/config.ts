@@ -23,8 +23,9 @@
  *     nunca por um id livre: a lista é fechada pelo operador.
  *  4. `roteiros_fora_da_janela` — PC-052 parte 3: o diálogo (com o modelo da Meta
  *     da conta) que sai, POR USO, quando a janela de 24 h do cliente fechou e o
- *     CRM não pode mandar texto livre: a confirmação da véspera, a do dia e o
- *     lembrete. Vazio = naquele uso, fora da janela, nada sai (o de sempre).
+ *     CRM não pode mandar texto livre: a confirmação da véspera, a do dia, o
+ *     lembrete e os passos do follow-up (T1..T5, parte 3b). Vazio = naquele uso,
+ *     fora da janela, nada sai (o de sempre).
  */
 import { z } from "zod";
 
@@ -44,7 +45,18 @@ export const MAXIMO_DE_ACOES = 15;
  * Os usos que podem sair por um diálogo da plataforma fora da janela de 24 h.
  * A lista é FECHADA: quem envia pede pelo uso, nunca por um id de diálogo.
  */
-export const USOS_FORA_DA_JANELA = ["confirmacao_vespera", "confirmacao_do_dia", "lembrete"] as const;
+export const USOS_FORA_DA_JANELA = [
+  "confirmacao_vespera",
+  "confirmacao_do_dia",
+  "lembrete",
+  // PC-052 parte 3b: os passos do follow-up que caem fora da janela (T1..T5 da
+  // cadência). O passo do fluxo escolhe QUAL deles; a conexão diz o diálogo.
+  "followup_1",
+  "followup_2",
+  "followup_3",
+  "followup_4",
+  "followup_5",
+] as const;
 export type UsoForaDaJanela = (typeof USOS_FORA_DA_JANELA)[number];
 
 const idOpcional = z
@@ -84,6 +96,11 @@ export const configDoAtendimentoExternoEntrada = z.object({
       confirmacao_vespera: idOpcional,
       confirmacao_do_dia: idOpcional,
       lembrete: idOpcional,
+      followup_1: idOpcional,
+      followup_2: idOpcional,
+      followup_3: idOpcional,
+      followup_4: idOpcional,
+      followup_5: idOpcional,
     })
     .optional(),
 });

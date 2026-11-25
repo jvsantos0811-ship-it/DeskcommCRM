@@ -169,7 +169,9 @@ describe("disclosure: primeiro outbound pergunta se existe, não conta", () => {
     expect(await countPriorAcceptedSends(com, "org", "contact")).toBe(1);
     expect(com.sqls[0]).toMatch(/select exists\(/);
     expect(com.sqls[0]).not.toMatch(/count\(/);
-    expect(com.params[0]).toEqual(["org", "contact"]);
+    // PC-052 parte 3b: o recibo do diálogo da plataforma não é fala da IA e fica fora.
+    expect(com.params[0]).toEqual(["org", "contact", 101]);
+    expect(com.sqls[0]).toMatch(/seq <> \$3/);
     const sem = fakeDb([[{ existe: false }]]);
     expect(await countPriorAcceptedSends(sem, "org", "contact")).toBe(0);
   });
