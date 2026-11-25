@@ -21,7 +21,8 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
-import { lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
+import { corpoDoPost, lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
+import { tratarEnqueteDoPost } from "./atendimento-externo/enquete";
 import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
 import { phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
@@ -497,8 +498,41 @@ async function atendimentoExternoInbound(
     return { ok: false, code: "unauthorized", message: "bad_secret" };
   }
 
+  // PC-050: o voto na enquete do grupo, quando a chave da organização está
+  // ligada. Grava só o voto (nenhuma mensagem, nenhuma IA). Desligada = como
+  // antes. Nunca lança.
+  const enquete = await tratarEnqueteDoPost(admin, {
+    orgId: input.session.organization_id,
+    corpo: corpoDoPost(input.rawBody),
+  });
+  // O POST que traz um voto NOVO (ou trocado) é a ATIVAÇÃO do diálogo: o texto
+  // dele, se vier, é o do diálogo ou o do modelo que a plataforma mandou, não o
+  // que a pessoa escreveu. Não é ingerido e a IA não roda — ela entra quando a
+  // pessoa responder. O mesmo voto de novo (`mudou: false`) é conversa e segue.
+  if (enquete.status === "registrado" && enquete.mudou) {
+    return { ok: true, body: { status: "enquete_registrada", mudou: true, reason: "enquete_ativacao" } };
+  }
+
   const leitura = lerEntrada(input.rawBody);
   if (!leitura.ok) {
+    // Ativação SEM texto: termina aqui. Inclui quem votou "não quero contato"
+    // sem ser contato (`sem_contato`: nada gravado, contato nenhum criado). Se
+    // essa pessoa escrever de verdade, a mensagem entra como qualquer outra —
+    // um campo de voto que fica no chat não pode engolir conversa.
+    if (
+      (enquete.status === "registrado" || enquete.status === "sem_contato") &&
+      leitura.motivo === "contrato_violado" &&
+      leitura.campos.length === 1 &&
+      leitura.campos[0] === "texto_mensagem"
+    ) {
+      return {
+        ok: true,
+        body:
+          enquete.status === "registrado"
+            ? { status: "enquete_registrada", mudou: enquete.mudou, reason: "enquete_ativacao" }
+            : { status: "enquete_sem_contato", reason: "enquete_sem_contato" },
+      };
+    }
     if (leitura.motivo === "json_invalido") return { ok: false, code: "invalid_json", message: "invalid_json" };
     return {
       ok: false,
@@ -515,5 +549,12 @@ async function atendimentoExternoInbound(
   // Falha de ESCRITA sobe como exceção: a rota responde 500 e a plataforma
   // reentrega — o evento era bom, nós é que não gravamos.
   if (r.status === "failed") throw new Error(`ingestao_falhou: ${r.reason}`.slice(0, 200));
+  // PC-050: quem votou "não quero contato" sem ser contato e ESCREVEU agora
+  // acabou de virar contato pela mensagem. O voto é gravado já (o resultado não
+  // muda esta entrega); sem isto, o POST seguinte traria o mesmo voto como
+  // "novo" e seria lido como ativação — engolindo uma mensagem real.
+  if (enquete.status === "sem_contato") {
+    await tratarEnqueteDoPost(admin, { orgId: input.session.organization_id, corpo: corpoDoPost(input.rawBody) });
+  }
   return { ok: true, body: { ...r } };
 }

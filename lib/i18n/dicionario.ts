@@ -37,6 +37,32 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // PC-050 (fork): enquetes do grupo.
+  "Enquetes salvas.": { es: "Encuestas guardadas." },
+  "Enquetes do grupo": { es: "Encuestas del grupo" },
+  "Quem vota na enquete recebe a mensagem de abertura pelo diálogo da plataforma, no número oficial. Aqui você diz ao CRM de qual campo vem o voto e o que cada opção quer dizer: a IA abre a conversa a partir do voto. Use só opções neutras: todo o grupo vê quem votou em quê.": { es: "Quien vota en la encuesta recibe el mensaje de apertura por el diálogo de la plataforma, en el número oficial. Aquí le dices al CRM de qué campo viene el voto y qué significa cada opción: la IA abre la conversación a partir del voto. Usa solo opciones neutras: todo el grupo ve quién votó qué." },
+  "Ligar enquetes do grupo nesta organização": { es: "Activar encuestas del grupo en esta organización" },
+  "Campo de onde vem o voto": { es: "Campo del que viene el voto" },
+  "Nenhum aviso recebido ainda. Dispare o diálogo da enquete uma vez num chat de teste e recarregue esta tela.": { es: "Todavía no llegó ningún aviso. Dispara el diálogo de la encuesta una vez en un chat de prueba y recarga esta pantalla." },
+  "Recomendado: o diálogo de cada opção grava no campo o valor enquete:<código>:<opção>.": { es: "Recomendado: el diálogo de cada opción guarda en el campo el valor enquete:<código>:<opción>." },
+  "Código da enquete": { es: "Código de la encuesta" },
+  "código (ex.: reparadora)": { es: "código (ej.: reparadora)" },
+  "Pergunta da enquete": { es: "Pregunta de la encuesta" },
+  "Enquete ativa": { es: "Encuesta activa" },
+  "Opção": { es: "Opción" },
+  "O que a opção quer dizer": { es: "Qué significa la opción" },
+  "O que a opção quer dizer (para a IA)": { es: "Qué significa la opción (para la IA)" },
+  "Quer contato": { es: "Quiere contacto" },
+  "Adicionar opção": { es: "Agregar opción" },
+  "Adicionar enquete": { es: "Agregar encuesta" },
+  "Salvar enquetes": { es: "Guardar encuestas" },
+  // PC-050 (ajustes da revisão)
+  "Remover apaga a enquete e os votos dela ao salvar. Para só parar de valer, desmarque \"Enquete ativa\".": { es: "Quitar borra la encuesta y sus votos al guardar. Para que solo deje de valer, desmarque \"Encuesta activa\"." },
+  "Remover mesmo": { es: "Quitar de todos modos" },
+  "Não foi possível ler as enquetes. Recarregue a tela antes de salvar.": { es: "No fue posible leer las encuestas. Recargue la pantalla antes de guardar." },
+  "Este campo não pode ser o voto.": { es: "Este campo no puede ser el voto." },
+  // PC-050 (2ª volta)
+  "O código de uma enquete gravada não muda: os votos dependem dele.": { es: "El código de una encuesta guardada no cambia: los votos dependen de él." },
   "Há um ajuste proporcional esperando pagamento. Escolher outro plano cancela esse ajuste.": { es: "Hay un ajuste proporcional esperando el pago. Elegir otro plan cancela ese ajuste." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos e tente novamente.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos e inténtalo de nuevo." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos." },
