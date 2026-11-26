@@ -89,6 +89,20 @@ describe("aplicarDesfechoDoEvento (PC-062)", () => {
     expect(chamadas).toHaveLength(0);
   });
 
+  it("desfecho marcado por uma pessoa nunca é sobrescrito pela cor", async () => {
+    const humano = { ...compromisso, status: "completed", outcome_source_kind: "user" };
+    expect(await aplicarDesfechoDoEvento(db({ compromisso: humano, tipo }).cliente, ORG, "ap-1", "8", AGORA)).toBe("nada");
+    const pelaMensagem = { ...compromisso, status: "no_show", outcome_source_kind: "contact_message" };
+    expect(await aplicarDesfechoDoEvento(db({ compromisso: pelaMensagem, tipo }).cliente, ORG, "ap-1", "9", AGORA)).toBe("nada");
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it("compromisso cancelado não volta", async () => {
+    const cancelado = { ...compromisso, status: "cancelled" };
+    expect(await aplicarDesfechoDoEvento(db({ compromisso: cancelado, tipo }).cliente, ORG, "ap-1", "9", AGORA)).toBe("nada");
+    expect(chamadas).toHaveLength(0);
+  });
+
   it("falha no handler nunca derruba o sync", async () => {
     const { registrarDesfechoPeloGoogleHandler } = await import("@/app/api/v1/agenda/agendamentos/_handler");
     vi.mocked(registrarDesfechoPeloGoogleHandler).mockRejectedValueOnce(new Error("boom"));

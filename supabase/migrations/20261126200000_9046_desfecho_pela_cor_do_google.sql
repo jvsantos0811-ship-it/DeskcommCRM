@@ -50,7 +50,7 @@ begin
   -- PC-062 (migration 9046): a equipe pintou o evento no Google com a cor de
   -- desfecho do tipo. Só a função `fn_appointment_outcome_from_google`, sem
   -- sessão de usuário (service_role), liga esta marca, na própria transação.
-  if actor is null and current_setting('app.desfecho_pelo_google', true) = 'on' then
+  if actor is null and current_setting('deskcomm.desfecho_pelo_google', true) = 'on' then
    if new.starts_at>now() then raise exception 'appointment_not_started' using errcode='22023'; end if;
    new.outcome_user_id:=null; new.outcome_message_id:=null; new.outcome_recorded_at:=clock_timestamp();
    new.outcome_source_kind:='google_color';
@@ -88,21 +88,24 @@ end; $$;
 -- evento de recuperação da falta) e desliga a marca.
 create or replace function public.fn_appointment_outcome_from_google(p_org uuid, p_id uuid, p_revision bigint, p_status text)
 returns jsonb language plpgsql security definer set search_path=public as $$
-declare a public.calendar_appointments; t public.calendar_event_types; r jsonb;
+declare a public.calendar_appointments; t public.calendar_event_types; r jsonb; v_antes text;
 begin
  if auth.uid() is not null then raise exception 'google_outcome_forbidden' using errcode='42501'; end if;
  if p_status not in ('completed','no_show') then raise exception 'google_outcome_invalid' using errcode='22023'; end if;
  select * into a from public.calendar_appointments where organization_id=p_org and id=p_id;
  if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ -- Só compromisso que está no Google: a cor vem de lá.
+ if a.google_event_id is null then raise exception 'google_outcome_sem_evento' using errcode='42501'; end if;
  select * into t from public.calendar_event_types where organization_id=p_org and id=a.event_type_id;
  if not found
     or (p_status='completed' and t.outcome_color_completed is null)
     or (p_status='no_show' and t.outcome_color_no_show is null) then
   raise exception 'google_outcome_off' using errcode='42501';
  end if;
- perform set_config('app.desfecho_pelo_google','on',true);
+ v_antes := current_setting('deskcomm.desfecho_pelo_google', true);
+ perform set_config('deskcomm.desfecho_pelo_google','on',true);
  r := public.fn_appointment_change_core(p_org,p_id,p_revision,jsonb_build_object('status',p_status),false,null);
- perform set_config('app.desfecho_pelo_google','',true);
+ perform set_config('deskcomm.desfecho_pelo_google',coalesce(v_antes,''),true);
  return r;
 end; $$;
 revoke execute on function public.fn_appointment_outcome_from_google(uuid,uuid,bigint,text) from public, anon, authenticated;

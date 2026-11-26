@@ -851,6 +851,10 @@ export async function registrarDesfechoPeloGoogleHandler(
   if (error) {
     // Conflito de revisão: o compromisso mudou entre a leitura e a escrita; a
     // próxima rodada do sync lê de novo. Desligado ou recusado: nada a fazer.
+    logger.warn("[agenda] desfecho pela cor do Google recusado pelo banco", {
+      organization_id: ctx.organization_id,
+      codigo: error.code ?? null,
+    });
     return { registrado: false, motivo: error.code === "PT409" ? "conflito" : "recusado" };
   }
   const salvo = data as Record<string, unknown>;

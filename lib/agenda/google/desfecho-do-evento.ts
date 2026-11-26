@@ -5,6 +5,7 @@
  * compromisso, depois de reconciliá-lo. Lê a cor do evento e as cores de
  * desfecho do tipo; se a equipe pintou Realizado ou Faltou depois do início,
  * registra o desfecho pelo mesmo caminho da tela (laço, automação, auditoria).
+ * Desfecho que uma pessoa marcou no CRM nunca é sobrescrito pela cor.
  *
  * NUNCA LANÇA e nunca derruba o sync: o desfecho é um efeito a mais da leitura,
  * e a leitura dos horários ocupados é o que não pode parar. Uma falha aqui é
@@ -27,7 +28,7 @@ export async function aplicarDesfechoDoEvento(
   try {
     const { data: compromisso, error } = await db
       .from("calendar_appointments")
-      .select("id, status, starts_at, event_type_id")
+      .select("id, status, starts_at, event_type_id, outcome_source_kind")
       .eq("organization_id", org)
       .eq("id", appointmentId)
       .maybeSingle();
@@ -46,6 +47,10 @@ export async function aplicarDesfechoDoEvento(
       faltou: tipo.outcome_color_no_show ?? null,
     });
     if (!desfecho) return "nada";
+    // Quem marcou na tela (ou pela mensagem do cliente) manda: a cor fica no
+    // evento para sempre, e uma releitura qualquer não pode desfazer a
+    // correção de uma pessoa (achado da revisão independente).
+    if (["user", "contact_message"].includes(String(compromisso.outcome_source_kind ?? ""))) return "nada";
     if (!aplicaDesfecho({ status: String(compromisso.status), starts_at: String(compromisso.starts_at) }, desfecho, agora)) {
       return "nada";
     }

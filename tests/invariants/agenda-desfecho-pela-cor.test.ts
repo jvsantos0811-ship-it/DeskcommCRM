@@ -63,12 +63,12 @@ beforeAll(async () => {
 });
 afterAll(() => pool.end());
 
-async function compromisso(tipo: string, inicio: string) {
+async function compromisso(tipo: string, inicio: string, noGoogle = true) {
   const id = randomUUID();
   await pool.query(
-    `insert into calendar_appointments(id,organization_id,event_type_id,title,starts_at,ends_at,status)
-     values($1,$2,$3,'Desfecho cor',${inicio},${inicio}+interval '40 minutes','confirmed')`,
-    [id, org, tipo],
+    `insert into calendar_appointments(id,organization_id,event_type_id,title,starts_at,ends_at,status,google_event_id)
+     values($1,$2,$3,'Desfecho cor',${inicio},${inicio}+interval '40 minutes','confirmed',$4)`,
+    [id, org, tipo, noGoogle ? `evt${id.replace(/-/g, "")}` : null],
   );
   return id;
 }
@@ -85,6 +85,22 @@ describe("desfecho pela cor do Google (PC-062)", () => {
     );
     expect(rows[0]).toMatchObject({ status: "completed", outcome_source_kind: "google_color", outcome_user_id: null });
     expect(rows[0].outcome_recorded_at).not.toBeNull();
+  });
+
+  it("a marca da transação volta ao valor anterior depois da porta", async () => {
+    const id = await compromisso(tipoComCor, "now()-interval '2 hours'");
+    const { rows } = await asRole(
+      "service_role",
+      null,
+      "select fn_appointment_outcome_from_google($1,$2,1,'no_show') is not null as ok, coalesce(current_setting('deskcomm.desfecho_pelo_google', true),'') as marca",
+      [org, id],
+    );
+    expect(rows[0]).toMatchObject({ ok: true, marca: "" });
+  });
+
+  it("compromisso que não está no Google: recusa", async () => {
+    const id = await compromisso(tipoComCor, "now()-interval '2 hours'", false);
+    await expect(asRole("service_role", null, porta, [org, id, "completed"])).rejects.toThrow(/google_outcome_sem_evento/);
   });
 
   it("tipo sem a cor daquele desfecho: recusa", async () => {

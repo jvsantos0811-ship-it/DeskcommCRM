@@ -670,6 +670,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     .select("id")
     .maybeSingle();
 
+  // PC-062: cor de desfecho igual à outra já gravada (PATCH parcial pela API).
+  if (error?.code === "23514" && error.message.includes("outcome_colors_check")) {
+    return fail("validation_failed", t("Escolha cores diferentes para Realizado e Faltou."), 422, { requestId });
+  }
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
 
