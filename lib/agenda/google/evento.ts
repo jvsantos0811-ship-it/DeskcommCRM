@@ -216,6 +216,8 @@ export interface EventoDoGoogle {
   start?: InstanteDoGoogle | null;
   end?: InstanteDoGoogle | null;
   transparency?: string | null;
+  /** Cor do evento (PC-062: a equipe pinta Realizado / Faltou). Ausente = a cor da agenda. */
+  colorId?: string | null;
   iCalUID?: string | null;
   sequence?: number | null;
   recurrence?: string[] | null;

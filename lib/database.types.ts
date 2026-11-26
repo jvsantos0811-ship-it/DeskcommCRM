@@ -3769,6 +3769,8 @@ export type Database = {
           duration_minutes: number
           id: string
           lead_presence_enabled: boolean
+          outcome_color_completed: string | null
+          outcome_color_no_show: string | null
           post_booking_sequence: Json
           post_booking_sequence_enabled: boolean
           is_active: boolean
@@ -3806,6 +3808,8 @@ export type Database = {
           duration_minutes?: number
           id?: string
           lead_presence_enabled?: boolean
+          outcome_color_completed?: string | null
+          outcome_color_no_show?: string | null
           post_booking_sequence?: Json
           post_booking_sequence_enabled?: boolean
           is_active?: boolean
@@ -3843,6 +3847,8 @@ export type Database = {
           duration_minutes?: number
           id?: string
           lead_presence_enabled?: boolean
+          outcome_color_completed?: string | null
+          outcome_color_no_show?: string | null
           post_booking_sequence?: Json
           post_booking_sequence_enabled?: boolean
           is_active?: boolean
@@ -10556,6 +10562,10 @@ export type Database = {
           aceita_escrita: boolean
           conta_conflito: boolean
         }[]
+      }
+      fn_appointment_outcome_from_google: {
+        Args: { p_id: string; p_org: string; p_revision: number; p_status: string }
+        Returns: Json
       }
       fn_agenda_ocupacao_google_das_agendas: {
         Args: { p_org: string; p_owner: string; p_agendas: string[]; p_de: string; p_ate: string }

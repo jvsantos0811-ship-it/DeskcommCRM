@@ -1289,6 +1289,9 @@ export interface TipoDeAtendimento {
   revezamentoIds?: string[];
   /** PC-052: marcações deste tipo registram a presença do lead com cor no Google. */
   presencaComCor?: boolean;
+  /** PC-062: cor do Google que vira "Realizado" / "Faltou". Nula = desligado. */
+  desfechoCorRealizado?: string | null;
+  desfechoCorFaltou?: string | null;
   /**
    * Os quatro números da grade. Eles NÃO vão ao modelo — `horariosLivresDaOrg`
    * já os aplicou antes de devolver os horários, e repassá-los convidaria a IA a
@@ -1350,7 +1353,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, rotation_calendar_ids, lead_presence_enabled, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, rotation_calendar_ids, lead_presence_enabled, outcome_color_completed, outcome_color_no_show, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1385,6 +1388,8 @@ export async function listaTiposDeAtendimento(
       rodizioIds: listaDoRodizio(t.rotation_owner_user_ids),
       revezamentoIds: listaDoRodizio((t as { rotation_calendar_ids?: unknown }).rotation_calendar_ids),
       presencaComCor: t.lead_presence_enabled === true,
+      desfechoCorRealizado: (t as { outcome_color_completed?: string | null }).outcome_color_completed ?? null,
+      desfechoCorFaltou: (t as { outcome_color_no_show?: string | null }).outcome_color_no_show ?? null,
       bufferAntesMin: Number(t.buffer_before_minutes),
       bufferDepoisMin: Number(t.buffer_after_minutes),
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),
