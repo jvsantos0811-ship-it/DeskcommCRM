@@ -5,6 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { BudgetCard } from "@/components/ai/BudgetCard";
 import { getBudgetStatus } from "@/lib/ai/budget/check";
+import { cotacaoDoUsoDeIa } from "@/lib/ai/cotacao-do-uso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { UsageDashboardClient } from "./_client";
 
@@ -51,6 +52,8 @@ export default async function AiUsagePage({ searchParams }: PageProps) {
   };
 
   const budget = await getBudgetStatus(activeOrg.orgId);
+  // Os valores desta tela saem em reais, pela cotação do painel da agência.
+  const cotacao = await cotacaoDoUsoDeIa();
   const isAdmin = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const idioma = user.idioma;
 
@@ -65,8 +68,8 @@ export default async function AiUsagePage({ searchParams }: PageProps) {
           )}
         </p>
       </header>
-      <BudgetCard initialData={budget} isAdmin={isAdmin} />
-      <UsageDashboardClient agents={agents} initial={initial} />
+      <BudgetCard initialData={budget} isAdmin={isAdmin} cotacao={cotacao} />
+      <UsageDashboardClient agents={agents} initial={initial} cotacao={cotacao} />
     </div>
   );
 }

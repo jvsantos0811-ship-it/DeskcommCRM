@@ -18062,6 +18062,12 @@ export const DICIONARIO: Traducoes = {
   "Preço do pacote (R$)": { es: "Precio del paquete (R$)" },
   "IA liberada pelo pacote (US$)": { es: "IA liberada por el paquete (US$)" },
   "IA liberada na cortesia (US$)": { es: "IA liberada en la cortesía (US$)" },
+  // PC-056 — Uso de IA em reais (components/ai/BudgetCard.tsx)
+  "valores em reais, pela cotação de": { es: "valores en reales, con la cotización de" },
+  "(o provedor de IA cobra em dólar)": { es: "(el proveedor de IA cobra en dólares)" },
+  "Escolha o que acontece quando o gasto do mês chega no limite. Os valores são em reais, pela cotação de": { es: "Elige qué pasa cuando el gasto del mes llega al límite. Los valores están en reales, con la cotización de" },
+  "o provedor de IA cobra em dólar.": { es: "el proveedor de IA cobra en dólares." },
+  "Limite mensal (R$)": { es: "Límite mensual (R$)" },
 };
 
 /**

@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAiUsage, type AiUsageFilters } from "@/hooks/ai/useAiUsage";
 import { UsageFilters, type UsageFiltersAgent } from "@/components/ai/UsageFilters";
 import { UsageChart } from "@/components/ai/UsageChart";
-import { formatCentsUSD } from "@/lib/money";
+import { formatCentsUSD, formatCentsUSDEmReais } from "@/lib/money";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -16,6 +16,11 @@ interface Props {
     from?: string;
     to?: string;
   };
+  /**
+   * Cotação do dólar (painel da agência) para escrever o custo em REAIS. Sem
+   * ela, a tela fica em dólar como antes.
+   */
+  cotacao?: number;
 }
 
 /** Custo por turno costuma ficar abaixo de um centavo: duas casas mostrariam US$ 0,00. */
@@ -71,7 +76,7 @@ function ChartSkeletons() {
   );
 }
 
-export function UsageDashboardClient({ agents, initial }: Props) {
+export function UsageDashboardClient({ agents, initial, cotacao }: Props) {
   const t = useT();
   const searchParams = useSearchParams();
 
@@ -83,6 +88,10 @@ export function UsageDashboardClient({ agents, initial }: Props) {
   };
 
   const q = useAiUsage(filters);
+  const emReais = typeof cotacao === "number" && cotacao > 0;
+  const custo = (cents: number) => (emReais ? formatCentsUSDEmReais(cents, cotacao) : formatCentsUSD(cents));
+  const custoFino = (cents: number) =>
+    emReais ? formatCentsUSDEmReais(cents, cotacao, 4) : formatCentsUSDFino(cents);
   // As opções de "Tipo de uso" vêm da mesma consulta SEM o filtro de tipo: o
   // `by_kind` da consulta filtrada só tem o tipo escolhido, e a lista encolheria
   // para ele. Sem filtro de tipo a chave é a mesma e o react-query não repete a ida.
@@ -103,9 +112,9 @@ export function UsageDashboardClient({ agents, initial }: Props) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard
               label={t("Custo no período")}
-              // DÓLAR: esta tela mostrava o MESMO número em duas moedas — o card de
-              // orçamento logo acima em US$ e este StatCard em R$, dois centímetros abaixo.
-              value={formatCentsUSD(q.data.totals.cost_cents)}
+              // A MESMA moeda do card de orçamento logo acima: os dois leem a
+              // mesma cotação, para a tela nunca mostrar um número em duas moedas.
+              value={custo(q.data.totals.cost_cents)}
             />
             {/*
               Este card se chamava "Atendimentos com IA" e contava linhas de
@@ -130,7 +139,7 @@ export function UsageDashboardClient({ agents, initial }: Props) {
               hint={
                 q.data.totals.avg_cost_per_turn_cents === null
                   ? t("sem turnos no período")
-                  : `${t("custo médio por turno:")} ${formatCentsUSDFino(q.data.totals.avg_cost_per_turn_cents)} · ${t("conta só os turnos que a fila ainda guarda (padrão: 90 dias)")}`
+                  : `${t("custo médio por turno:")} ${custoFino(q.data.totals.avg_cost_per_turn_cents)} · ${t("conta só os turnos que a fila ainda guarda (padrão: 90 dias)")}`
               }
             />
             <StatCard
@@ -164,7 +173,7 @@ export function UsageDashboardClient({ agents, initial }: Props) {
             />
           </div>
 
-          <UsageChart payload={q.data} />
+          <UsageChart payload={q.data} cotacao={cotacao} />
         </>
       )}
     </div>
