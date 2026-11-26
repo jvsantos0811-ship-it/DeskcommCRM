@@ -4,9 +4,9 @@ vi.mock("sonner", () => ({ toast: vi.fn() }));
 vi.mock("./emit", () => ({ emitNotification: vi.fn() }));
 
 import { toast } from "sonner";
-import { entregarAviso } from "./deliver";
+import { entregarAviso, silenciarAvisosDeMensagem } from "./deliver";
 import { emitNotification } from "./emit";
-import { gravarCanal } from "./prefs";
+import { gravarCanal, lerPrefs } from "./prefs";
 
 describe("entregarAviso", () => {
   afterEach(() => {
@@ -62,6 +62,50 @@ describe("entregarAviso", () => {
     expect(opcoes.action?.label).toBe("Abrir conversa");
     opcoes.action!.onClick();
     expect(assign).toHaveBeenCalledWith("/app/inbox?id=conv-1");
+  });
+
+  it("o aviso de mensagem traz 'Silenciar', que desliga os dois canais e cala o próximo aviso", () => {
+    gravarCanal("message", "push", true);
+    entregarAviso({
+      category: "message",
+      kind: "message_inbound",
+      title: "Maria Souza",
+      body: "oi",
+      href: "/app/inbox?id=conv-1",
+    });
+    const [, opcoes] = vi.mocked(toast).mock.calls.at(-1) as unknown as [
+      string,
+      { cancel?: { label: string; onClick: () => void } },
+    ];
+    expect(opcoes.cancel?.label).toBe("Silenciar");
+    opcoes.cancel!.onClick();
+
+    expect(lerPrefs().message).toEqual({ in_app: false, push: false });
+    vi.clearAllMocks();
+    entregarAviso({ category: "message", kind: "message_inbound", title: "Maria Souza", body: "de novo" });
+    expect(toast).not.toHaveBeenCalled();
+    expect(emitNotification).not.toHaveBeenCalled();
+  });
+
+  it("'Desfazer' devolve exatamente o que estava antes de silenciar", () => {
+    gravarCanal("message", "push", false);
+    silenciarAvisosDeMensagem();
+    expect(lerPrefs().message).toEqual({ in_app: false, push: false });
+
+    const [, confirmacao] = vi.mocked(toast).mock.calls.at(-1) as unknown as [
+      string,
+      { action?: { label: string; onClick: () => void } },
+    ];
+    expect(confirmacao.action?.label).toBe("Desfazer");
+    confirmacao.action!.onClick();
+    // Só o in-app estava ligado: o push não volta de presente.
+    expect(lerPrefs().message).toEqual({ in_app: true, push: false });
+  });
+
+  it("só o aviso de mensagem ganha 'Silenciar'", () => {
+    entregarAviso({ category: "mention", kind: "mention", title: "Ana", body: "@você" });
+    const [, opcoes] = vi.mocked(toast).mock.calls.at(-1)!;
+    expect((opcoes as { cancel?: unknown } | undefined)?.cancel).toBeUndefined();
   });
 
   it("aviso sem destino não ganha ação — botão morto não é conserto", () => {
