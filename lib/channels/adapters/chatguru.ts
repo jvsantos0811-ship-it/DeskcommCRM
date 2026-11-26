@@ -177,7 +177,12 @@ export const chatguruAdapter: ChannelAdapter = {
     } finally {
       reader.releaseLock();
     }
-    const mime = res.headers.get("content-type")?.split(";")[0]?.trim() || input.hintMime || "application/octet-stream";
+    // PC-060: o armazenamento da plataforma pode servir o arquivo com um tipo
+    // genérico; aí vale o tipo deduzido da mensagem (ex.: áudio → audio/ogg),
+    // senão a transcrição recebe "audio.bin" e o Inbox não toca.
+    const doServidor = res.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "";
+    const generico = doServidor === "" || doServidor === "application/octet-stream" || doServidor === "binary/octet-stream";
+    const mime = (generico ? input.hintMime : doServidor) || doServidor || "application/octet-stream";
     return { buffer: Buffer.concat(pedacos), mime };
   },
 

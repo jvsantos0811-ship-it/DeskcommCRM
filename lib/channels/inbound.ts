@@ -537,7 +537,8 @@ async function atendimentoExternoInbound(
   }
 
   // PC-058: o diálogo da plataforma que a equipe executa ao assumir o chat
-  // (grava o `valor_ao_passar` no campo da IA e faz o POST). Com a chave da
+  // (grava o `valor_quando_equipe_assume` no campo da IA ou na variável de
+  // contexto e faz o POST). Só a transição conta; o valor que fica é conversa. Com a chave da
   // conexão ligada, ele cala a IA e pausa o follow-up como a resposta da equipe
   // pelo CRM; o POST NÃO vira mensagem e a IA não roda. Desligada = como antes.
   const equipe = await tratarEquipeAssumiuDoPost(admin, {

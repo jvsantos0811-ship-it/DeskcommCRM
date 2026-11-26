@@ -71,6 +71,8 @@ interface Conexao {
     valor_quando_equipe_assume?: string | null;
     /** A IA só responde no chat sem responsável na plataforma. */
     ia_so_sem_responsavel?: boolean;
+    /** PC-058: variável de contexto que carrega o sinal (vazio = campo da IA). */
+    variavel_quando_equipe_assume?: string | null;
     /** PC-052 parte 3: diálogo por uso, fora da janela de 24 h. */
     roteiros_fora_da_janela?: Partial<Record<UsoForaDaJanela, string | null>>;
   } | null;
@@ -317,6 +319,9 @@ function FormularioDoAtendimentoExterno({
   const [campoValor, setCampoValor] = useState(() => estado?.config?.campo_da_ia?.valor_ao_passar ?? "");
   const [valorEquipe, setValorEquipe] = useState(() => estado?.config?.valor_quando_equipe_assume ?? "");
   const [soSemResponsavel, setSoSemResponsavel] = useState(() => estado?.config?.ia_so_sem_responsavel === true);
+  const [variavelEquipe, setVariavelEquipe] = useState(
+    () => estado?.config?.variavel_quando_equipe_assume ?? "",
+  );
   const [acoes, setAcoes] = useState<Acao[]>(() =>
     (estado?.config?.acoes ?? []).map(({ nome, dialogo_id, quando_usar }) => ({ nome, dialogo_id, quando_usar })),
   );
@@ -362,6 +367,7 @@ function FormularioDoAtendimentoExterno({
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
           valor_quando_equipe_assume: valorEquipe.trim() || null,
           ia_so_sem_responsavel: soSemResponsavel,
+          variavel_quando_equipe_assume: variavelEquipe.trim() || null,
           acoes: acoes.filter((a) => a.nome.trim() || a.dialogo_id.trim() || a.quando_usar.trim()),
           roteiros_fora_da_janela: {
             confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
@@ -570,6 +576,24 @@ function FormularioDoAtendimentoExterno({
             <p className="text-xs text-muted-foreground">
               {t(
                 "Quando alguém da equipe executa no chat um diálogo que grava este valor no campo da IA e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Use um valor diferente do gravado ao passar para a equipe.",
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${uid}-ae-equipe-variavel`}>
+              {t("Variável de contexto onde a equipe grava esse valor")}
+            </Label>
+            <Input
+              id={`${uid}-ae-equipe-variavel`}
+              value={variavelEquipe}
+              onChange={(e) => setVariavelEquipe(e.target.value)}
+              placeholder={t("vazio usa o campo da IA")}
+              autoComplete="off"
+              data-testid="ae-equipe-variavel"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Se o diálogo da equipe grava uma variável de contexto (ex.: LSIA) em vez do campo da IA, escreva o nome dela aqui. Só a mudança para o valor acima conta: as mensagens seguintes, com o valor ainda gravado, entram normalmente.",
               )}
             </p>
           </div>

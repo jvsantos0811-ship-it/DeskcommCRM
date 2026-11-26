@@ -95,3 +95,29 @@ describe("a IA só responde no chat sem responsável na plataforma", () => {
     expect(configParaGravar(liga).ia_so_sem_responsavel).toBe(true);
   });
 });
+
+describe("variável de contexto de quando a equipe assume (PC-058)", () => {
+  it("nasce vazia, é lida e sobrevive a tela antiga; vazio volta ao campo da IA", () => {
+    expect(CONFIG_VAZIA.variavelQuandoEquipeAssume).toBeNull();
+    const atual = lerConfigDoAtendimentoExterno({ variavel_quando_equipe_assume: "LSIA" });
+    expect(atual.variavelQuandoEquipeAssume).toBe("LSIA");
+    const antiga = configDoAtendimentoExternoEntrada.parse({ acoes: [] });
+    expect(configParaGravar(antiga, atual).variavel_quando_equipe_assume).toBe("LSIA");
+    const limpando = configDoAtendimentoExternoEntrada.parse({ acoes: [], variavel_quando_equipe_assume: "" });
+    expect(configParaGravar(limpando, atual).variavel_quando_equipe_assume).toBeNull();
+  });
+
+  it("recusa nome de variável inválido", () => {
+    const r = configDoAtendimentoExternoEntrada.safeParse({ acoes: [], variavel_quando_equipe_assume: "LS IA" });
+    expect(r.success).toBe(false);
+  });
+
+  it("pela variável, o valor pode coincidir com o da passagem (não há colisão)", () => {
+    const r = configDoAtendimentoExternoEntrada.safeParse({
+      campo_da_ia: { nome: "Campo", valor_ao_passar: "equipe" },
+      valor_quando_equipe_assume: "equipe",
+      variavel_quando_equipe_assume: "LSIA",
+    });
+    expect(r.success).toBe(true);
+  });
+});

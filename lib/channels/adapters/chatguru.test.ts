@@ -30,6 +30,7 @@ function creds(config: Partial<CredenciaisDoAtendimentoExterno["config"]> = {}):
       acoes: [],
       valorQuandoEquipeAssume: null,
       iaSoSemResponsavel: false,
+      variavelQuandoEquipeAssume: null,
       roteirosForaDaJanela: {},
       ...config,
     },
@@ -156,6 +157,19 @@ describe("adapter do canal dentro da plataforma (PC-047)", () => {
       chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "http://169.254.169.254/latest" }),
     ).rejects.toThrow();
     expect(pedidos).toHaveLength(1);
+  });
+
+  it("PC-060: tipo genérico do armazenamento cede ao tipo deduzido da mensagem", async () => {
+    const resposta = (ct: string) => new Response("abc", { status: 200, headers: { "content-type": ct } });
+    vi.stubGlobal("fetch", vi.fn(async () => resposta("binary/octet-stream")));
+    const a = await chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "https://arquivos.exemplo.com.br/a.ogg", hintMime: "audio/ogg" });
+    expect(a.mime).toBe("audio/ogg");
+    vi.stubGlobal("fetch", vi.fn(async () => resposta("image/jpeg")));
+    const b = await chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "https://arquivos.exemplo.com.br/b.jpg", hintMime: "image/jpeg" });
+    expect(b.mime).toBe("image/jpeg");
+    vi.stubGlobal("fetch", vi.fn(async () => resposta("application/octet-stream")));
+    const c = await chatguruAdapter.fetchInboundMedia!({ organizationId: ORG, sessionRef: "fone_teste", url: "https://arquivos.exemplo.com.br/c" });
+    expect(c.mime).toBe("application/octet-stream");
   });
 
   it("a IA só executa ação LIBERADA na tela, pela chave", async () => {
