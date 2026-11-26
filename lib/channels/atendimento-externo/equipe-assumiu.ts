@@ -15,13 +15,15 @@
  * A equipe executa, no chat, um diálogo da plataforma (ex.: "IA: equipe
  * assumiu") que faz duas coisas, nesta ordem:
  *
- *   1. grava no `campo_da_ia` o MESMO `valor_ao_passar` que o CRM grava quando a
- *      IA passa o atendimento — isso já faz a plataforma parar de entregar as
- *      mensagens seguintes ao CRM;
+ *   1. grava no `campo_da_ia` o `valor_quando_equipe_assume` da conexão (ex.:
+ *      `assumido`) — PRÓPRIO, diferente do `valor_ao_passar` que o CRM grava
+ *      sozinho na passagem da IA (achado da revisão: com o mesmo valor, um
+ *      diálogo de entrega sem a condição "campo ≠ valor" faria cada mensagem
+ *      seguinte do lead ser lida como sinal e descartada);
  *   2. faz o "POST PARA URL" para a entrada deste canal.
  *
- * Esse POST carrega `campos_personalizados.<campo_da_ia> = <valor_ao_passar>`.
- * Com a chave da conexão ligada (`equipe_assumiu_pela_plataforma`), é ele que
+ * Esse POST carrega `campos_personalizados.<campo_da_ia> = <valor_quando_equipe_assume>`.
+ * Com esse valor preenchido na conexão, é ele que
  * diz "a equipe assumiu" — e o CRM aplica o mesmo efeito do PC-029: a IA cala de
  * forma durável, o contato fica só humano, as mensagens agendadas caem, os
  * follow-ups seguem a política de passagem de cada fluxo e o card vai para a
@@ -32,7 +34,7 @@
  *  - O POST do sinal NÃO vira mensagem: o `texto_mensagem` dele é a última
  *    mensagem do chat (do cliente ou da própria equipe), e gravá-lo duplicaria
  *    ou atribuiria ao cliente o que a equipe escreveu. A IA também não roda.
- *  - Chave desligada (padrão), conexão sem `campo_da_ia` ou com o valor vazio:
+ *  - Valor vazio (padrão), conexão sem `campo_da_ia`, ou valor igual ao da passagem:
  *    nada muda, o POST é lido como sempre.
  *  - Contato ou conversa que o CRM não conhece (cliente antigo, que nunca
  *    passou pela IA): nada é criado. O sinal é reconhecido e descartado.
@@ -56,17 +58,17 @@ const sem = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLo
 /**
  * O POST é o sinal de "a equipe assumiu"? Pura.
  *
- * Exige a chave ligada E um `campo_da_ia` com `valor_ao_passar` preenchido: sem
- * valor, qualquer chat com o campo vazio seria lido como "assumido".
- * Compara sem acento e sem caixa, como a enquete compara a opção.
+ * Exige um `campo_da_ia` e um `valor_quando_equipe_assume` preenchido e
+ * DIFERENTE do `valor_ao_passar` (a tela já recusa igual; a regra não confia
+ * só nela). Compara sem acento e sem caixa, como a enquete compara a opção.
  */
 export function ehSinalDeEquipeAssumiu(
   corpo: Record<string, unknown> | null,
-  config: Pick<ConfigDoAtendimentoExterno, "campoDaIa" | "equipeAssumiuPelaPlataforma">,
+  config: Pick<ConfigDoAtendimentoExterno, "campoDaIa" | "valorQuandoEquipeAssume">,
 ): boolean {
-  if (!corpo || !config.equipeAssumiuPelaPlataforma || !config.campoDaIa) return false;
-  const esperado = sem(config.campoDaIa.valorAoPassar ?? "");
-  if (!esperado) return false;
+  if (!corpo || !config.campoDaIa) return false;
+  const esperado = sem(config.valorQuandoEquipeAssume ?? "");
+  if (!esperado || esperado === sem(config.campoDaIa.valorAoPassar ?? "")) return false;
   const valor = valorDoCampo(corpo, `campos_personalizados.${config.campoDaIa.nome}`);
   return valor !== null && sem(valor) === esperado;
 }

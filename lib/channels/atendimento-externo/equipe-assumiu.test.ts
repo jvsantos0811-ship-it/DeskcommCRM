@@ -28,16 +28,20 @@ const SESSAO = "sessao-1";
 const LIGADA = {
   campo_da_ia: { nome: "LSIA", valor_ao_passar: "equipe" },
   acoes: [],
-  equipe_assumiu_pela_plataforma: true,
+  valor_quando_equipe_assume: "assumido",
 };
 
 function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ id: "conv-1" }]) {
   const lidas: string[] = [];
+  const filtros: Array<{ tabela: string; coluna: string; valor: unknown }> = [];
   const from = (tabela: string) => {
     lidas.push(tabela);
     const q: Record<string, unknown> = {
       select: () => q,
-      eq: () => q,
+      eq: (coluna: string, valor: unknown) => {
+        filtros.push({ tabela, coluna, valor });
+        return q;
+      },
       order: () => q,
       limit: () => q,
       maybeSingle: async () => {
@@ -48,7 +52,7 @@ function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ i
     };
     return q;
   };
-  return { cliente: { from } as never, lidas };
+  return { cliente: { from } as never, lidas, filtros };
 }
 
 const post = (campos: unknown, extra: Record<string, unknown> = {}) => ({
@@ -65,27 +69,30 @@ beforeEach(() => {
 });
 
 describe("ehSinalDeEquipeAssumiu (regra pura)", () => {
-  const config = { campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" }, equipeAssumiuPelaPlataforma: true };
+  const config = { campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" }, valorQuandoEquipeAssume: "assumido" };
 
   it("reconhece o valor, sem acento e sem caixa, em objeto ou em JSON-texto", () => {
-    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "equipe" }), config)).toBe(true);
-    expect(ehSinalDeEquipeAssumiu(post({ LSIA: " Équipe " }), config)).toBe(true);
-    expect(ehSinalDeEquipeAssumiu(post('{"LSIA":"equipe"}'), config)).toBe(true);
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }), config)).toBe(true);
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: " Assumído " }), config)).toBe(true);
+    expect(ehSinalDeEquipeAssumiu(post('{"LSIA":"assumido"}'), config)).toBe(true);
+  });
+
+  it("o valor da PASSAGEM da IA nunca é sinal (a mensagem do lead depois da passagem não é engolida)", () => {
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "equipe" }), config)).toBe(false);
+    // Mesmo se a conexão foi gravada com os dois iguais (a tela recusa; a regra não confia só nela).
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "equipe" }), { ...config, valorQuandoEquipeAssume: "Equipe" })).toBe(false);
   });
 
   it("não reconhece outro valor, outro campo ou campo ausente", () => {
     expect(ehSinalDeEquipeAssumiu(post({ LSIA: "novo" }), config)).toBe(false);
-    expect(ehSinalDeEquipeAssumiu(post({ OUTRO: "equipe" }), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({ OUTRO: "assumido" }), config)).toBe(false);
     expect(ehSinalDeEquipeAssumiu(post(undefined), config)).toBe(false);
   });
 
-  it("chave desligada, sem campo da IA ou com valor vazio: nunca é sinal", () => {
-    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "equipe" }), { ...config, equipeAssumiuPelaPlataforma: false })).toBe(false);
-    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "equipe" }), { ...config, campoDaIa: null })).toBe(false);
-    // Valor vazio: qualquer chat com o campo vazio seria lido como "assumido".
-    expect(
-      ehSinalDeEquipeAssumiu(post({ LSIA: "" }), { ...config, campoDaIa: { nome: "LSIA", valorAoPassar: "" } }),
-    ).toBe(false);
+  it("valor vazio (desligado) ou sem campo da IA: nunca é sinal", () => {
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }), { ...config, valorQuandoEquipeAssume: null })).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "" }), { ...config, valorQuandoEquipeAssume: "" })).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }), { ...config, campoDaIa: null })).toBe(false);
   });
 });
 
@@ -95,20 +102,26 @@ describe("tratarEquipeAssumiuDoPost", () => {
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
       orgId: ORG,
       channelSessionId: SESSAO,
-      corpo: post({ LSIA: "equipe" }),
+      corpo: post({ LSIA: "assumido" }),
     });
     expect(r).toEqual({ reconhecido: true, status: "aplicado", cardMovidoPara: "etapa-equipe" });
     expect(chamadas).toEqual([
       expect.objectContaining({ organizationId: ORG, conversationId: "conv-1", origem: "plataforma", userId: null }),
     ]);
+    // A organização e o número vêm de quem chama, e toda leitura filtra por eles.
+    for (const tabela of ["channel_sessions", "conversations"]) {
+      expect(a.filtros).toContainEqual({ tabela, coluna: "organization_id", valor: ORG });
+    }
+    expect(a.filtros).toContainEqual({ tabela: "channel_sessions", coluna: "id", valor: SESSAO });
+    expect(a.filtros).toContainEqual({ tabela: "conversations", coluna: "channel_session_id", valor: SESSAO });
   });
 
   it("desligada (padrão): não é sinal, nada é aplicado", async () => {
-    const a = admin({ ...LIGADA, equipe_assumiu_pela_plataforma: undefined });
+    const a = admin({ ...LIGADA, valor_quando_equipe_assume: undefined });
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
       orgId: ORG,
       channelSessionId: SESSAO,
-      corpo: post({ LSIA: "equipe" }),
+      corpo: post({ LSIA: "assumido" }),
     });
     expect(r).toEqual({ reconhecido: false });
     expect(chamadas).toHaveLength(0);
@@ -130,7 +143,7 @@ describe("tratarEquipeAssumiuDoPost", () => {
     const semContato = await tratarEquipeAssumiuDoPost(admin(LIGADA).cliente, {
       orgId: ORG,
       channelSessionId: SESSAO,
-      corpo: post({ LSIA: "equipe" }),
+      corpo: post({ LSIA: "assumido" }),
     });
     expect(semContato).toEqual({ reconhecido: true, status: "sem_contato" });
 
@@ -138,7 +151,7 @@ describe("tratarEquipeAssumiuDoPost", () => {
     const semConversa = await tratarEquipeAssumiuDoPost(admin(LIGADA, []).cliente, {
       orgId: ORG,
       channelSessionId: SESSAO,
-      corpo: post({ LSIA: "equipe" }),
+      corpo: post({ LSIA: "assumido" }),
     });
     expect(semConversa).toEqual({ reconhecido: true, status: "sem_conversa" });
     expect(chamadas).toHaveLength(0);
@@ -149,7 +162,7 @@ describe("tratarEquipeAssumiuDoPost", () => {
     const r = await tratarEquipeAssumiuDoPost(admin(LIGADA).cliente, {
       orgId: ORG,
       channelSessionId: SESSAO,
-      corpo: post({ LSIA: "equipe" }),
+      corpo: post({ LSIA: "assumido" }),
     });
     expect(r).toEqual({ reconhecido: true, status: "ja_assumida" });
   });

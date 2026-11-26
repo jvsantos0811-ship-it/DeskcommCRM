@@ -68,7 +68,7 @@ interface Conexao {
     campo_da_ia: { nome: string; valor_ao_passar: string } | null;
     acoes: (Acao & { chave: string })[];
     /** PC-058: o diálogo da equipe na plataforma cala a IA. */
-    equipe_assumiu_pela_plataforma?: boolean;
+    valor_quando_equipe_assume?: string | null;
     /** PC-052 parte 3: diálogo por uso, fora da janela de 24 h. */
     roteiros_fora_da_janela?: Partial<Record<UsoForaDaJanela, string | null>>;
   } | null;
@@ -313,7 +313,7 @@ function FormularioDoAtendimentoExterno({
   const [transferencia, setTransferencia] = useState(() => estado?.config?.dialogo_transferencia ?? "");
   const [campoNome, setCampoNome] = useState(() => estado?.config?.campo_da_ia?.nome ?? "");
   const [campoValor, setCampoValor] = useState(() => estado?.config?.campo_da_ia?.valor_ao_passar ?? "");
-  const [equipeAssume, setEquipeAssume] = useState(() => estado?.config?.equipe_assumiu_pela_plataforma === true);
+  const [valorEquipe, setValorEquipe] = useState(() => estado?.config?.valor_quando_equipe_assume ?? "");
   const [acoes, setAcoes] = useState<Acao[]>(() =>
     (estado?.config?.acoes ?? []).map(({ nome, dialogo_id, quando_usar }) => ({ nome, dialogo_id, quando_usar })),
   );
@@ -357,7 +357,7 @@ function FormularioDoAtendimentoExterno({
         config: {
           dialogo_transferencia: transferencia.trim() || null,
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
-          equipe_assumiu_pela_plataforma: equipeAssume,
+          valor_quando_equipe_assume: valorEquipe.trim() || null,
           acoes: acoes.filter((a) => a.nome.trim() || a.dialogo_id.trim() || a.quando_usar.trim()),
           roteiros_fora_da_janela: {
             confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
@@ -551,25 +551,24 @@ function FormularioDoAtendimentoExterno({
           </div>
 
           {/* PC-058: o caminho de volta do campo da IA. A equipe executa no chat
-              um diálogo que grava o MESMO valor e faz o POST: o CRM entende que
-              a equipe assumiu ali. Sem campo e valor, a caixa não tem efeito. */}
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={equipeAssume}
-              onChange={(e) => setEquipeAssume(e.target.checked)}
-              className="mt-0.5 size-4"
+              um diálogo que grava ESTE valor (diferente do da passagem) e faz o
+              POST: o CRM entende que a equipe assumiu ali. Vazio desliga. */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${uid}-ae-equipe-assume`}>{t("Valor que a equipe grava ao assumir na plataforma")}</Label>
+            <Input
+              id={`${uid}-ae-equipe-assume`}
+              value={valorEquipe}
+              onChange={(e) => setValorEquipe(e.target.value)}
+              placeholder={t("vazio desliga")}
+              autoComplete="off"
               data-testid="ae-equipe-assumiu"
             />
-            <span className="flex flex-col gap-0.5">
-              <span>{t("Parar a IA quando a equipe assumir na plataforma")}</span>
-              <span className="text-xs text-muted-foreground">
-                {t(
-                  "Quando alguém da equipe executa no chat um diálogo que grava este mesmo valor no campo e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Precisa do campo e do valor preenchidos.",
-                )}
-              </span>
-            </span>
-          </label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Quando alguém da equipe executa no chat um diálogo que grava este valor no campo da IA e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Use um valor diferente do gravado ao passar para a equipe.",
+              )}
+            </p>
+          </div>
 
           <div className="flex flex-col gap-2">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

@@ -26,11 +26,13 @@
  *     CRM não pode mandar texto livre: a confirmação da véspera, a do dia, o
  *     lembrete e os passos do follow-up (T1..T5, parte 3b). Vazio = naquele uso,
  *     fora da janela, nada sai (o de sempre).
- *  5. `equipe_assumiu_pela_plataforma` — PC-058: quando a equipe executa, no
- *     chat, um diálogo que grava `valor_ao_passar` no `campo_da_ia` e faz o
- *     "POST PARA URL", o CRM entende que a equipe assumiu ali (a IA cala, o
- *     follow-up pausa, o card vai para a etapa da equipe). Desligado (padrão) =
- *     esse POST é lido como sempre. Só vale com `campo_da_ia` e valor preenchidos.
+ *  5. `valor_quando_equipe_assume` — PC-058: quando a equipe executa, no chat,
+ *     um diálogo que grava ESTE valor no `campo_da_ia` e faz o "POST PARA URL",
+ *     o CRM entende que a equipe assumiu ali (a IA cala, o follow-up pausa, o
+ *     card vai para a etapa da equipe). Vazio (padrão) = desligado, o POST é
+ *     lido como sempre. Tem de ser DIFERENTE de `valor_ao_passar`: esse o CRM
+ *     grava sozinho na passagem da IA, e um diálogo de entrega sem a condição
+ *     "campo ≠ valor" faria cada mensagem seguinte do lead virar "sinal".
  */
 import { z } from "zod";
 
@@ -96,8 +98,14 @@ export const configDoAtendimentoExternoEntrada = z.object({
     .optional()
     .transform((v) => v ?? null),
   acoes: z.array(acaoSchema).max(MAXIMO_DE_ACOES).default([]),
-  /** PC-058. Ausente = tela antiga: fica o que está gravado (`configParaGravar`). */
-  equipe_assumiu_pela_plataforma: z.boolean().optional(),
+  /** PC-058. Ausente = tela antiga: fica o que está gravado (`configParaGravar`). Vazio = desligado. */
+  valor_quando_equipe_assume: z
+    .string()
+    .trim()
+    .max(100)
+    .nullable()
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v ? v : null)),
   roteiros_fora_da_janela: z
     .object({
       confirmacao_vespera: idOpcional,
@@ -110,7 +118,17 @@ export const configDoAtendimentoExternoEntrada = z.object({
       followup_5: idOpcional,
     })
     .optional(),
-});
+}).refine(
+  (c) => {
+    const sem = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
+    const sinal = c.valor_quando_equipe_assume;
+    return !sinal || !c.campo_da_ia || sem(sinal) !== sem(c.campo_da_ia.valor_ao_passar);
+  },
+  {
+    message: "O valor de quando a equipe assume tem de ser diferente do valor gravado ao passar para a equipe.",
+    path: ["valor_quando_equipe_assume"],
+  },
+);
 
 export interface AcaoDoAtendimento {
   /** Identificador estável para a IA (`a-z0-9_`), derivado do nome. */
@@ -124,8 +142,8 @@ export interface ConfigDoAtendimentoExterno {
   dialogoTransferencia: string | null;
   campoDaIa: { nome: string; valorAoPassar: string } | null;
   acoes: AcaoDoAtendimento[];
-  /** PC-058: o POST com `campo_da_ia` = `valor_ao_passar` quer dizer "a equipe assumiu". */
-  equipeAssumiuPelaPlataforma: boolean;
+  /** PC-058: o POST com `campo_da_ia` = este valor quer dizer "a equipe assumiu". `null` = desligado. */
+  valorQuandoEquipeAssume: string | null;
   /** Diálogo por uso, fora da janela de 24 h. Uso ausente = nada sai fora dela. */
   roteirosForaDaJanela: Partial<Record<UsoForaDaJanela, string>>;
 }
@@ -134,7 +152,7 @@ export const CONFIG_VAZIA: ConfigDoAtendimentoExterno = Object.freeze({
   dialogoTransferencia: null,
   campoDaIa: null,
   acoes: [],
-  equipeAssumiuPelaPlataforma: false,
+  valorQuandoEquipeAssume: null,
   roteirosForaDaJanela: {},
 }) as ConfigDoAtendimentoExterno;
 
@@ -184,8 +202,10 @@ export function configParaGravar(
       dialogo_id: a.dialogoId,
       quando_usar: a.quandoUsar,
     })),
-    equipe_assumiu_pela_plataforma:
-      entrada.equipe_assumiu_pela_plataforma ?? atual.equipeAssumiuPelaPlataforma,
+    valor_quando_equipe_assume:
+      entrada.valor_quando_equipe_assume !== undefined
+        ? entrada.valor_quando_equipe_assume
+        : atual.valorQuandoEquipeAssume,
     roteiros_fora_da_janela: Object.fromEntries(
       USOS_FORA_DA_JANELA.map((uso) => [
         uso,
@@ -214,7 +234,7 @@ const gravadoSchema = z.object({
     )
     .max(MAXIMO_DE_ACOES)
     .optional(),
-  equipe_assumiu_pela_plataforma: z.boolean().optional(),
+  valor_quando_equipe_assume: z.string().max(100).nullable().optional(),
   // Lido à parte, uso a uso (ver `lerRoteiros`): um id ilegível derruba só o seu
   // uso, nunca as ações e a passagem que já funcionavam.
   roteiros_fora_da_janela: z.unknown().optional(),
@@ -250,7 +270,7 @@ export function lerConfigDoAtendimentoExterno(raw: unknown): ConfigDoAtendimento
       dialogoId: a.dialogo_id,
       quandoUsar: a.quando_usar,
     })),
-    equipeAssumiuPelaPlataforma: c.equipe_assumiu_pela_plataforma === true,
+    valorQuandoEquipeAssume: c.valor_quando_equipe_assume?.trim() || null,
     roteirosForaDaJanela: lerRoteiros(c.roteiros_fora_da_janela),
   };
 }

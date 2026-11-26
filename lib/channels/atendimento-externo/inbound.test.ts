@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Um corpo que diga ser de outro número, ou que traga dados de outra empresa,
  * não escolhe onde a mensagem é gravada.
  */
-const { ingest, phoneDaSessao, enquete, conexoesAtivas } = vi.hoisted(() => ({
+const { ingest, phoneDaSessao, enquete, conexoesAtivas, sinalDaEquipe } = vi.hoisted(() => ({
+  sinalDaEquipe: vi.fn(async (..._args: unknown[]) => ({ reconhecido: false }) as Record<string, unknown>),
   conexoesAtivas: vi.fn(async (..._args: unknown[]) => 1),
   ingest: vi.fn(async (..._args: unknown[]) => ({ status: "ingested", messageId: "m-1", conversationId: "c-1" })),
   phoneDaSessao: vi.fn(async (..._args: unknown[]) => "fone-da-empresa-a" as string | null),
@@ -17,6 +18,7 @@ const { ingest, phoneDaSessao, enquete, conexoesAtivas } = vi.hoisted(() => ({
 }));
 vi.mock("./ingest", () => ({ ingestAtendimentoExterno: ingest }));
 vi.mock("./enquete", () => ({ tratarEnqueteDoPost: enquete }));
+vi.mock("./equipe-assumiu", () => ({ tratarEquipeAssumiuDoPost: sinalDaEquipe }));
 vi.mock("./sessao", async (original) => ({
   ...((await original()) as Record<string, unknown>),
   phoneIdDaSessao: phoneDaSessao,
@@ -49,6 +51,8 @@ beforeEach(() => {
   ingest.mockClear();
   phoneDaSessao.mockClear();
   enquete.mockClear();
+  sinalDaEquipe.mockReset();
+  sinalDaEquipe.mockResolvedValue({ reconhecido: false });
   conexoesAtivas.mockReset();
   conexoesAtivas.mockResolvedValue(1);
 });
@@ -237,6 +241,31 @@ describe("entrada do canal — o voto na enquete do grupo (PC-050)", () => {
 
   it("chave desligada: a enquete não muda nada na entrada", async () => {
     const r = await entregar(corpo());
+    expect(r.ok).toBe(true);
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("entrada do canal dentro da plataforma — equipe assumiu (PC-058)", () => {
+  const chamar = () =>
+    handleInboundWebhook(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: corpo({ campos_personalizados: { LSIA: "assumido" } }),
+      headers: new Headers({ [HEADER_DO_SEGREDO]: SEGREDO_A }),
+      secret: SEGREDO_A,
+    });
+
+  it("o sinal reconhecido NÃO vira mensagem e responde equipe_assumiu", async () => {
+    sinalDaEquipe.mockResolvedValue({ reconhecido: true, status: "aplicado", cardMovidoPara: "e-1" });
+    const r = await chamar();
+    expect(r).toEqual({ ok: true, body: { status: "equipe_assumiu", reason: "aplicado" } });
+    expect(ingest).not.toHaveBeenCalled();
+    // A organização e o número vêm da sessão (token do caminho), nunca do corpo.
+    expect(sinalDaEquipe).toHaveBeenCalledWith(admin, expect.objectContaining({ orgId: ORG_A, channelSessionId: "sess-a" }));
+  });
+
+  it("sem o sinal (ou desligado), a mensagem entra como sempre", async () => {
+    const r = await chamar();
     expect(r.ok).toBe(true);
     expect(ingest).toHaveBeenCalledTimes(1);
   });

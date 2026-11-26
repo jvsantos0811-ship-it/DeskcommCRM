@@ -28,7 +28,7 @@ function creds(config: Partial<CredenciaisDoAtendimentoExterno["config"]> = {}):
       dialogoTransferencia: null,
       campoDaIa: null,
       acoes: [],
-      equipeAssumiuPelaPlataforma: false,
+      valorQuandoEquipeAssume: null,
       roteirosForaDaJanela: {},
       ...config,
     },
