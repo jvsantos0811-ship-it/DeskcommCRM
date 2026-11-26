@@ -25,6 +25,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 
 import { BudgetCard } from "@/components/ai/BudgetCard";
+import { UsageChart } from "@/components/ai/UsageChart";
+import type { UsagePayload } from "@/lib/ai/usage/aggregate";
 import type { BudgetStatus } from "@/lib/ai/budget/check";
 import { formatCentsUSDEmReais } from "@/lib/money";
 
@@ -105,5 +107,40 @@ describe("o card do orçamento em reais", () => {
     const tudo = texto(container);
     expect(tudo).toContain("US$ 1,00 gastos de US$ 50,00");
     expect(tudo).toMatch(/valores em dólar/u);
+  });
+});
+
+/** Período sem gasto: o cartão do gráfico mostra o título sem desenhar o eixo. */
+function payloadVazio(): UsagePayload {
+  return {
+    range: { from: "2026-11-01", to: "2026-11-25" },
+    totals: {
+      cost_cents: 0,
+      total_tokens: 0,
+      invocations: 0,
+      input_tokens: 0,
+      cache_read_tokens: 0,
+      cache_hit_rate: 0,
+      agent_turns: 0,
+      avg_cost_per_turn_cents: null,
+      p50_latency_ms: 0,
+      p95_latency_ms: 0,
+      handoff_rate: 0,
+    },
+    series: { cost_cents: [], total_tokens: [], p50_latency_ms: [], p95_latency_ms: [], handoff_rate: [] },
+    by_kind: {},
+  };
+}
+
+describe("o gráfico de custo diz a moeda do eixo", () => {
+  it("com a cotação, o título fala em R$", () => {
+    render(<UsageChart payload={payloadVazio()} cotacao={5.5} />);
+    expect(screen.getByText("Quanto gastou por dia (R$)")).toBeInTheDocument();
+    expect(screen.queryByText("Quanto gastou por dia (US$)")).toBeNull();
+  });
+
+  it("sem a cotação, segue em US$ (controle)", () => {
+    render(<UsageChart payload={payloadVazio()} />);
+    expect(screen.getByText("Quanto gastou por dia (US$)")).toBeInTheDocument();
   });
 });

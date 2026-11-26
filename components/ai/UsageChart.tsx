@@ -66,8 +66,8 @@ const tooltipStyle = {
 };
 
 export function UsageChart({ payload, cotacao }: Props) {
-  const custo = (cents: number) =>
-    typeof cotacao === "number" && cotacao > 0 ? formatCentsUSDEmReais(cents, cotacao) : formatCentsUSD(cents);
+  const emReais = typeof cotacao === "number" && cotacao > 0;
+  const custo = (cents: number) => (emReais ? formatCentsUSDEmReais(cents, cotacao) : formatCentsUSD(cents));
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { series } = payload;
@@ -91,7 +91,9 @@ export function UsageChart({ payload, cotacao }: Props) {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <ChartCard title={t("Quanto gastou por dia (US$)")}>
+      {/* O rótulo diz a moeda do eixo: valor em R$ com título em US$ era a
+          mesma tela dizendo duas moedas. */}
+      <ChartCard title={emReais ? t("Quanto gastou por dia (R$)") : t("Quanto gastou por dia (US$)")}>
         {!hasCost ? (
           <EmptyChart />
         ) : (

@@ -18068,6 +18068,7 @@ export const DICIONARIO: Traducoes = {
   "Escolha o que acontece quando o gasto do mês chega no limite. Os valores são em reais, pela cotação de": { es: "Elige qué pasa cuando el gasto del mes llega al límite. Los valores están en reales, con la cotización de" },
   "o provedor de IA cobra em dólar.": { es: "el proveedor de IA cobra en dólares." },
   "Limite mensal (R$)": { es: "Límite mensual (R$)" },
+  "Quanto gastou por dia (R$)": { es: "Cuánto gastaste por día (R$)" },
 };
 
 /**
