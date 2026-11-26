@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR,
+  MOTIVO_EQUIPE_RESPONDEU_PELO_CRM,
   destinoQuandoAEquipeAssume,
   etapaQuandoAEquipeAssume,
   fraseDaLinhaDoTempo,
+  motivoDaOrigem,
   type EtapaDoFunil,
 } from "./equipe-assumiu-regra";
 import { MOTIVO_ATENDIMENTO_MANUAL } from "./atendimento-manual";
@@ -70,5 +72,14 @@ describe("PC-029 · a regra pura", () => {
     expect(etapaQuandoAEquipeAssume({})).toBeNull();
     expect(etapaQuandoAEquipeAssume(null)).toBeNull();
     expect(etapaQuandoAEquipeAssume("lixo")).toBeNull();
+  });
+});
+
+describe("origem plataforma (PC-058)", () => {
+  it("grava o motivo de resposta fora do CRM e diz na linha do tempo que foi pela plataforma", () => {
+    expect(motivoDaOrigem("plataforma")).toBe(MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR);
+    expect(motivoDaOrigem("celular")).toBe(MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR);
+    expect(motivoDaOrigem("crm")).toBe(MOTIVO_EQUIPE_RESPONDEU_PELO_CRM);
+    expect(fraseDaLinhaDoTempo("plataforma", null)).toBe("Equipe assumiu pela plataforma de atendimento");
   });
 });

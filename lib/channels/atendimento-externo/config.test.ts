@@ -52,3 +52,29 @@ describe("configuração do canal (PC-047)", () => {
     expect(lerConfigDoAtendimentoExterno({})).toEqual(CONFIG_VAZIA);
   });
 });
+
+describe("valor de quando a equipe assume na plataforma (PC-058)", () => {
+  it("nasce vazio (desligado) e é lido sem espaços", () => {
+    expect(CONFIG_VAZIA.valorQuandoEquipeAssume).toBeNull();
+    expect(lerConfigDoAtendimentoExterno({}).valorQuandoEquipeAssume).toBeNull();
+    expect(lerConfigDoAtendimentoExterno({ valor_quando_equipe_assume: " assumido " }).valorQuandoEquipeAssume).toBe(
+      "assumido",
+    );
+  });
+
+  it("tela antiga (sem o campo) não apaga o valor gravado; vazio desliga", () => {
+    const atual = lerConfigDoAtendimentoExterno({ valor_quando_equipe_assume: "assumido" });
+    const antiga = configDoAtendimentoExternoEntrada.parse({ acoes: [] });
+    expect(configParaGravar(antiga, atual).valor_quando_equipe_assume).toBe("assumido");
+    const desligando = configDoAtendimentoExternoEntrada.parse({ acoes: [], valor_quando_equipe_assume: "" });
+    expect(configParaGravar(desligando, atual).valor_quando_equipe_assume).toBeNull();
+  });
+
+  it("recusa o mesmo valor da passagem para a equipe", () => {
+    const r = configDoAtendimentoExternoEntrada.safeParse({
+      campo_da_ia: { nome: "LSIA", valor_ao_passar: "equipe" },
+      valor_quando_equipe_assume: "Equipe",
+    });
+    expect(r.success).toBe(false);
+  });
+});

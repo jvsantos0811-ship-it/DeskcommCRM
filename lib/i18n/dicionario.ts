@@ -17706,6 +17706,7 @@ export const DICIONARIO: Traducoes = {
   "Equipe (celular)": { es: "Equipo (móvil)" },
   "Equipe assumiu respondendo pelo CRM": { es: "El equipo asumió respondiendo por el CRM" },
   "Equipe assumiu respondendo pelo celular": { es: "El equipo asumió respondiendo por el móvil" },
+  "Equipe assumiu pela plataforma de atendimento": { es: "El equipo asumió por la plataforma de atención" },
   "outra pessoa": { es: "otra persona" },
   "Com você": { es: "Contigo" },
   "A conversa está com": { es: "La conversación está con" },
@@ -18019,6 +18020,11 @@ export const DICIONARIO: Traducoes = {
   "Campo que liga a IA no chat": { es: "Campo que activa la IA en el chat" },
   "Valor gravado ao passar para a equipe": { es: "Valor guardado al pasar al equipo" },
   "vazio desliga": { es: "vacío apaga" },
+  "Valor que a equipe grava ao assumir na plataforma": { es: "Valor que el equipo guarda al asumir en la plataforma" },
+  "Quando alguém da equipe executa no chat um diálogo que grava este valor no campo da IA e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Use um valor diferente do gravado ao passar para a equipe.":
+    {
+      es: "Cuando alguien del equipo ejecuta en el chat un diálogo que guarda este valor en el campo de la IA y hace el POST al CRM, la IA se detiene, el seguimiento se pausa y la tarjeta va a la etapa del equipo. Use un valor diferente del guardado al pasar al equipo.",
+    },
   "Ações que a IA pode executar": { es: "Acciones que la IA puede ejecutar" },
   "Nenhuma. A IA só anota para a equipe.": { es: "Ninguna. La IA solo anota para el equipo." },
   "Nome da ação": { es: "Nombre de la acción" },
