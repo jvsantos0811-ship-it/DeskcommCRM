@@ -91,6 +91,13 @@ const camposDoTipo = {
    * `uuid[]` e não tem FK).
    */
   rotation_owner_user_ids: z.array(z.string().uuid()).max(10).nullish(),
+  /**
+   * PC-054 — REVEZAMENTO ENTRE AGENDAS: sem agenda escolhida, o compromisso cai
+   * na agenda da vez que está livre, entre estas (`calendar_connection_calendars.id`
+   * da conta Google de quem atende). Vazia ou nula = destino único, como antes.
+   * Conferida abaixo, porque a coluna é `uuid[]` e não tem FK.
+   */
+  rotation_calendar_ids: z.array(z.string().uuid()).max(10).nullish(),
   /** PC-052 — presença do lead com cor no Google. Desligado = o de sempre. */
   lead_presence_enabled: z.boolean().optional(),
   requires_confirmation: z.boolean().optional(),
@@ -295,6 +302,93 @@ async function conferirRodizio(
   return { ok: true, valor: unicos };
 }
 
+/**
+ * PC-054 — confere a lista do revezamento: duas ou mais agendas, todas da conta
+ * Google de QUEM ATENDE (o responsável do tipo), nesta organização, que aceitam
+ * publicação e contam para conflito. Devolve a lista sem repetidos (vazia vira
+ * `null`, que é "sem revezamento") ou a recusa nomeada.
+ *
+ * ⚠️ "Conta para conflito" não é detalhe: sem isso os eventos pessoais da agenda
+ * não são lidos (`calendar_selected_external_events`), e o horário pareceria
+ * livre por ignorância — a IA marcaria por cima de um compromisso que existe.
+ */
+type RecusaDoRevezamento = "leitura" | "uma_so" | "sem_dono" | "fora_da_conta" | "nao_utilizavel";
+async function conferirRevezamento(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  ids: string[] | null,
+  donoId: string | null,
+): Promise<{ ok: true; valor: string[] | null } | { ok: false; erro: RecusaDoRevezamento }> {
+  const unicos = [...new Set(ids ?? [])];
+  if (unicos.length === 0) return { ok: true, valor: null };
+  if (unicos.length < 2) return { ok: false, erro: "uma_so" };
+  if (!donoId) return { ok: false, erro: "sem_dono" };
+  const { data, error } = await admin
+    .from("calendar_connection_calendars")
+    .select("id, available, access_role, counts_for_conflicts, calendar_connections!inner(user_id, organization_id)")
+    .eq("organization_id", organizationId)
+    .in("id", unicos);
+  if (error) return { ok: false, erro: "leitura" };
+  const linhas = (data ?? []) as Array<{
+    id: string;
+    available: boolean;
+    access_role: string | null;
+    counts_for_conflicts: boolean;
+    calendar_connections:
+      | { user_id: string; organization_id: string }
+      | Array<{ user_id: string; organization_id: string }>
+      | null;
+  }>;
+  const porId = new Map(linhas.map((l) => [l.id, l]));
+  for (const id of unicos) {
+    const linha = porId.get(id);
+    const conexao = Array.isArray(linha?.calendar_connections)
+      ? linha?.calendar_connections[0]
+      : linha?.calendar_connections;
+    if (!linha || !conexao || conexao.user_id !== donoId || conexao.organization_id !== organizationId) {
+      return { ok: false, erro: "fora_da_conta" };
+    }
+    if (!linha.available || !["owner", "writer"].includes(String(linha.access_role)) || !linha.counts_for_conflicts) {
+      return { ok: false, erro: "nao_utilizavel" };
+    }
+  }
+  return { ok: true, valor: unicos };
+}
+
+/** A recusa do revezamento, na língua de quem opera. */
+function recusaDoRevezamento(
+  erro: RecusaDoRevezamento,
+  t: (texto: string) => string,
+  requestId: string,
+): Response {
+  switch (erro) {
+    case "leitura":
+      return fail("internal_error", t("Não foi possível conferir as agendas do revezamento."), 500, { requestId });
+    case "uma_so":
+      return fail("validation_failed", t("Para revezar, escolha pelo menos duas agendas."), 422, { requestId });
+    case "sem_dono":
+      return fail("validation_failed", t("Defina quem atende antes de escolher as agendas do revezamento."), 422, {
+        requestId,
+      });
+    case "fora_da_conta":
+      return fail(
+        "validation_failed",
+        t("O revezamento só aceita agendas da conta Google de quem atende este tipo."),
+        422,
+        { requestId },
+      );
+    case "nao_utilizavel":
+      return fail(
+        "validation_failed",
+        t(
+          "Cada agenda do revezamento precisa aceitar publicação e contar para conflito. Marque-a em Agendas conectadas.",
+        ),
+        422,
+        { requestId },
+      );
+  }
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = req.headers.get("x-request-id") ?? randomUUID();
   const authz = await resolveAuthDual(req, {
@@ -330,6 +424,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       location_details: t.localDetalhes,
       default_owner_user_id: t.donoPadraoId,
       rotation_owner_user_ids: t.rodizioIds ?? [],
+      rotation_calendar_ids: t.revezamentoIds ?? [],
       lead_presence_enabled: t.presencaComCor ?? false,
       requires_confirmation: t.precisaConfirmacao,
       is_active: t.ativo,
@@ -409,11 +504,23 @@ export async function POST(req: NextRequest): Promise<Response> {
           requestId,
         });
   }
+  let revezamentoNovo: string[] | null | undefined = undefined;
+  if (lido.data.rotation_calendar_ids !== undefined) {
+    const rev = await conferirRevezamento(
+      admin,
+      authz.organizationId,
+      lido.data.rotation_calendar_ids,
+      lido.data.default_owner_user_id ?? null,
+    );
+    if (!rev.ok) return recusaDoRevezamento(rev.erro, t, requestId);
+    revezamentoNovo = rev.valor;
+  }
   const { data, error } = await admin
     .from("calendar_event_types")
     .insert({
       ...lido.data,
       ...(rodizio.valor !== undefined ? { rotation_owner_user_ids: rodizio.valor } : {}),
+      ...(revezamentoNovo !== undefined ? { rotation_calendar_ids: revezamentoNovo } : {}),
       organization_id: authz.organizationId,
       slug: slugDe(lido.data.name),
     })
@@ -509,6 +616,30 @@ export async function PATCH(req: NextRequest): Promise<Response> {
         });
   }
   if (rodizio.valor !== undefined) campos.rotation_owner_user_ids = rodizio.valor;
+  // PC-054: o par (quem atende, agendas do revezamento) que vai ficar gravado é
+  // conferido sempre que um dos dois muda — trocar quem atende com agendas da
+  // conta da pessoa anterior deixaria o revezamento apontando para outra conta.
+  if (lido.data.rotation_calendar_ids !== undefined || lido.data.default_owner_user_id !== undefined) {
+    const { data: atual, error: erroAtual } = await admin
+      .from("calendar_event_types")
+      .select("default_owner_user_id, rotation_calendar_ids")
+      .eq("id", id)
+      .eq("organization_id", authz.organizationId)
+      .maybeSingle();
+    if (erroAtual) return recusaDoRevezamento("leitura", t, requestId);
+    if (!atual) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
+    const dono =
+      lido.data.default_owner_user_id !== undefined
+        ? (lido.data.default_owner_user_id ?? null)
+        : ((atual as { default_owner_user_id?: string | null }).default_owner_user_id ?? null);
+    const lista =
+      lido.data.rotation_calendar_ids !== undefined
+        ? lido.data.rotation_calendar_ids
+        : ((atual as { rotation_calendar_ids?: string[] | null }).rotation_calendar_ids ?? null);
+    const rev = await conferirRevezamento(admin, authz.organizationId, lista, dono);
+    if (!rev.ok) return recusaDoRevezamento(rev.erro, t, requestId);
+    if (lido.data.rotation_calendar_ids !== undefined) campos.rotation_calendar_ids = rev.valor;
+  }
   const { data, error } = await admin
     .from("calendar_event_types")
     .update(campos)

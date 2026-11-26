@@ -3327,6 +3327,7 @@ export type Database = {
           id: string
           lead_presence: string | null
           lead_presence_painted: string | null
+          target_calendar_id: string | null
           confirmation_sent_for: string | null
           warmup_sent_at: string | null
           location_details: string | null
@@ -3398,6 +3399,7 @@ export type Database = {
           id?: string
           lead_presence?: string | null
           lead_presence_painted?: string | null
+          target_calendar_id?: string | null
           confirmation_sent_for?: string | null
           warmup_sent_at?: string | null
           location_details?: string | null
@@ -3469,6 +3471,7 @@ export type Database = {
           id?: string
           lead_presence?: string | null
           lead_presence_painted?: string | null
+          target_calendar_id?: string | null
           confirmation_sent_for?: string | null
           warmup_sent_at?: string | null
           location_details?: string | null
@@ -3492,6 +3495,7 @@ export type Database = {
         Relationships: [
           { foreignKeyName: "calendar_appointments_meeting_delivery_job_id_fkey"; columns: ["meeting_delivery_job_id"]; isOneToOne: false; referencedRelation: "job_queue"; referencedColumns: ["id"] },
           { foreignKeyName: "calendar_appointments_outcome_message_id_fkey"; columns: ["outcome_message_id"]; isOneToOne: false; referencedRelation: "messages"; referencedColumns: ["id"] },
+          { foreignKeyName: "calendar_appointments_target_calendar_id_fkey"; columns: ["target_calendar_id"]; isOneToOne: false; referencedRelation: "calendar_connection_calendars"; referencedColumns: ["id"] },
           {
             foreignKeyName: "calendar_appointments_contact_id_fkey"
             columns: ["contact_id"]
@@ -3787,6 +3791,7 @@ export type Database = {
           reminder_meta_template_language: string | null
           requires_confirmation: boolean
           rotation_owner_user_ids: string[] | null
+          rotation_calendar_ids: string[] | null
           slot_interval_minutes: number | null
           slug: string
           updated_at: string
@@ -3823,6 +3828,7 @@ export type Database = {
           reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
           rotation_owner_user_ids?: string[] | null
+          rotation_calendar_ids?: string[] | null
           slot_interval_minutes?: number | null
           slug: string
           updated_at?: string
@@ -3859,6 +3865,7 @@ export type Database = {
           reminder_meta_template_language?: string | null
           requires_confirmation?: boolean
           rotation_owner_user_ids?: string[] | null
+          rotation_calendar_ids?: string[] | null
           slot_interval_minutes?: number | null
           slug?: string
           updated_at?: string
@@ -10536,6 +10543,31 @@ export type Database = {
       fn_agenda_conexoes_google_do_dono: {
         Args: { p_org: string; p_owner: string }
         Returns: { status: string; last_sync_at: string | null }[]
+      }
+      fn_agenda_revezamento_do_dono: {
+        Args: { p_org: string; p_owner: string; p_agendas: string[] }
+        Returns: {
+          agenda_id: string
+          connection_id: string
+          external_calendar_id: string
+          nome: string | null
+          na_lista: boolean
+          destino: boolean
+          disponivel: boolean
+          aceita_escrita: boolean
+          conta_conflito: boolean
+        }[]
+      }
+      fn_agenda_ocupacao_google_das_agendas: {
+        Args: { p_org: string; p_owner: string; p_agendas: string[]; p_de: string; p_ate: string }
+        Returns: {
+          agenda_id: string | null
+          starts_at: string
+          ends_at: string
+          transparency: string
+          status: string
+          connection_status: string
+        }[]
       }
       fn_appointment_change_core: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json; p_remote: boolean; p_base: Json }; Returns: Json }
 

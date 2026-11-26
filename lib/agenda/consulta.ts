@@ -76,6 +76,12 @@ import { horariosLivres, type ExcecaoDeData, type Slot } from "./horarios-livres
 import { lerJornadaDoBanco } from "./jornada";
 import { listaDoRodizio, ordemDoRodizio } from "./rodizio";
 import {
+  agendaDoCompromisso,
+  revezamentoDoTipo,
+  unirHorariosDasAgendas,
+  type Revezamento,
+} from "./revezamento";
+import {
   agendaExternaNuncaLida,
   ocupadosDoDono,
   type LinhaDeAgendamento,
@@ -83,6 +89,14 @@ import {
   type OQueOcupa,
 } from "./ocupados";
 import type { SituacaoDaConexao, SituacaoDoAgendamento } from "./tipos";
+
+/**
+ * Um horário livre. `agendaId` só existe com revezamento entre agendas (PC-054):
+ * é a agenda DA VEZ que está livre nele, e é nela que a marcação grava.
+ */
+export interface SlotDaConsulta extends Slot {
+  agendaId?: string;
+}
 
 /** Teto de dias por consulta: uma varredura de ano inteiro é erro de chamada, não pedido. */
 export const MAXIMO_DE_DIAS = 62;
@@ -136,7 +150,14 @@ export type ResultadoDaConsulta =
        * consulta real sempre preenche.
        */
       donoId?: string;
-      slots: Slot[];
+      slots: SlotDaConsulta[];
+      /**
+       * PC-054 — o revezamento entre agendas que valeu nesta consulta, na ordem
+       * da vez (na remarcação, só a agenda do compromisso). Ausente = sem
+       * revezamento. Uso interno do servidor: quem marca escolhe a agenda daqui;
+       * nenhuma porta o publica inteiro.
+       */
+      revezamento?: Revezamento | null;
       fusoDaRegra: string;
       /** DECISÃO 1.1: "não publiquei" e "não tenho vaga" não podem chegar como a mesma lista vazia. */
       publicouHorarios: boolean;
@@ -196,7 +217,7 @@ export async function horariosLivresDaOrg(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, rotation_owner_user_ids",
+      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, rotation_owner_user_ids, rotation_calendar_ids",
     )
     .eq("organization_id", organizationId)
     .eq(params.eventTypeSlug ? "slug" : "id", params.eventTypeSlug ?? params.eventTypeId ?? "")
@@ -276,6 +297,8 @@ interface TipoDaConsulta {
   minimum_notice_minutes: number;
   slot_interval_minutes: number | null;
   booking_window_days: number;
+  /** PC-054: as agendas do revezamento. Nulo/vazio = sem revezamento. */
+  rotation_calendar_ids?: unknown;
 }
 
 /** Os horários livres de UM responsável, já decidido (por quem chamou, pelo padrão do tipo ou pelo rodízio). */
@@ -336,6 +359,25 @@ async function horariosDoDono(
   // (sem ela, a suíte fica verde — medido na revisão do lote 10). O que fecha
   // o #878 é buscar pelo dia LOCAL, não a margem.
   const fusoDaRegra = leitura.jornada.timezone;
+
+  // PC-054 — REVEZAMENTO ENTRE AGENDAS. Com agendas no tipo, cada agenda tem a
+  // própria ocupação, e o horário vale quando uma delas está livre. Sem agendas
+  // (ou nenhuma utilizável), `null`: a regra de sempre, a ocupação do dono inteiro.
+  const revezamento = await revezamentoDaConsulta(supabase, organizationId, {
+    tipoId: tipo.id,
+    lista: tipo.rotation_calendar_ids,
+    donoId,
+    ignorarAgendamentoId: params.ignorarAgendamentoId,
+  });
+  const janelaDaColeta = {
+    donoId,
+    de: new Date(params.de.getTime() - Number(tipo.buffer_before_minutes ?? 0) * MINUTO),
+    ate: new Date(params.ate.getTime() + Number(tipo.buffer_after_minutes ?? 0) * MINUTO),
+    // Remarcar: o compromisso de saída não é ocupação do destino (#1084). A
+    // janela alargada acima é justamente o que o fazia parecer um vizinho.
+    ignorarAgendamentoId: params.ignorarAgendamentoId,
+  };
+
   const primeiroDiaDaRegra = diaLocalISO(new Date(params.de.getTime() - DIA), fusoDaRegra);
   const ultimoDiaDaRegra = diaLocalISO(new Date(params.ate.getTime() + DIA), fusoDaRegra);
 
@@ -347,14 +389,11 @@ async function horariosDoDono(
       .eq("user_id", donoId)
       .gte("exception_date", primeiroDiaDaRegra)
       .lte("exception_date", ultimoDiaDaRegra),
-    coletaOQueOcupa(supabase, organizationId, {
-      donoId,
-      de: new Date(params.de.getTime() - Number(tipo.buffer_before_minutes ?? 0) * MINUTO),
-      ate: new Date(params.ate.getTime() + Number(tipo.buffer_after_minutes ?? 0) * MINUTO),
-      // Remarcar: o compromisso de saída não é ocupação do destino (#1084). A
-      // janela alargada acima é justamente o que o fazia parecer um vizinho.
-      ignorarAgendamentoId: params.ignorarAgendamentoId,
-    }),
+    revezamento
+      ? coletaPorAgenda(supabase, organizationId, revezamento, janelaDaColeta)
+      : coletaOQueOcupa(supabase, organizationId, janelaDaColeta).then((r) =>
+          r.ok ? { ...r, porAgenda: null } : r,
+        ),
   ]);
 
   if (erroExc) {
@@ -373,7 +412,7 @@ async function horariosDoDono(
       motivoParaCliente: `Não consegui consultar a agenda agora. ${NAO_OFERECA}`,
     };
   }
-  const { ocupados, fontesDefasadas } = oQueOcupa;
+  const { fontesDefasadas } = oQueOcupa;
 
   // A situação das conexões do dono, para distinguir "não tem Google" de "tem
   // Google que nunca foi lido". Sem `.select` de erro: conexão ilegível cai no
@@ -397,10 +436,9 @@ async function horariosDoDono(
     fimMinuto: linha.end_minute,
   }));
 
-  const slots = horariosLivres({
+  const entradaDaGrade = {
     jornada: leitura.jornada,
     excecoes,
-    ocupados,
     tipo: {
       duracaoMin: tipo.duration_minutes,
       bufferAntesMin: tipo.buffer_before_minutes,
@@ -412,7 +450,19 @@ async function horariosDoDono(
     de: params.de,
     ate: params.ate,
     agora: params.agora,
-  });
+  };
+  // Com revezamento, a MESMA grade (jornada, exceções, intervalo, aviso mínimo)
+  // roda uma vez por agenda, com a ocupação daquela agenda; um horário que duas
+  // têm fica com a da vez. Sem revezamento, a conta de sempre.
+  const slots: SlotDaConsulta[] =
+    revezamento && oQueOcupa.porAgenda
+      ? unirHorariosDasAgendas(
+          revezamento.agendas.map((agenda) => ({
+            agendaId: agenda.id,
+            slots: horariosLivres({ ...entradaDaGrade, ocupados: oQueOcupa.porAgenda?.get(agenda.id)?.ocupados ?? [] }),
+          })),
+        )
+      : horariosLivres({ ...entradaDaGrade, ocupados: "ocupados" in oQueOcupa ? oQueOcupa.ocupados : [] });
 
   // A grade semanal inclui dias passados no começo do recorte, mas a cobertura
   // do Google começa em torno de agora. Esses dias já não podem oferecer horário
@@ -434,6 +484,7 @@ async function horariosDoDono(
     donoId,
     googleCoberturaParcial,
     slots,
+    ...(revezamento ? { revezamento } : {}),
     fusoDaRegra: leitura.jornada.timezone,
     publicouHorarios: leitura.publicouHorarios,
     fusoSuposto: leitura.fusoSuposto,
@@ -536,6 +587,111 @@ export async function coletaOQueOcupa(
 }
 
 
+/**
+ * PC-054 — o revezamento que vale NESTA consulta.
+ *
+ * Com `ignorarAgendamentoId` (remarcar, ou voltar de "não vai"), o compromisso
+ * fica na MESMA agenda: o evento do Google é atualizado, não movido. Então só a
+ * agenda dele conta. Se ela não é do revezamento (ou não dá para saber), vale a
+ * regra de sempre — a ocupação do dono inteiro, que conta todas as agendas que
+ * contam para conflito e por isso nunca oferece menos segurança.
+ */
+export async function revezamentoDaConsulta(
+  supabase: SupabaseClient,
+  organizationId: string,
+  args: { tipoId: string; lista: unknown; donoId: string; ignorarAgendamentoId?: string },
+): Promise<Revezamento | null> {
+  const rev = await revezamentoDoTipo(supabase, organizationId, args);
+  if (!rev || !args.ignorarAgendamentoId) return rev;
+  const { data: atual, error } = await supabase
+    .from("calendar_appointments")
+    .select("owner_user_id, target_calendar_id, google_connection_id, google_calendar_id")
+    .eq("organization_id", organizationId)
+    .eq("id", args.ignorarAgendamentoId)
+    .maybeSingle();
+  if (error || !atual) return null;
+  // Compromisso de outra pessoa: ele nem entra na ocupação deste dono, e o
+  // revezamento dele segue inteiro.
+  if ((atual as { owner_user_id?: string | null }).owner_user_id !== args.donoId) return rev;
+  const onde = agendaDoCompromisso(atual as Parameters<typeof agendaDoCompromisso>[0], rev);
+  const fixa = rev.agendas.find((a) => a.id === onde);
+  return fixa ? { ...rev, agendas: [fixa] } : null;
+}
+
+/** Uma linha de `fn_agenda_ocupacao_google_das_agendas` (migration 9045). */
+interface LinhaDaOcupacaoPorAgenda extends LinhaDaOcupacaoDoGoogle {
+  agenda_id: string | null;
+}
+
+/**
+ * PC-054 — O QUE OCUPA cada agenda do revezamento: os compromissos do CRM que
+ * estão (ou vão estar) nela e os eventos do Google dela. A mesma classificação
+ * de `coletaOQueOcupa` (`ocupadosDoDono`), uma vez por agenda.
+ *
+ * ⚠️ Mesmo cuidado de `coletaOQueOcupa`: o client vem de fora, e TODA query
+ * filtra `organization_id`. O Google sai por função, pelo mesmo motivo da 0260.
+ */
+export async function coletaPorAgenda(
+  supabase: SupabaseClient,
+  organizationId: string,
+  rev: Pick<Revezamento, "agendas" | "destino">,
+  params: ParametrosDaOcupacao,
+): Promise<
+  | { ok: true; porAgenda: Map<string, OQueOcupa>; fontesDefasadas: SituacaoDaConexao[] }
+  | { ok: false; erro: string }
+> {
+  let agendamentos = supabase
+    .from("calendar_appointments")
+    .select("starts_at, ends_at, status, lead_presence, target_calendar_id, google_connection_id, google_calendar_id")
+    .eq("organization_id", organizationId)
+    .eq("owner_user_id", params.donoId)
+    .lt("starts_at", params.ate.toISOString())
+    .gt("ends_at", params.de.toISOString());
+  if (params.ignorarAgendamentoId) agendamentos = agendamentos.neq("id", params.ignorarAgendamentoId);
+
+  const [{ data: agendaRaw, error: erroAg }, { data: externosRaw, error: erroExt }] = await Promise.all([
+    agendamentos,
+    supabase.rpc("fn_agenda_ocupacao_google_das_agendas", {
+      p_org: organizationId,
+      p_owner: params.donoId,
+      p_agendas: rev.agendas.map((a) => a.id),
+      p_de: params.de.toISOString(),
+      p_ate: params.ate.toISOString(),
+    }),
+  ]);
+  const erro = erroAg ?? erroExt;
+  if (erro) return { ok: false, erro: erro.message };
+
+  const compromissos = (agendaRaw ?? []) as Array<LinhaDeAgendamento & Parameters<typeof agendaDoCompromisso>[0]>;
+  const externos = (externosRaw ?? []) as LinhaDaOcupacaoPorAgenda[];
+  const porAgenda = new Map<string, OQueOcupa>();
+  const defasadas = new Set<SituacaoDaConexao>();
+  for (const agenda of rev.agendas) {
+    const ocupa = ocupadosDoDono(
+      compromissos.filter((c) => {
+        const onde = agendaDoCompromisso(c, rev);
+        return onde === agenda.id || onde === "todas";
+      }),
+      // Evento de agenda sem linha no catálogo (`agenda_id` nulo) ocupa TODAS.
+      externos
+        .filter((e) => e.agenda_id === null || e.agenda_id === agenda.id)
+        .map(
+          (linha) =>
+            ({
+              starts_at: linha.starts_at,
+              ends_at: linha.ends_at,
+              transparency: linha.transparency,
+              status: linha.status,
+              situacaoDaConexao: linha.connection_status ?? "error",
+            }) satisfies LinhaDeEventoExterno,
+        ),
+    );
+    porAgenda.set(agenda.id, ocupa);
+    for (const f of ocupa.fontesDefasadas) defasadas.add(f);
+  }
+  return { ok: true, porAgenda, fontesDefasadas: [...defasadas] };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // A LISTAGEM — "o que este cliente tem marcado?" e "como está o dia da equipe?"
 //
@@ -562,6 +718,11 @@ export interface AgendamentoListado {
   situacao: string;
   /** PC-052 — presença do lead; nula quando o tipo não usa presença. */
   presenca?: string | null;
+  /**
+   * PC-054 — a agenda que o revezamento escolheu para o compromisso
+   * (`calendar_connection_calendars.id`). Nula = a de destino de quem atende.
+   */
+  agendaId?: string | null;
   donoId: string | null;
   contatoId: string | null;
   contatoNome: string | null;
@@ -905,7 +1066,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, lead_presence, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
+      "id, title, starts_at, ends_at, time_zone, status, lead_presence, target_calendar_id, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -1043,6 +1204,7 @@ export async function listaAgendamentos(
         fuso: String(l.time_zone),
         situacao: String(l.status),
         presenca: typeof l.lead_presence === "string" ? l.lead_presence : null,
+        agendaId: typeof l.target_calendar_id === "string" ? l.target_calendar_id : null,
         donoId: l.owner_user_id ? String(l.owner_user_id) : null,
         contatoId: l.contact_id ? String(l.contact_id) : null,
         // O ID sozinho não serve a nenhum dos dois consumidores: a grade precisa do
@@ -1123,6 +1285,8 @@ export interface TipoDeAtendimento {
   donoPadraoId: string | null;
   /** PC-052: rodízio de responsáveis, na ordem da vez. Vazio/ausente = sem rodízio. */
   rodizioIds?: string[];
+  /** PC-054: revezamento entre agendas (calendar_connection_calendars.id), na ordem da vez. Vazio = sem revezamento. */
+  revezamentoIds?: string[];
   /** PC-052: marcações deste tipo registram a presença do lead com cor no Google. */
   presencaComCor?: boolean;
   /**
@@ -1186,7 +1350,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, lead_presence_enabled, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, rotation_owner_user_ids, rotation_calendar_ids, lead_presence_enabled, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1219,6 +1383,7 @@ export async function listaTiposDeAtendimento(
       ativo: Boolean(t.is_active),
       donoPadraoId: t.default_owner_user_id === null ? null : String(t.default_owner_user_id),
       rodizioIds: listaDoRodizio(t.rotation_owner_user_ids),
+      revezamentoIds: listaDoRodizio((t as { rotation_calendar_ids?: unknown }).rotation_calendar_ids),
       presencaComCor: t.lead_presence_enabled === true,
       bufferAntesMin: Number(t.buffer_before_minutes),
       bufferDepoisMin: Number(t.buffer_after_minutes),

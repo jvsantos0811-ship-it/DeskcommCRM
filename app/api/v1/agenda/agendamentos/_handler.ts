@@ -29,7 +29,13 @@ import {
   type RecorteDoCompromisso,
   type TipoDoAtendimento,
 } from "@/lib/agenda/aviso-do-compromisso";
-import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
+import {
+  coletaOQueOcupa,
+  coletaPorAgenda,
+  horariosLivresDaOrg,
+  revezamentoDaConsulta,
+} from "@/lib/agenda/consulta";
+import type { AgendaDoRevezamento, Revezamento } from "@/lib/agenda/revezamento";
 import { colide } from "@/lib/agenda/horarios-livres";
 import { listaDoRodizio, ordemDoRodizio } from "@/lib/agenda/rodizio";
 import {
@@ -480,6 +486,9 @@ async function executarCriacaoDeAgendamento(
       // PC-052: o tipo com presença nasce "aguardando" (amarelo no Google).
       lead_presence: tipo.lead_presence_enabled ? "aguardando" : null,
       owner_user_id: donoId,
+      // PC-054: a agenda da vez que estava livre neste horário. Nula = sem
+      // revezamento, e o compromisso vai para a agenda de destino, como sempre.
+      target_calendar_id: consulta.agenda?.id ?? null,
       contact_id: input.contact_id ?? null,
       conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
       meeting_delivery: delivery as unknown as Json,
@@ -505,6 +514,19 @@ async function executarCriacaoDeAgendamento(
     .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url, owner_user_id")
     .single();
   if (erroInsert) {
+    // 23505 é a guarda de duplo clique (migration 0182; por agenda desde a
+    // 9045): outro compromisso nasceu neste mesmo instante, para a mesma pessoa
+    // e na mesma agenda, entre a conferência e a gravação. É recusa esperada,
+    // não falha do sistema — e a IA aprende a buscar outro horário.
+    if (erroInsert.code === "23505") {
+      throw new ApiError(
+        409,
+        "agenda_horario_indisponivel",
+        undefined,
+        ctx.requestId,
+        "Outro compromisso acabou de ser marcado neste mesmo horário. Escolha outro horário.",
+      );
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
   }
 
@@ -526,10 +548,23 @@ async function executarCriacaoDeAgendamento(
     resourceType: "calendar_appointment",
     resourceId: criado.id,
     requestId: ctx.requestId,
-    metadata: { event_type_id: tipo.id, owner_user_id: donoId, time_zone: criado.time_zone },
+    metadata: {
+      event_type_id: tipo.id,
+      owner_user_id: donoId,
+      time_zone: criado.time_zone,
+      ...(consulta.agenda ? { target_calendar_id: consulta.agenda.id } : {}),
+    },
   });
 
-  return criado as Record<string, unknown>;
+  // PC-054: com revezamento, quem marcou fica sabendo em QUE AGENDA ficou — o
+  // nome é o que a IA diz ao cliente (a especialista). Sem revezamento, a
+  // resposta é a de sempre.
+  return {
+    ...(criado as Record<string, unknown>),
+    ...(consulta.agenda
+      ? { target_calendar_id: consulta.agenda.id, agenda_nome: consulta.agenda.nome }
+      : {}),
+  };
 }
 
 /**
@@ -635,6 +670,12 @@ export async function alterarAgendamentoHandler(
         inicio: new Date(atual.starts_at as string),
         fim: new Date(atual.ends_at as string),
         ignorarAgendamentoId: atual.id as string,
+        // PC-054: com revezamento, só a agenda DESTE compromisso conta.
+        revezamento: await revezamentoDoCompromisso(supabase, ctx, {
+          eventTypeId: (atual.event_type_id as string | null) ?? null,
+          donoId: atual.owner_user_id as string,
+          agendamentoId: atual.id as string,
+        }),
       });
     }
     if (input.lead_presence !== atual.lead_presence) {
@@ -968,7 +1009,7 @@ async function exigeHorarioLivre(
      */
     ignorarAgendamentoId?: string;
   },
-): Promise<{ fusoDaRegra: string }> {
+): Promise<{ fusoDaRegra: string; agenda: AgendaDoRevezamento | null }> {
   const consulta = await horariosLivresDaOrg(supabase, ctx.organization_id, {
     eventTypeId: args.eventTypeId,
     ownerUserId: args.donoId,
@@ -994,8 +1035,11 @@ async function exigeHorarioLivre(
 
   const foraDaGrade = podeMarcarForaDaGrade(ctx.actor);
   if (foraDaGrade) {
-    await exigeSemSobreposicao(supabase, ctx, args);
-  } else if (!consulta.slots.some((s) => s.inicio.getTime() === args.inicio.getTime())) {
+    const agenda = await exigeSemSobreposicao(supabase, ctx, { ...args, revezamento: consulta.revezamento ?? null });
+    return { fusoDaRegra: consulta.fusoDaRegra, agenda };
+  }
+  const slot = consulta.slots.find((s) => s.inicio.getTime() === args.inicio.getTime());
+  if (!slot) {
     throw new ApiError(
       422,
       "agenda_horario_indisponivel",
@@ -1004,7 +1048,12 @@ async function exigeHorarioLivre(
       "Este horário não está disponível. Consulte os horários livres e escolha outro.",
     );
   }
-  return { fusoDaRegra: consulta.fusoDaRegra };
+  // PC-054: o horário veio de uma agenda do revezamento — a da vez que está
+  // livre nele. É nela que o compromisso grava.
+  const agenda = slot.agendaId
+    ? (consulta.revezamento?.agendas.find((a) => a.id === slot.agendaId) ?? null)
+    : null;
+  return { fusoDaRegra: consulta.fusoDaRegra, agenda };
 }
 
 /**
@@ -1036,8 +1085,48 @@ async function exigeHorarioLivre(
 async function exigeSemSobreposicao(
   supabase: SB,
   ctx: HandlerCtx,
-  args: { donoId: string; inicio: Date; fim: Date; ignorarAgendamentoId?: string },
-): Promise<void> {
+  args: {
+    donoId: string;
+    inicio: Date;
+    fim: Date;
+    ignorarAgendamentoId?: string;
+    /**
+     * PC-054 — com revezamento entre agendas, a pergunta é POR AGENDA: o
+     * encaixe vale na primeira agenda (na ordem da vez) que está livre, e é ela
+     * que volta. Sem revezamento, a ocupação do dono inteiro, como sempre, e
+     * volta `null`.
+     */
+    revezamento?: Revezamento | null;
+  },
+): Promise<AgendaDoRevezamento | null> {
+  const pedido = { inicio: args.inicio.getTime(), fim: args.fim.getTime() };
+  if (args.revezamento && args.revezamento.agendas.length > 0) {
+    const porAgenda = await coletaPorAgenda(supabase, ctx.organization_id, args.revezamento, {
+      donoId: args.donoId,
+      de: args.inicio,
+      ate: args.fim,
+      ignorarAgendamentoId: args.ignorarAgendamentoId,
+    });
+    if (!porAgenda.ok) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Não foi possível conferir a agenda.");
+    }
+    const livre = args.revezamento.agendas.find(
+      (agenda) =>
+        !(porAgenda.porAgenda.get(agenda.id)?.ocupados ?? []).some((o) =>
+          colide(o.inicio.getTime(), o.fim.getTime(), pedido),
+        ),
+    );
+    if (!livre) {
+      throw new ApiError(
+        422,
+        "agenda_horario_indisponivel",
+        undefined,
+        ctx.requestId,
+        "Este horário já está ocupado na agenda de quem atende — por outro compromisso ou pelo Google Agenda.",
+      );
+    }
+    return livre;
+  }
   const oQueOcupa = await coletaOQueOcupa(supabase, ctx.organization_id, {
     donoId: args.donoId,
     de: args.inicio,
@@ -1047,7 +1136,6 @@ async function exigeSemSobreposicao(
   if (!oQueOcupa.ok) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Não foi possível conferir a agenda.");
   }
-  const pedido = { inicio: args.inicio.getTime(), fim: args.fim.getTime() };
   const cruza = oQueOcupa.ocupados.some((o) => colide(o.inicio.getTime(), o.fim.getTime(), pedido));
   if (cruza) {
     throw new ApiError(
@@ -1058,6 +1146,34 @@ async function exigeSemSobreposicao(
       "Este horário já está ocupado na agenda de quem atende — por outro compromisso ou pelo Google Agenda.",
     );
   }
+  return null;
+}
+
+/**
+ * PC-054 — o revezamento que vale para um compromisso que JÁ existe: só a
+ * agenda dele (`revezamentoDaConsulta` com o próprio id). Sem tipo, sem
+ * revezamento no tipo ou leitura que falha: `null`, e vale a ocupação do dono
+ * inteiro, como sempre.
+ */
+async function revezamentoDoCompromisso(
+  supabase: SB,
+  ctx: HandlerCtx,
+  args: { eventTypeId: string | null; donoId: string; agendamentoId: string },
+): Promise<Revezamento | null> {
+  if (!args.eventTypeId) return null;
+  const { data: tipo } = await supabase
+    .from("calendar_event_types")
+    .select("id, rotation_calendar_ids")
+    .eq("organization_id", ctx.organization_id)
+    .eq("id", args.eventTypeId)
+    .maybeSingle();
+  if (!tipo) return null;
+  return revezamentoDaConsulta(supabase, ctx.organization_id, {
+    tipoId: tipo.id as string,
+    lista: (tipo as { rotation_calendar_ids?: unknown }).rotation_calendar_ids,
+    donoId: args.donoId,
+    ignorarAgendamentoId: args.agendamentoId,
+  });
 }
 
 /**

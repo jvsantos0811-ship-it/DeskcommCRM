@@ -42,6 +42,8 @@ export interface TipoRow {
   default_owner_user_id: string | null;
   /** PC-052 (9039): rodízio de responsáveis, na ordem da vez. */
   rotation_owner_user_ids?: string[];
+  /** PC-054 (9045): revezamento entre agendas do Google de quem atende, na ordem da vez. */
+  rotation_calendar_ids?: string[] | null;
   lead_presence_enabled?: boolean;
   requires_confirmation: boolean;
   is_active: boolean;
@@ -122,6 +124,16 @@ type CartaoDeLembrete = {
   unidade: UnidadeDeAntecedencia;
   body: string;
 };
+
+/**
+ * PC-054 — uma agenda do Google de quem atende, como a tela de configuração a
+ * vê: o nome e, quando não dá para revezar nela, por quê.
+ */
+export interface AgendaParaRevezar {
+  id: string;
+  nome: string;
+  motivo: "indisponivel" | "sem_escrita" | "nao_conta_conflito" | null;
+}
 
 export interface CanalParaLembrete {
   id: string;
@@ -386,6 +398,67 @@ function LembreteDoCompromisso({
   );
 }
 
+/**
+ * PC-054 — "Revezar entre agendas": as agendas do Google de quem atende. Com
+ * duas ou mais marcadas, a marcação sem agenda escolhida cai na agenda da vez
+ * que está livre; nenhuma marcada, vale a agenda de destino, como sempre.
+ *
+ * Só aparece quando há o que escolher (quem atende tem agendas, ou o tipo já
+ * guarda alguma). Agenda que não aceita publicação ou não conta para conflito
+ * aparece desabilitada, com o motivo — desmarcá-la é a única ação possível.
+ */
+function RevezamentoDeAgendas({ tipo, agendas }: { tipo: TipoRow; agendas: AgendaParaRevezar[] }) {
+  const t = useT();
+  const gravadas = tipo.rotation_calendar_ids ?? [];
+  if (agendas.length === 0 && gravadas.length === 0) return null;
+  const motivoNaTela = (m: AgendaParaRevezar["motivo"]) =>
+    m === "indisponivel"
+      ? t("não está mais disponível")
+      : m === "sem_escrita"
+        ? t("não aceita publicação")
+        : m === "nao_conta_conflito"
+          ? t("não conta para conflito — marque em Agendas conectadas")
+          : null;
+  const perdidas = gravadas.filter((id) => !agendas.some((a) => a.id === id));
+  return (
+    <fieldset
+      className="flex flex-col gap-1 text-xs text-text-muted"
+      data-testid={`editar-revezamento-${tipo.id}`}
+    >
+      <legend>{t("Revezar entre agendas")}</legend>
+      <input type="hidden" name="rotation_calendar_ids_presente" value="1" />
+      {agendas.map((a) => {
+        const motivo = motivoNaTela(a.motivo);
+        const marcada = gravadas.includes(a.id);
+        return (
+          <label key={a.id} className="flex items-center gap-2 text-sm text-text">
+            <input
+              type="checkbox"
+              name="rotation_calendar_ids"
+              value={a.id}
+              defaultChecked={marcada}
+              disabled={motivo !== null && !marcada}
+            />
+            {/* Sem t(): é o nome da agenda no Google, não rótulo do sistema. */}
+            <span>{a.nome}</span>
+            {motivo ? <span className="text-xs text-warning">({motivo})</span> : null}
+          </label>
+        );
+      })}
+      {perdidas.length > 0 ? (
+        <span className="text-warning">
+          {t("Uma agenda gravada no revezamento não está mais na conta Google de quem atende e saiu da vez.")}
+        </span>
+      ) : null}
+      <span>
+        {t(
+          "Com duas ou mais marcadas, cada marcação cai na agenda da vez que estiver livre, e quem não tiver o horário passa a vez. Nenhuma marcada: vale a agenda de destino de quem atende. Remarcar fica na mesma agenda.",
+        )}
+      </span>
+    </fieldset>
+  );
+}
+
 export function TiposDeAgendamentoClient({
   tiposIniciais,
   canais = [],
@@ -403,6 +476,7 @@ export function TiposDeAgendamentoClient({
   podeMudarMeetAberto,
   modeloDoEvento = null,
   podeMudarModeloDoEvento = false,
+  agendasPorDono = {},
 }: {
   tiposIniciais: TipoRow[];
   canais?: CanalParaLembrete[];
@@ -425,6 +499,8 @@ export function TiposDeAgendamentoClient({
   /** `organizations.settings.modelo_do_evento_agenda` (PC-044, migration 9035). */
   modeloDoEvento?: ModeloDoEvento | null;
   podeMudarModeloDoEvento?: boolean;
+  /** PC-054: as agendas do Google de cada pessoa, para o revezamento. */
+  agendasPorDono?: Record<string, AgendaParaRevezar[]>;
 }) {
   const t = useT();
   const router = useRouter();
@@ -816,6 +892,16 @@ export function TiposDeAgendamentoClient({
                         rotation_owner_user_ids: dados
                           .getAll("rotation_owner_user_ids")
                           .map((v) => String(v)),
+                        // PC-054: só vai quando a caixa do revezamento apareceu
+                        // (o marcador abaixo). Sem ela, omitir não apaga o que
+                        // está gravado; com ela, desmarcar tudo é "sem revezamento".
+                        ...(dados.has("rotation_calendar_ids_presente")
+                          ? {
+                              rotation_calendar_ids: dados
+                                .getAll("rotation_calendar_ids")
+                                .map((v) => String(v)),
+                            }
+                          : {}),
                         // PC-052: caixa desmarcada some do FormData — a comparação
                         // manda `false` explícito, nunca omite.
                         lead_presence_enabled: dados.get("lead_presence_enabled") === "on",
@@ -930,6 +1016,10 @@ export function TiposDeAgendamentoClient({
                       )}
                     </span>
                   </fieldset>
+                  <RevezamentoDeAgendas
+                    tipo={tipo}
+                    agendas={tipo.default_owner_user_id ? (agendasPorDono[tipo.default_owner_user_id] ?? []) : []}
+                  />
                   <label
                     className="flex items-start gap-2 text-sm text-text"
                     data-testid={`editar-presenca-${tipo.id}`}
