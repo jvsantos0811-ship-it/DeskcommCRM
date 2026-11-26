@@ -12,7 +12,7 @@ import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { SequenciaDepoisDeMarcar } from "@/components/agenda/SequenciaDepoisDeMarcar";
 
-import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
+import { TiposDeAgendamentoClient, type AgendaParaRevezar, type TipoRow } from "./_client";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +71,7 @@ export default async function TiposDeAgendamentoPage() {
     supabase
       .from("calendar_event_types")
       .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, rotation_owner_user_ids, lead_presence_enabled, requires_confirmation, is_active, reminder_channel_session_id, reminder_meta_template_name, reminder_meta_template_language, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, rotation_owner_user_ids, rotation_calendar_ids, lead_presence_enabled, requires_confirmation, is_active, reminder_channel_session_id, reminder_meta_template_name, reminder_meta_template_language, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
       )
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
@@ -108,6 +108,38 @@ export default async function TiposDeAgendamentoPage() {
   // declarada, e o fallback abaixo volta ao rótulo de hoje. Degrada, não some.
   const nomes = await nomesDosAtendentes((pessoas ?? []).map((p) => String(p.user_id)));
 
+  // PC-054 — AS AGENDAS QUE DÁ PARA REVEZAR, por pessoa: as agendas da conta
+  // Google de cada um. Só para quem edita (a RLS de `calendar_connection_calendars`
+  // mostra a agenda do colega a `manager` para cima, e é `manager` que edita).
+  // Só nome e as três condições de uso — nunca o identificador do Google.
+  const agendasPorDono: Record<string, AgendaParaRevezar[]> = {};
+  if (podeEditar) {
+    const { data: agendas } = await supabase
+      .from("calendar_connection_calendars")
+      .select("id, name, available, access_role, counts_for_conflicts, calendar_connections!inner(user_id)")
+      .eq("organization_id", activeOrg.orgId)
+      .order("name");
+    for (const a of (agendas ?? []) as Array<{
+      id: string;
+      name: string | null;
+      available: boolean;
+      access_role: string | null;
+      counts_for_conflicts: boolean;
+      calendar_connections: { user_id: string } | Array<{ user_id: string }> | null;
+    }>) {
+      const conexao = Array.isArray(a.calendar_connections) ? a.calendar_connections[0] : a.calendar_connections;
+      if (!conexao) continue;
+      const motivo = !a.available
+        ? "indisponivel"
+        : !["owner", "writer"].includes(String(a.access_role))
+          ? "sem_escrita"
+          : !a.counts_for_conflicts
+            ? "nao_conta_conflito"
+            : null;
+      (agendasPorDono[conexao.user_id] ??= []).push({ id: a.id, nome: a.name ?? "", motivo });
+    }
+  }
+
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
@@ -133,6 +165,7 @@ export default async function TiposDeAgendamentoPage() {
             nomes.get(String(p.user_id)) ?? `${String(p.user_id).slice(0, 8)} · ${String(p.role)}`,
         }))}
         usuarioAtualId={user.id}
+        agendasPorDono={agendasPorDono}
         podeConfigurarGoogle={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
         podeEditar={podeEditar}
         clientePelaAgendaLigado={clientePelaAgendaLigado(org?.settings)}

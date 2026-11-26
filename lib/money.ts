@@ -81,6 +81,27 @@ export function formatCentsUSD(cents: number): string {
 }
 
 /**
+ * Centavos de DÓLAR escritos em REAIS, pela cotação que a agência mantém em
+ * /admin › Agência (`agencia_config.cotacao_usd_brl`).
+ *
+ * O número continua sendo o que o provedor cobra em dólar (`llm_calls.cost_cents`);
+ * o que muda é a moeda em que ele é MOSTRADO. Pedido do dono (25/11/2026): quem
+ * lê a tela de Uso de IA pensa em reais, e "US$ 0,31" obrigava a fazer a conta de
+ * cabeça. A cotação usada aparece escrita na própria tela, para ninguém tomar a
+ * conversão por valor de fatura.
+ *
+ * `casas` sobe para 4 no custo por turno, que costuma ficar abaixo de um centavo.
+ */
+export function formatCentsUSDEmReais(usdCents: number, cotacao: number, casas = 2): string {
+  return (((usdCents ?? 0) * cotacao) / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.max(2, casas),
+  });
+}
+
+/**
  * Centavos → o preço escrito na convenção da MOEDA. `formatCents(24990, "MXN")`
  * devolve `$249.90`.
  *
