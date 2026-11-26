@@ -1051,7 +1051,7 @@ export function TiposDeAgendamentoClient({
                     <legend className="text-sm text-text">{t("Desfecho pela cor do Google")}</legend>
                     <span className="text-xs text-text-muted">
                       {t(
-                        "Depois do atendimento, a equipe pinta o evento no Google com a cor escolhida e o CRM registra Realizado ou Faltou sozinho (e move o card pelas automações). Só vale depois do horário do atendimento. Desligado = como sempre.",
+                        "Depois do atendimento, a equipe pinta o evento no Google com a cor escolhida e o CRM registra Realizado ou Faltou sozinho (e move o card pelas automações). Só vale depois do horário do atendimento: se pintar antes, pinte de novo depois. Desligado = como sempre.",
                       )}
                     </span>
                     <div className="flex flex-wrap gap-3">
