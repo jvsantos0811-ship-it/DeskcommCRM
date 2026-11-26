@@ -29,6 +29,7 @@ function creds(config: Partial<CredenciaisDoAtendimentoExterno["config"]> = {}):
       campoDaIa: null,
       acoes: [],
       valorQuandoEquipeAssume: null,
+      iaSoSemResponsavel: false,
       roteirosForaDaJanela: {},
       ...config,
     },

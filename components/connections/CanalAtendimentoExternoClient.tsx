@@ -69,6 +69,8 @@ interface Conexao {
     acoes: (Acao & { chave: string })[];
     /** PC-058: o diálogo da equipe na plataforma cala a IA. */
     valor_quando_equipe_assume?: string | null;
+    /** A IA só responde no chat sem responsável na plataforma. */
+    ia_so_sem_responsavel?: boolean;
     /** PC-052 parte 3: diálogo por uso, fora da janela de 24 h. */
     roteiros_fora_da_janela?: Partial<Record<UsoForaDaJanela, string | null>>;
   } | null;
@@ -314,6 +316,7 @@ function FormularioDoAtendimentoExterno({
   const [campoNome, setCampoNome] = useState(() => estado?.config?.campo_da_ia?.nome ?? "");
   const [campoValor, setCampoValor] = useState(() => estado?.config?.campo_da_ia?.valor_ao_passar ?? "");
   const [valorEquipe, setValorEquipe] = useState(() => estado?.config?.valor_quando_equipe_assume ?? "");
+  const [soSemResponsavel, setSoSemResponsavel] = useState(() => estado?.config?.ia_so_sem_responsavel === true);
   const [acoes, setAcoes] = useState<Acao[]>(() =>
     (estado?.config?.acoes ?? []).map(({ nome, dialogo_id, quando_usar }) => ({ nome, dialogo_id, quando_usar })),
   );
@@ -358,6 +361,7 @@ function FormularioDoAtendimentoExterno({
           dialogo_transferencia: transferencia.trim() || null,
           campo_da_ia: campoNome.trim() ? { nome: campoNome.trim(), valor_ao_passar: campoValor } : null,
           valor_quando_equipe_assume: valorEquipe.trim() || null,
+          ia_so_sem_responsavel: soSemResponsavel,
           acoes: acoes.filter((a) => a.nome.trim() || a.dialogo_id.trim() || a.quando_usar.trim()),
           roteiros_fora_da_janela: {
             confirmacao_vespera: roteiros.confirmacao_vespera.trim() || null,
@@ -566,6 +570,27 @@ function FormularioDoAtendimentoExterno({
             <p className="text-xs text-muted-foreground">
               {t(
                 "Quando alguém da equipe executa no chat um diálogo que grava este valor no campo da IA e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Use um valor diferente do gravado ao passar para a equipe.",
+              )}
+            </p>
+          </div>
+
+          {/* A IA só fala no chat que a plataforma entrega sem responsável (o
+              que está num setor). Alguém da equipe virou responsável = a IA
+              para sozinha, sem diálogo; o chat voltou ao setor = ela volta. */}
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={soSemResponsavel}
+                onChange={(e) => setSoSemResponsavel(e.target.checked)}
+                className="size-4"
+                data-testid="ae-so-sem-responsavel"
+              />
+              {t("A IA só responde no chat sem responsável na plataforma")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ligado: quando alguém da equipe vira responsável pelo chat na plataforma, a IA para, o follow-up pausa e o card vai para a etapa da equipe, sem precisar executar diálogo. Quando o chat volta para um setor sem responsável, a IA volta a atender.",
               )}
             </p>
           </div>

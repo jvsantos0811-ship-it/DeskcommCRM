@@ -149,3 +149,46 @@ describe("principalDoAtendimento", () => {
     expect(principalDoAtendimento([])).toBeNull();
   });
 });
+
+describe("conexaoIrmaDoNumero — o outro número da mesma conta", () => {
+  async function irmaCom(atual: Record<string, unknown> | null, achada: { id: string } | null) {
+    const { conexaoIrmaDoNumero } = await import("./sessao");
+    const filtros: Array<[string, unknown]> = [];
+    let chamada = 0;
+    const from = () => {
+      const minha = ++chamada;
+      const q: Record<string, unknown> = {
+        select: () => q,
+        eq: (c: string, v: unknown) => (filtros.push([`${minha}:${c}`, v]), q),
+        is: (c: string, v: unknown) => (filtros.push([`${minha}:${c}`, v]), q),
+        neq: (c: string, v: unknown) => (filtros.push([`${minha}:neq:${c}`, v]), q),
+        limit: () => q,
+        maybeSingle: async () => ({ data: minha === 1 ? atual : achada, error: null }),
+      };
+      return q;
+    };
+    const id = await conexaoIrmaDoNumero({ from } as never, "org-1", "sess-a", "fone-b");
+    return { id, filtros };
+  }
+
+  it("acha só na MESMA organização, servidor e conta, ativa e diferente da atual", async () => {
+    const { id, filtros } = await irmaCom({ chatguru_servidor: "s22", chatguru_account_id: "conta-1" }, { id: "sess-b" });
+    expect(id).toBe("sess-b");
+    expect(filtros).toEqual(
+      expect.arrayContaining([
+        ["2:organization_id", "org-1"],
+        ["2:chatguru_servidor", "s22"],
+        ["2:chatguru_account_id", "conta-1"],
+        ["2:chatguru_phone_id", "fone-b"],
+        ["2:archived_at", null],
+        ["2:neq:id", "sess-a"],
+      ]),
+    );
+  });
+
+  it("conexão atual sem conta conhecida: nenhuma irmã (nem pergunta)", async () => {
+    const { id, filtros } = await irmaCom({ chatguru_servidor: null, chatguru_account_id: null }, { id: "sess-b" });
+    expect(id).toBeNull();
+    expect(filtros.some(([c]) => c.startsWith("2:"))).toBe(false);
+  });
+});

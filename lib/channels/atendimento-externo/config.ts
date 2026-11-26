@@ -33,6 +33,12 @@
  *     lido como sempre. Tem de ser DIFERENTE de `valor_ao_passar`: esse o CRM
  *     grava sozinho na passagem da IA, e um diálogo de entrega sem a condição
  *     "campo ≠ valor" faria cada mensagem seguinte do lead virar "sinal".
+ *  6. `ia_so_sem_responsavel` — a IA só responde no chat que a plataforma
+ *     entrega SEM responsável (o que está num setor, não com uma pessoa). Cada
+ *     POST diz quem é o responsável; preenchido = alguém da equipe assumiu, e o
+ *     CRM aplica o mesmo efeito do item 5, sem ninguém executar diálogo. Vazio
+ *     de novo depois de a REGRA ter calado a IA = o chat voltou ao setor, e a
+ *     IA volta. Desligado (padrão) = o responsável é ignorado, como antes.
  */
 import { z } from "zod";
 
@@ -106,6 +112,8 @@ export const configDoAtendimentoExternoEntrada = z.object({
     .nullable()
     .optional()
     .transform((v) => (v === undefined ? undefined : v ? v : null)),
+  /** Ausente = tela antiga: fica o que está gravado. */
+  ia_so_sem_responsavel: z.boolean().optional(),
   roteiros_fora_da_janela: z
     .object({
       confirmacao_vespera: idOpcional,
@@ -144,6 +152,8 @@ export interface ConfigDoAtendimentoExterno {
   acoes: AcaoDoAtendimento[];
   /** PC-058: o POST com `campo_da_ia` = este valor quer dizer "a equipe assumiu". `null` = desligado. */
   valorQuandoEquipeAssume: string | null;
+  /** A IA só responde no chat sem responsável na plataforma (item 6). */
+  iaSoSemResponsavel: boolean;
   /** Diálogo por uso, fora da janela de 24 h. Uso ausente = nada sai fora dela. */
   roteirosForaDaJanela: Partial<Record<UsoForaDaJanela, string>>;
 }
@@ -153,6 +163,7 @@ export const CONFIG_VAZIA: ConfigDoAtendimentoExterno = Object.freeze({
   campoDaIa: null,
   acoes: [],
   valorQuandoEquipeAssume: null,
+  iaSoSemResponsavel: false,
   roteirosForaDaJanela: {},
 }) as ConfigDoAtendimentoExterno;
 
@@ -206,6 +217,8 @@ export function configParaGravar(
       entrada.valor_quando_equipe_assume !== undefined
         ? entrada.valor_quando_equipe_assume
         : atual.valorQuandoEquipeAssume,
+    ia_so_sem_responsavel:
+      entrada.ia_so_sem_responsavel !== undefined ? entrada.ia_so_sem_responsavel : atual.iaSoSemResponsavel,
     roteiros_fora_da_janela: Object.fromEntries(
       USOS_FORA_DA_JANELA.map((uso) => [
         uso,
@@ -235,6 +248,7 @@ const gravadoSchema = z.object({
     .max(MAXIMO_DE_ACOES)
     .optional(),
   valor_quando_equipe_assume: z.string().max(100).nullable().optional(),
+  ia_so_sem_responsavel: z.boolean().optional(),
   // Lido à parte, uso a uso (ver `lerRoteiros`): um id ilegível derruba só o seu
   // uso, nunca as ações e a passagem que já funcionavam.
   roteiros_fora_da_janela: z.unknown().optional(),
@@ -271,6 +285,7 @@ export function lerConfigDoAtendimentoExterno(raw: unknown): ConfigDoAtendimento
       quandoUsar: a.quando_usar,
     })),
     valorQuandoEquipeAssume: c.valor_quando_equipe_assume?.trim() || null,
+    iaSoSemResponsavel: c.ia_so_sem_responsavel === true,
     roteirosForaDaJanela: lerRoteiros(c.roteiros_fora_da_janela),
   };
 }

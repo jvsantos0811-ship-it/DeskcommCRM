@@ -166,7 +166,15 @@ async function ehEcoDoProprioEnvio(
 export async function ingestAtendimentoExterno(
   admin: SupabaseClient,
   e: EntradaDoAtendimentoExterno,
-  dono: ChannelTenantScope & { channelSessionId: string },
+  dono: ChannelTenantScope & {
+    channelSessionId: string;
+    /**
+     * Roda com a conversa já conhecida e ANTES de a mensagem ser gravada (a
+     * gravação é o que acorda a IA). É onde a regra do responsável cala ou
+     * devolve a IA. Nunca deve lançar; se lançar, a mensagem entra assim mesmo.
+     */
+    antesDaMensagem?: (conversationId: string) => Promise<void>;
+  },
 ): Promise<DesfechoDaIngestao> {
   const orgId = dono.organizationId;
   const telefone = `+${e.celular}`;
@@ -228,6 +236,14 @@ export async function ingestAtendimentoExterno(
     (await ehEcoDoProprioEnvio(admin, orgId, conversationId as string, e.texto))
   ) {
     return { status: "ignored", reason: "eco_do_proprio_envio" };
+  }
+
+  if (dono.antesDaMensagem) {
+    try {
+      await dono.antesDaMensagem(conversationId as string);
+    } catch {
+      // A mensagem do cliente entra de qualquer jeito.
+    }
   }
 
   const agora = new Date().toISOString();
