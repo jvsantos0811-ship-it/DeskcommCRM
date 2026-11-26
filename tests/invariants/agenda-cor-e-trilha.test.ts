@@ -37,6 +37,19 @@ const COLUNAS_DA_AGENDA = `
      and (c.relname like 'calendar%' or c.relname = 'user_organizations')
 `;
 
+/**
+ * Colunas com "color" no nome que NÃO guardam hex, com o motivo escrito. A lista
+ * só cresce com justificativa e com a constraint que prende o vocabulário
+ * (conferida no último caso).
+ */
+const NAO_SAO_HEX: Record<string, string> = {
+  // PC-062 (migration 9046): o colorId que a equipe pinta no Google Agenda
+  // ("1".."9", sem os da presença) e que o sync lê como Realizado / Faltou. É um
+  // código da paleta do Google, não uma cor da nossa tela: não tem tema.
+  "calendar_event_types.outcome_color_completed": "colorId do Google (PC-062)",
+  "calendar_event_types.outcome_color_no_show": "colorId do Google (PC-062)",
+};
+
 describe("a cor da pessoa é uma trilha", () => {
   it("a varredura enxerga colunas (guarda de vacuidade)", () => {
     expect(linhas(`${COLUNAS_DA_AGENDA} order by 1`).length).toBeGreaterThan(40);
@@ -61,7 +74,18 @@ describe("a cor da pessoa é uma trilha", () => {
     // continuariam verdes se alguém acrescentasse `cor_do_status` amanhã.
     const suspeitas = linhas(`${COLUNAS_DA_AGENDA}
       and (a.attname like '%color%' or a.attname like '%cor\\_%' or a.attname like '%\\_cor')
-      order by 1`);
+      order by 1`).filter((c) => !(c in NAO_SAO_HEX));
     expect(suspeitas).toEqual([]);
+  });
+
+  it("as exceções não guardam hex: o banco só aceita o id de cor do Google (1–9, sem os da presença)", () => {
+    // A exceção só vale enquanto o vocabulário estiver preso no banco. Se a
+    // constraint sumir, a coluna passa a aceitar qualquer texto — inclusive hex.
+    const def = linhas(`select pg_get_constraintdef(oid) from pg_constraint
+                         where conname = 'calendar_event_types_outcome_colors_check'`).join(" ");
+    for (const coluna of Object.keys(NAO_SAO_HEX)) {
+      expect(def).toContain(coluna.split(".")[1]);
+    }
+    expect(def).not.toMatch(/#/);
   });
 });
