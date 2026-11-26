@@ -90,6 +90,44 @@ describe("leitura do POST", () => {
     expect(vazio).toEqual({ ok: true, ignorar: "midia_sem_link" });
   });
 
+  it("PC-060: mídia com o link em url_arquivo (formato real do ChatGuru) vira mídia", () => {
+    const audio = lerEntrada(corpo({
+      tipo_mensagem: "audio",
+      texto_mensagem: "audio",
+      url_arquivo: "https://arquivos.exemplo.com.br/receive/a.oga",
+    }));
+    if (!audio.ok || !("entrada" in audio)) throw new Error("devia ler");
+    expect(audio.entrada.tipo).toBe("audio");
+    expect(audio.entrada.midiaUrl).toBe("https://arquivos.exemplo.com.br/receive/a.oga");
+    expect(audio.entrada.texto).toBe("");
+
+    // Sem texto, só o link: lê do mesmo jeito.
+    const soLink = lerEntrada(corpo({ tipo_mensagem: "audio", texto_mensagem: "", url_arquivo: "https://arquivos.exemplo.com.br/b.oga" }));
+    if (!soLink.ok || !("entrada" in soLink)) throw new Error("devia ler");
+    expect(soLink.entrada.midiaUrl).toBe("https://arquivos.exemplo.com.br/b.oga");
+
+    // url_arquivo sem https não vale: cai no comportamento de antes.
+    const http = lerEntrada(corpo({ tipo_mensagem: "audio", texto_mensagem: "audio", url_arquivo: "http://arquivos.exemplo.com.br/c.oga" }));
+    if (!http.ok || !("entrada" in http)) throw new Error("devia ler");
+    expect(http.entrada.tipo).toBe("text");
+
+    // Texto comum com url_arquivo vazio: nada muda.
+    const textoComum = lerEntrada(corpo({ tipo_mensagem: "chat", texto_mensagem: "oi", url_arquivo: "" }));
+    if (!textoComum.ok || !("entrada" in textoComum)) throw new Error("devia ler");
+    expect(textoComum.entrada.tipo).toBe("text");
+    expect(textoComum.entrada.midiaUrl).toBeNull();
+  });
+
+  it("PC-060: o mesmo arquivo com outra assinatura no link dá o mesmo external_id", () => {
+    const a = lerEntrada(corpo({ tipo_mensagem: "audio", texto_mensagem: "audio", url_arquivo: "https://arquivos.exemplo.com.br/r/a.ogg?X-Amz-Signature=111" }));
+    const b = lerEntrada(corpo({ tipo_mensagem: "audio", texto_mensagem: "audio", url_arquivo: "https://arquivos.exemplo.com.br/r/a.ogg?X-Amz-Signature=222" }));
+    if (!a.ok || !("entrada" in a) || !b.ok || !("entrada" in b)) throw new Error("devia ler");
+    expect(idExternoDaEntrada(a.entrada)).toBe(idExternoDaEntrada(b.entrada));
+    const c = lerEntrada(corpo({ tipo_mensagem: "audio", texto_mensagem: "audio", url_arquivo: "https://arquivos.exemplo.com.br/r/outro.ogg?X-Amz-Signature=111" }));
+    if (!c.ok || !("entrada" in c)) throw new Error("devia ler");
+    expect(idExternoDaEntrada(c.entrada)).not.toBe(idExternoDaEntrada(a.entrada));
+  });
+
   it("link do chat fora do domínio da plataforma não entra", () => {
     const r = lerEntrada(corpo({ link_chat: "https://outro-site.exemplo.com/chats" }));
     expect(r.ok && "entrada" in r ? r.entrada.linkChat : "x").toBeNull();

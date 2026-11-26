@@ -8,7 +8,8 @@
  * bsuid, email, origem, celular, chat_id, ctwa_ad, phone_id, username,
  * link_chat, bot_context, campanha_id, chat_created, campanha_nome,
  * datetime_post, executado_por, tipo_mensagem, texto_mensagem,
- * responsavel_nome, responsavel_email, campos_personalizados`. Só os NOMES
+ * responsavel_nome, responsavel_email, campos_personalizados` (+ `url_arquivo`
+ * nas mídias, visto em 26/11/2026). Só os NOMES
  * foram vistos (os valores são dado de quem escreveu), então a leitura aceita
  * texto ou número em cada campo e exige só o que é indispensável: o número do
  * chat (`celular`) e o que a pessoa disse (`texto_mensagem`).
@@ -129,14 +130,18 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
   const celularBruto = texto(corpo.celular);
   const conteudo = texto(corpo.texto_mensagem);
   const tipoDeclarado = tipoDaMensagem(texto(corpo.tipo_mensagem));
+  // PC-060: o ChatGuru manda o arquivo em `url_arquivo` (medido em 26/11/2026:
+  // áudio chega com `texto_mensagem: "audio"` e o link do S3 neste campo). O
+  // link dentro de `texto_mensagem` segue aceito, como antes.
+  const linkDoArquivo = tipoDeclarado === "text" ? null : urlHttps(texto(corpo.url_arquivo) ?? "");
 
   // Áudio ou figurinha sem link nem descrição: não há o que ler, e 400 só faria
   // a plataforma reentregar para sempre. Fica no arquivo do webhook com o motivo.
-  if (celularBruto && !conteudo && tipoDeclarado !== "text") return { ok: true, ignorar: "midia_sem_link" };
+  if (celularBruto && !conteudo && !linkDoArquivo && tipoDeclarado !== "text") return { ok: true, ignorar: "midia_sem_link" };
 
   const faltando: string[] = [];
   if (!celularBruto) faltando.push("celular");
-  if (!conteudo) faltando.push("texto_mensagem");
+  if (!conteudo && !linkDoArquivo) faltando.push("texto_mensagem");
   if (faltando.length > 0) return { ok: false, motivo: "contrato_violado", campos: faltando };
 
   // Grupo e endereço que não é telefone NÃO viram lead (PC-047, "não fazer"):
@@ -149,7 +154,7 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
   if (celular.length < 10) return { ok: true, ignorar: "numero_fora_do_formato" };
 
   const tipo = tipoDeclarado;
-  const midiaUrl = tipo === "text" ? null : urlHttps(conteudo!);
+  const midiaUrl = tipo === "text" ? null : (linkDoArquivo ?? urlHttps(conteudo ?? ""));
 
   return {
     ok: true,
@@ -161,7 +166,7 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
       // Mídia sem link vira texto: a descrição que a plataforma mandou é o que
       // há para ler, e uma bolha de "imagem" sem imagem seria pior.
       tipo: midiaUrl ? tipo : "text",
-      texto: midiaUrl ? "" : conteudo!,
+      texto: midiaUrl ? "" : (conteudo ?? ""),
       midiaUrl,
       dataHora: texto(corpo.datetime_post),
       linkChat: linkDoChatConferido(corpo.link_chat),
@@ -176,7 +181,10 @@ export function lerEntrada(rawBody: string): LeituraDaEntrada {
  */
 export function idExternoDaEntrada(e: EntradaDoAtendimentoExterno, agora: Date = new Date()): string {
   const carimbo = e.dataHora ?? agora.toISOString().slice(0, 16);
-  const base = [e.phoneId ?? "", e.chatId ?? "", e.celular, carimbo, e.tipo, e.midiaUrl ?? e.texto].join("|");
+  // PC-060: o link do arquivo vem assinado (a assinatura muda a cada reentrega);
+  // só o endereço, sem a parte depois do `?`, identifica a mensagem.
+  const midia = e.midiaUrl ? e.midiaUrl.split("?")[0]! : null;
+  const base = [e.phoneId ?? "", e.chatId ?? "", e.celular, carimbo, e.tipo, midia ?? e.texto].join("|");
   return `ext_${createHash("sha256").update(base).digest("hex").slice(0, 40)}`;
 }
 
