@@ -187,6 +187,20 @@ const horariosLivresShape = {
         "`crm_list_appointments`. O horário novo tem de ser da mesma pessoa. " +
         "Ausente = o responsável do tipo, ou a pessoa da vez quando o tipo tem rodízio.",
     ),
+  /**
+   * PC-054 — remarcar fica na MESMA agenda do compromisso (o evento do Google é
+   * atualizado, não movido). Com o compromisso, os horários saem da agenda dele;
+   * sem, saem da união das agendas do revezamento, e a remarcação poderia
+   * recusar um horário que a consulta ofereceu.
+   */
+  appointment_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "para REMARCAR, o compromisso que vai mudar (o `id` de `crm_list_appointments` ou da marcação). " +
+        "Os horários voltam da MESMA agenda dele — o horário novo tem de ser nela. Ausente = consulta para marcar um novo.",
+    ),
   limite: z
     .number()
     .int()
@@ -295,6 +309,26 @@ function comRessalvaDeAgendaNuncaLida(resultado: unknown): string {
   return original.length > 0 ? `${original} ${ressalva}` : ressalva;
 }
 
+/**
+ * PC-054 — o compromisso que a IA quer remarcar, se for desta organização (e, num
+ * turno de atendimento, do contato desta conversa). `null` = ignorar o campo.
+ */
+async function compromissoParaRemarcar(
+  ctx: McpContext,
+  id: string,
+): Promise<{ id: string; donoId: string | null } | null> {
+  const { data, error } = await ctx.supabase
+    .from("calendar_appointments")
+    .select("id, owner_user_id, contact_id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const linha = data as { id: string; owner_user_id: string | null; contact_id: string | null };
+  if (ctx.contatoDoTurno && linha.contact_id !== ctx.contatoDoTurno) return null;
+  return { id: linha.id, donoId: linha.owner_user_id };
+}
+
 export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
   name: "crm_find_free_slots",
   description:
@@ -315,7 +349,8 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     "Se ele for false, o atendente ainda não publicou os horários dele — não invente horários e " +
     "não diga que está lotado; avise que alguém da equipe confirma. " +
     "Se `fuso_suposto` for true, o fuso da agenda não foi escolhido por ninguém, veio do padrão: " +
-    "ofereça o horário pedindo confirmação em vez de afirmar.",
+    "ofereça o horário pedindo confirmação em vez de afirmar. " +
+    "Para REMARCAR, passe `appointment_id`: os horários voltam da mesma agenda do compromisso.",
   inputSchema: horariosLivresShape,
   category: "read",
   requiresRole: "agent",
@@ -359,12 +394,19 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
       );
     }
 
+    // PC-054 — remarcar: o compromisso tem de ser desta organização e, num turno
+    // de atendimento, do contato desta conversa. Fora disso o campo é ignorado
+    // (a consulta segue como para marcar um novo): ele só muda QUAIS horários
+    // voltam, nunca abre dado de outro compromisso.
+    const remarcando = input.appointment_id ? await compromissoParaRemarcar(ctx, input.appointment_id) : null;
+
     const consulta = await horariosLivresDaOrg(ctx.supabase, ctx.organizationId, {
       eventTypeSlug: input.event_type_slug,
-      ownerUserId: input.owner_user_id ?? null,
+      ownerUserId: input.owner_user_id ?? remarcando?.donoId ?? null,
       de,
       ate,
       agora,
+      ...(remarcando ? { ignorarAgendamentoId: remarcando.id } : {}),
     });
 
     // Recusa de NEGÓCIO volta como RESPOSTA, nunca exceção: exceção mata o turno
@@ -470,6 +512,27 @@ const listarShape = {
   limite: z.number().int().min(1).max(50).optional(),
 };
 
+/**
+ * PC-054 — o nome das agendas do revezamento, para a listagem dizer em que
+ * agenda cada compromisso está. Só o `name`, filtrado pela organização; falha de
+ * leitura devolve mapa vazio (não derruba a listagem).
+ */
+async function nomesDasAgendas(ctx: McpContext, ids: Array<string | null>): Promise<Map<string, string>> {
+  const unicos = [...new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0))];
+  if (unicos.length === 0) return new Map();
+  const { data, error } = await ctx.supabase
+    .from("calendar_connection_calendars")
+    .select("id, name")
+    .eq("organization_id", ctx.organizationId)
+    .in("id", unicos);
+  if (error) return new Map();
+  return new Map(
+    ((data ?? []) as Array<{ id: string; name: string | null }>)
+      .filter((l) => typeof l.name === "string" && l.name.trim())
+      .map((l) => [l.id, String(l.name).trim()]),
+  );
+}
+
 export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
   name: "crm_list_appointments",
   description:
@@ -551,6 +614,10 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
       ctx.supabase,
       r.agendamentos.map((a) => a.donoId),
     );
+    const agendas = await nomesDasAgendas(
+      ctx,
+      r.agendamentos.map((a) => a.agendaId ?? null),
+    );
 
     return {
       compromissos: r.agendamentos.map((a) => ({
@@ -580,6 +647,9 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
           id: a.donoId,
           nome: a.donoId ? (nomes.get(a.donoId) ?? null) : null,
         },
+        // PC-054: com revezamento entre agendas, o nome da agenda em que o
+        // compromisso está (a de quem vai atender). Nula sem revezamento.
+        agenda: a.agendaId ? (agendas.get(a.agendaId) ?? null) : null,
         tipo: a.tipo ?? null,
         local: a.local ?? { tipo: null, descricao: null },
         lead_ids: a.leadIds ?? [],
@@ -741,7 +811,9 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
     "não está livre é recusado, e a recusa manda você consultar de novo. " +
     "⚠️ Alguns atendimentos exigem que uma pessoa da equipe aprove: nesses, o horário fica " +
     "RESERVADO e o retorno traz `aguarda_confirmacao: true`. Quando vier assim, NÃO diga que está " +
-    "confirmado — diga que separou o horário e que a equipe confirma.",
+    "confirmado — diga que separou o horário e que a equipe confirma. " +
+    "Quando o atendimento reveza entre agendas, o retorno traz `agenda`: o nome da agenda em que o " +
+    "compromisso ficou (a de quem vai atender).",
   inputSchema: marcarShape,
   category: "write",
   requiresRole: "ai_operator",
@@ -825,6 +897,9 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       return {
         marcado: true,
         compromisso: compromissoComHorarioLocal(r),
+        // PC-054: com revezamento entre agendas, o nome da agenda em que o
+        // compromisso ficou (a de quem vai atender, ex.: a especialista).
+        ...(typeof r.agenda_nome === "string" ? { agenda: r.agenda_nome } : {}),
         // Campo próprio, além da mensagem: um booleano no topo é o que o modelo
         // enxerga sem precisar interpretar prosa.
         aguarda_confirmacao: aguardaConfirmacao,
@@ -1089,8 +1164,9 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     "o que não aconteceu. " +
     "Confirme o horário novo com `crm_find_free_slots` antes, passando em `owner_user_id` o dono do " +
     "compromisso (o `owner_user_id` da marcação ou o `atendente_id` de `crm_list_appointments`) " +
-    "(o horário novo é da MESMA pessoa; sem ele, num tipo com rodízio a consulta mostra a agenda de " +
-    "outra pessoa e a remarcação é recusada): horário indisponível é recusado.",
+    "e em `appointment_id` este compromisso " +
+    "(o horário novo é da MESMA pessoa e da MESMA agenda; sem eles, num tipo com rodízio ou revezamento a " +
+    "consulta mostra outra agenda e a remarcação é recusada): horário indisponível é recusado.",
   inputSchema: remarcarShape,
   category: "write",
   requiresRole: "ai_operator",
@@ -1133,7 +1209,7 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
           owner_user_id: dono,
           mensagem:
             "esse horário não está livre na agenda de quem tem este compromisso. Chame `crm_find_free_slots` " +
-            `com owner_user_id "${dono}" e ofereça um dos horários que voltarem.`,
+            `com owner_user_id "${dono}" e appointment_id "${input.appointment_id}" e ofereça um dos horários que voltarem.`,
         };
       }
     }
