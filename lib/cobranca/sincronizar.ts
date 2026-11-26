@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
 import { textoDoAviso, type TextoDoAviso } from "@/lib/cobranca/avisos";
+import { conferirCreditosPendentes } from "@/lib/cobranca/credito-ia";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
 import { enviarAvisoAosAdmins } from "@/lib/cobranca/emails";
 import { aplicarLeitura } from "@/lib/cobranca/estado";
@@ -182,6 +183,10 @@ export async function sincronizar(
       logger.warn("cobranca.upgrade_proporcional_pendente", { organization_id: orgId, codigo: e instanceof ErroDoProvedor ? e.codigo : "falha_interna" });
     }
   }
+
+  // PC-051: as compras de crédito de IA pendentes são relidas no mesmo sinal —
+  // o aviso do provedor que acorda esta leitura é o mesmo cliente. Nunca lança.
+  await conferirCreditosPendentes(admin, orgId, { adaptadorDe: deps.adaptador ?? adaptadorPadrao, agora });
 
   const lidoEm = agora();
   let situacao: Situacao;

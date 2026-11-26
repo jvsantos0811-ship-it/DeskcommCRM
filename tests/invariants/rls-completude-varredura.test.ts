@@ -444,6 +444,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "organização existindo (controle positivo), o admin dessa organização por JWT e o anon " +
       "recebem `permission denied` em SELECT, INSERT e DELETE. Migration 9030 (fork, PC-028).",
   },
+  {
+    tabela: "ia_creditos",
+    razao:
+      "tests/invariants/credito-de-ia.test.ts (\"⭐ só o service_role\") — só do servidor, sem " +
+      "policy e sem grant a anon/authenticated: com o crédito da própria organização existindo " +
+      "(controle positivo), o admin dessa organização por JWT e o anon recebem `permission " +
+      "denied` em SELECT, INSERT, UPDATE e DELETE, e na função do crédito disponível. A tela da " +
+      "empresa lê pela rota, com a organização da sessão. Migration 9044 (fork, PC-051).",
+  },
 ];
 
 /**

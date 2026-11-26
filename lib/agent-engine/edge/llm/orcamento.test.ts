@@ -84,6 +84,12 @@ describe("lerTetoDoPlano", () => {
   });
 
   it("o statement só soma o gasto quando há teto", () => {
-    expect(SQL_TETO_DO_PLANO).toMatch(/case when teto is null then null else public\.fn_gasto_de_ia_do_mes\(\$1\) end/);
+    expect(SQL_TETO_DO_PLANO).toMatch(/case when teto_do_plano is null then null else public\.fn_gasto_de_ia_do_mes\(\$1\) end/);
+  });
+
+  it("PC-051: o crédito de IA só é calculado quando o gasto já alcançou o teto do plano", () => {
+    const sql = SQL_TETO_DO_PLANO.replace(/\s+/g, " ");
+    expect(sql).toContain("when gasto < teto_do_plano then teto_do_plano");
+    expect(sql).toContain("else teto_do_plano + public.fn_credito_de_ia_disponivel($1)");
   });
 });

@@ -102,6 +102,7 @@ const cobrancaDoAsaas = z.object({
   dueDate: z.string(),
   subscription: z.string().nullish(),
   invoiceUrl: z.string().nullish(),
+  externalReference: z.string().nullish(),
 });
 type CobrancaDoAsaas = z.infer<typeof cobrancaDoAsaas>;
 /** Data civil `AAAA-MM-DD` ordena como texto. */
@@ -535,6 +536,27 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     return { pagamentoRef: pagamento.id, url };
   }
 
+  async function iniciarCompraDeCredito(p: Parameters<AdaptadorDeCobranca["iniciarCompraDeCredito"]>[0]) {
+    const externalReference = `credito_ia:${uuidDaOrg(p.orgId)}:${p.chaveIdempotencia}`;
+    const consulta = new URLSearchParams({ customer: p.clienteRef, externalReference, limit: "10" });
+    const existentes = ler(listaDoAsaas(cobrancaDoAsaas), await chamar("GET", `/payments?${consulta}`)).data;
+    let pagamento = existentes.find((c) => c.status === "PENDING" || c.status === "OVERDUE");
+    if (!pagamento) {
+      pagamento = ler(cobrancaDoAsaas, await chamar("POST", "/payments", {
+        customer: p.clienteRef,
+        // UNDEFINED: o cliente escolhe Pix, boleto ou cartão na fatura.
+        billingType: "UNDEFINED",
+        value: p.valorCents / 100,
+        dueDate: dataCivilEmSaoPaulo(agora()),
+        description: p.descricao.slice(0, 500),
+        externalReference,
+      }));
+    }
+    const url = linkSeguro(pagamento.invoiceUrl);
+    if (url === null) throw new ErroDoProvedor(200, "resposta_invalida", false);
+    return { pagamentoRef: pagamento.id, url };
+  }
+
   async function lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado"> {
     const pagamento = ler(cobrancaDoAsaas, await chamar("GET", `/payments/${encodeURIComponent(pagamentoRef)}`));
     if (PAGO.has(pagamento.status)) return "pago";
@@ -585,7 +607,11 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
         STATUS_PAGOS.map((s) =>
           chamar("GET", `/payments?customer=${cliente}&status=${s}&limit=100`).then((d) => ler(listaDoAsaas(cobrancaDoAsaas), d).data),
         ),
-      ).then((listas) => listas.flat()),
+      )
+        // PC-051: a compra avulsa de crédito de IA é do mesmo cliente, mas não é
+        // pagamento da assinatura — contada aqui, uma empresa em teste que comprou
+        // crédito viraria "já pagou" e seria lida como cancelada.
+        .then((listas) => listas.flat().filter((c) => !(c.externalReference ?? "").startsWith("credito_ia:"))),
     ]);
     const recentes = [...assinaturas].sort((a, b) => b.dateCreated.localeCompare(a.dateCreated));
     const vivas = recentes.filter((s) => !ehTerminal(s));
@@ -680,6 +706,7 @@ export function criarAdaptadorAsaas(dep: DependenciasDoAsaas): AdaptadorDeCobran
     iniciarAssinatura,
     iniciarAjusteProporcional,
     lerPagamentoProporcional,
+    iniciarCompraDeCredito,
     expirarSessao,
     lerSituacao,
     trocarPlano,

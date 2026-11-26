@@ -5,10 +5,13 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { emailDeSuporte } from "@/lib/branding/saida";
 import { Card } from "@/components/ui/card";
 import { AcoesDaAssinatura } from "@/components/cobranca/AcoesDaAssinatura";
+import { CreditoDeIa } from "@/components/cobranca/CreditoDeIa";
 import { PainelDaAssinatura } from "@/components/cobranca/PainelDaAssinatura";
+import { lerExtratoDeCredito, type ExtratoDeCredito } from "@/lib/cobranca/credito-ia";
 import { lerPainelDaAssinatura } from "@/lib/cobranca/painel";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +38,15 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     ? await lerPainelDaAssinatura(admin, activeOrg.orgId)
     : null;
   const suporte = painel ? null : await emailDeSuporte();
+  // PC-051: o crédito de IA. Falha na leitura não derruba a tela da assinatura.
+  let extrato: ExtratoDeCredito | null = null;
+  if (painel) {
+    try {
+      extrato = await lerExtratoDeCredito(admin, activeOrg.orgId);
+    } catch (e) {
+      logger.warn("cobranca.credito_ia_extrato_ilegivel", { organization_id: activeOrg.orgId, motivo: e instanceof Error ? e.message : "desconhecido" });
+    }
+  }
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
@@ -68,6 +80,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               fuso={painel.fuso}
             />
           )}
+          {extrato && <CreditoDeIa extrato={extrato} fuso={painel.fuso} />}
         </>
       ) : (
         <Card className="max-w-xl p-6">

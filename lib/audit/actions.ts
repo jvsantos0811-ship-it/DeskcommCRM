@@ -1164,6 +1164,15 @@ export const AUDIT_ACTIONS = [
   // a assinatura). Detecção, não correção — o preço de quem já assinou é
   // decisão de quem administra, e o audit é o lugar de vê-la.
   "cobranca.preco_divergente",
+  // PC-051 (fork): crédito de IA. Pacote salvo/arquivado e cortesia dada pelo
+  // dono; compra iniciada pela empresa (link do provedor); compra paga ou
+  // cancelada, lida no provedor. Metadata só com valores e ids — nunca o link.
+  "cobranca.credito_ia_pacote_salvo",
+  "cobranca.credito_ia_pacote_arquivado",
+  "cobranca.credito_ia_compra_iniciada",
+  "cobranca.credito_ia_pago",
+  "cobranca.credito_ia_cancelado",
+  "cobranca.credito_ia_cortesia",
   // O servidor MCP externo registrado pela instalação (#2147): gravado (ou
   // apagado, com `registrado: false` no metadata) em
   // `organizations.settings.mcp_externo`. É mutação de TENANT — o endereço que

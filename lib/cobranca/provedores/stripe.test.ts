@@ -447,6 +447,22 @@ describe("garantirCliente e iniciarAssinatura", () => {
     await expect(adaptador.lerPagamentoProporcional("cs_test_1")).resolves.toBe("pago");
   });
 
+  it("⭐ PC-051 compra de crédito: sessão avulsa com o nome do pacote, idempotente pela id da compra", async () => {
+    const { adaptador, chamadas } = montar({ "POST /checkout/sessions": SESSAO });
+    const resultado = await adaptador.iniciarCompraDeCredito({
+      clienteRef: base.clienteRef, orgId: ORG, descricao: "Crédito de IA — R$ 100", valorCents: 10000, chaveIdempotencia: "credito-1", urlDeVolta: base.urlDeVolta,
+    });
+    expect(resultado).toEqual({ pagamentoRef: "cs_test_1", url: "https://checkout.stripe.com/c/pay/cs_test_1" });
+    const sessao = chamadas.find((c) => c.rota === "POST /checkout/sessions");
+    expect(Object.fromEntries(sessao?.corpo ?? [])).toMatchObject({
+      mode: "payment", customer: base.clienteRef, client_reference_id: ORG,
+      "line_items[0][price_data][unit_amount]": "10000",
+      "line_items[0][price_data][product_data][name]": "Crédito de IA — R$ 100",
+      "metadata[tipo]": "credito_ia",
+    });
+    expect(sessao?.headers.get("idempotency-key")).toBe(`credito_ia:${ORG}:credito-1`);
+  });
+
   it.each([
     [{ status: "open", payment_status: "unpaid" }, "pendente"],
     // Boleto emitido e ainda não compensado: a sessão já está `complete`.
