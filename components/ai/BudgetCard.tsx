@@ -49,11 +49,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PISO_DE_TETO_CENTS } from "@/lib/agent-engine/edge/llm/orcamento";
 import { useAiBudget, useUpdateBudget, type BudgetStatus } from "@/hooks/ai/useAiBudget";
+import { formatCentsBRL, formatCentsUSDEmReais } from "@/lib/money";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
   initialData?: BudgetStatus;
   isAdmin: boolean;
+  /**
+   * Cotação do dólar do painel da agência. Com ela o card ESCREVE em reais
+   * (pedido do dono, 25/11/2026); o banco, o teto e o gasto continuam em
+   * centavo de dólar — a conversão é só de tela, e a cotação aparece escrita.
+   * Sem ela, o card fica em dólar como antes.
+   */
+  cotacao?: number;
+}
+
+/** Centavo de dólar → texto na moeda da tela. */
+type Moeda = (usdCents: number) => string;
+
+function moedaDaTela(cotacao: number | undefined): Moeda {
+  return typeof cotacao === "number" && cotacao > 0
+    ? (usdCents) => formatCentsUSDEmReais(usdCents, cotacao)
+    : fmtCents;
 }
 
 type Modo = BudgetStatus["enforcement_mode"];
@@ -105,6 +122,7 @@ function frameDoEstado(
   // Mesmo tratamento do `t`: esta função é auxiliar e não pode chamar hook.
   // Default no padrão do produto, para nenhum chamador quebrar.
   tagDoIdioma = "pt-BR",
+  moeda: Moeda = fmtCents,
 ): string {
   const efetivoEm = status.enforcement_effective_at;
   if (status.enforcement_mode === "off") {
@@ -117,7 +135,7 @@ function frameDoEstado(
     return `${t("A parada começa a valer em")} ${fmtData(efetivoEm, tagDoIdioma)}. ${t("Até lá, só avisamos.")}`;
   }
   return (
-    `${t("A IA para de responder ao chegar em")} ${fmtCents(status.monthly_limit_cents)}. ` +
+    `${t("A IA para de responder ao chegar em")} ${moeda(status.monthly_limit_cents)}. ` +
     t(
       "Quando isso acontecer, as conversas em andamento vão para a fila de atendimento humano e voltam ao automático uma a uma, pelo cabeçalho de cada conversa.",
     )
@@ -158,9 +176,11 @@ const AVISO_DE_MEDICAO =
   "parada no limite pode não acontecer. Enquanto isso, acompanhe o gasto direto no " +
   "painel do seu provedor de IA.";
 
-export function BudgetCard({ initialData, isAdmin }: Props) {
+export function BudgetCard({ initialData, isAdmin, cotacao }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
+  const moeda = moedaDaTela(cotacao);
+  const emReais = moeda !== fmtCents;
   const q = useAiBudget({ initialData });
   const status = q.data;
 
@@ -185,7 +205,14 @@ export function BudgetCard({ initialData, isAdmin }: Props) {
           <h2 className="text-base font-semibold tracking-tight">{t("Orçamento mensal de IA")}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t("Gasto de")} {mesCorrente(tagDoIdioma)} ·{" "}
-            {t("valores em dólar (é a moeda em que o provedor de IA cobra)")}
+            {emReais ? (
+              <>
+                {t("valores em reais, pela cotação de")} {fmtCents(100)} = {moeda(100)}{" "}
+                {t("(o provedor de IA cobra em dólar)")}
+              </>
+            ) : (
+              t("valores em dólar (é a moeda em que o provedor de IA cobra)")
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -195,7 +222,7 @@ export function BudgetCard({ initialData, isAdmin }: Props) {
           {!status.blocked_now && overLimit && limit > 0 && (
             <Badge variant="secondary">{t("Passou do limite")}</Badge>
           )}
-          {isAdmin && <EditBudgetDialog status={status} />}
+          {isAdmin && <EditBudgetDialog status={status} cotacao={cotacao} />}
         </div>
       </div>
 
@@ -233,11 +260,11 @@ export function BudgetCard({ initialData, isAdmin }: Props) {
         </div>
         <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
           <span>
-            <strong>{fmtCents(consumed)}</strong>
+            <strong>{moeda(consumed)}</strong>
             {limit > 0 ? (
               <>
                 {" "}
-                {t("gastos de")} {fmtCents(limit)}
+                {t("gastos de")} {moeda(limit)}
               </>
             ) : (
               <> {t("gastos este mês")}</>
@@ -246,7 +273,7 @@ export function BudgetCard({ initialData, isAdmin }: Props) {
           <span className="text-muted-foreground">
             {limit > 0 ? (
               <>
-                {status.pct.toFixed(0)}% {t("do limite")} · {frameDoEstado(status, t, tagDoIdioma)}
+                {status.pct.toFixed(0)}% {t("do limite")} · {frameDoEstado(status, t, tagDoIdioma, moeda)}
               </>
             ) : (
               t("Sem limite definido — a IA não vai parar sozinha por gasto.")
@@ -311,33 +338,50 @@ function OpcaoDeModo({
   );
 }
 
-function EditBudgetDialog({ status }: { status: BudgetStatus }) {
+function EditBudgetDialog({ status, cotacao }: { status: BudgetStatus; cotacao?: number }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const update = useUpdateBudget();
-  const [limitUsd, setLimitUsd] = useState<string>(
-    (status.monthly_limit_cents / 100).toFixed(2),
-  );
+  /**
+   * O CAMPO fala a moeda da tela; o banco, centavo de DÓLAR.
+   *
+   * Em reais, o que se digita é convertido para dólar SÓ na hora de salvar
+   * (`centsDigitados`), e o piso e a régua do servidor seguem em dólar. A volta
+   * pode diferir de alguns centavos do que foi digitado (o banco guarda centavo
+   * inteiro de dólar): é o preço de não mudar a unidade do teto.
+   */
+  const moeda = moedaDaTela(cotacao);
+  const emReais = moeda !== fmtCents;
+  const fator = emReais ? (cotacao as number) : 1;
+  const paraCampo = (usdCents: number) => ((usdCents * fator) / 100).toFixed(2);
+  const [limitUsd, setLimitUsd] = useState<string>(paraCampo(status.monthly_limit_cents));
   const [thresholdPct, setThresholdPct] = useState<number>(status.alarm_threshold_pct);
   const [modo, setModo] = useState<Modo>(status.enforcement_mode);
   const [imediato, setImediato] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setLimitUsd((status.monthly_limit_cents / 100).toFixed(2));
+      setLimitUsd(((status.monthly_limit_cents * fator) / 100).toFixed(2));
       setThresholdPct(status.alarm_threshold_pct);
       setModo(status.enforcement_mode);
       setImediato(false);
     }
-  }, [open, status]);
+  }, [open, status, fator]);
 
   // Campo vazio é INVÁLIDO, e não zero: `Number("")` é 0, e cair em "sem teto"
   // por um campo apagado seria desarmar a proteção sem ninguém escolher isso.
   const digitado = limitUsd.trim();
-  const valorUsd = digitado === "" ? Number.NaN : Number(digitado.replace(",", "."));
-  const centsValidos = Number.isFinite(valorUsd) && valorUsd >= 0;
-  const centsDigitados = centsValidos ? Math.round(valorUsd * 100) : 0;
-  const tetoParaCopy = centsValidos ? centsDigitados : status.monthly_limit_cents;
+  const valorDigitado = digitado === "" ? Number.NaN : Number(digitado.replace(",", "."));
+  const centsValidos = Number.isFinite(valorDigitado) && valorDigitado >= 0;
+  // Sempre centavo de DÓLAR — a unidade do banco e da régua do servidor.
+  const centsDigitados = centsValidos ? Math.round((valorDigitado * 100) / fator) : 0;
+  // A frase mostra o valor COMO FOI DIGITADO, sem a ida e volta pelo dólar:
+  // digitar R$ 100,00 e ler "R$ 99,99" na opção seria a tela corrigindo a pessoa.
+  const tetoParaCopy = centsValidos
+    ? emReais
+      ? formatCentsBRL(Math.round(valorDigitado * 100))
+      : fmtCents(centsDigitados)
+    : moeda(status.monthly_limit_cents);
 
   // A ESCADA, na tela. O servidor recusa `off → bloquear` com 422; aqui a opção
   // nasce desabilitada com o motivo escrito, para que ninguém descubra a regra
@@ -387,9 +431,11 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
         <DialogHeader>
           <DialogTitle>{t("Orçamento de IA")}</DialogTitle>
           <DialogDescription>
-            {t(
-              "Escolha o que acontece quando o gasto do mês chega no limite. Os valores são em dólar — é a moeda em que o provedor de IA cobra.",
-            )}
+            {emReais
+              ? `${t("Escolha o que acontece quando o gasto do mês chega no limite. Os valores são em reais, pela cotação de")} ${fmtCents(100)} = ${moeda(100)}; ${t("o provedor de IA cobra em dólar.")}`
+              : t(
+                  "Escolha o que acontece quando o gasto do mês chega no limite. Os valores são em dólar — é a moeda em que o provedor de IA cobra.",
+                )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
@@ -407,7 +453,7 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
               atual={modo}
               onPick={setModo}
               disabled={update.isPending}
-              titulo={`${t("Me avisar ao passar de")} ${limiarEfetivo}% ${t("de")} ${fmtCents(tetoParaCopy)}`}
+              titulo={`${t("Me avisar ao passar de")} ${limiarEfetivo}% ${t("de")} ${tetoParaCopy}`}
               corpo={t("Abrimos um aviso na Central de avisos. A IA continua respondendo normalmente.")}
             />
             <OpcaoDeModo
@@ -415,7 +461,7 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
               atual={modo}
               onPick={setModo}
               disabled={update.isPending || pularDegrau}
-              titulo={`${t("Parar a IA ao chegar em")} ${fmtCents(tetoParaCopy)}`}
+              titulo={`${t("Parar a IA ao chegar em")} ${tetoParaCopy}`}
               corpo={
                 t(
                   'As conversas em andamento vão para a fila de atendimento humano — ninguém fica sem resposta, mas alguém precisa responder. Cada uma volta ao automático pelo botão "Devolver ao automático" no cabeçalho dela.',
@@ -444,7 +490,7 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="limit-usd">{t("Limite mensal (US$)")}</Label>
+            <Label htmlFor="limit-usd">{emReais ? t("Limite mensal (R$)") : t("Limite mensal (US$)")}</Label>
             <Input
               id="limit-usd"
               type="number"
@@ -457,7 +503,7 @@ function EditBudgetDialog({ status }: { status: BudgetStatus }) {
             {tetoInsuficiente && (
               <p className="text-xs text-destructive">
                 {t("Para avisar ou parar no limite, ele precisa ser de pelo menos")}{" "}
-                {fmtCents(PISO_DE_TETO_CENTS)} {t("por mês. Abaixo disso não é orçamento de")}{" "}
+                {moeda(PISO_DE_TETO_CENTS)} {t("por mês. Abaixo disso não é orçamento de")}{" "}
                 {t(
                   'um atendimento — é erro de digitação. Se você só quer acompanhar o gasto sem limite, escolha "Só acompanhar".',
                 )}

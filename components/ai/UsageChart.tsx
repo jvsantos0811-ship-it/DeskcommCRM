@@ -12,11 +12,13 @@ import {
   Legend,
 } from "recharts";
 import type { UsagePayload } from "@/lib/ai/usage/aggregate";
-import { formatCentsUSD } from "@/lib/money";
+import { formatCentsUSD, formatCentsUSDEmReais } from "@/lib/money";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
   payload: UsagePayload;
+  /** Cotação do dólar para o eixo e a dica do custo saírem em reais (ver `formatCentsUSDEmReais`). */
+  cotacao?: number;
 }
 
 function formatDateTick(s: string, idioma: string): string {
@@ -63,7 +65,9 @@ const tooltipStyle = {
   background: "hsl(var(--popover))",
 };
 
-export function UsageChart({ payload }: Props) {
+export function UsageChart({ payload, cotacao }: Props) {
+  const emReais = typeof cotacao === "number" && cotacao > 0;
+  const custo = (cents: number) => (emReais ? formatCentsUSDEmReais(cents, cotacao) : formatCentsUSD(cents));
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const { series } = payload;
@@ -87,7 +91,9 @@ export function UsageChart({ payload }: Props) {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <ChartCard title={t("Quanto gastou por dia (US$)")}>
+      {/* O rótulo diz a moeda do eixo: valor em R$ com título em US$ era a
+          mesma tela dizendo duas moedas. */}
+      <ChartCard title={emReais ? t("Quanto gastou por dia (R$)") : t("Quanto gastou por dia (US$)")}>
         {!hasCost ? (
           <EmptyChart />
         ) : (
@@ -109,11 +115,11 @@ export function UsageChart({ payload }: Props) {
                 tick={{ fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v: number) => formatCentsUSD(v)}
+                tickFormatter={(v: number) => custo(v)}
                 width={70}
               />
               <Tooltip
-                formatter={(value) => [formatCentsUSD(Number(value)), t("Custo")]}
+                formatter={(value) => [custo(Number(value)), t("Custo")]}
                 labelFormatter={(label) => formatDateTick(String(label), tagDoIdioma)}
                 contentStyle={tooltipStyle}
               />
