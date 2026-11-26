@@ -2,6 +2,7 @@
 import { forwardRef, useCallback, useState, type ComponentProps } from "react";
 
 import { Composer, type ComposerHandle } from "@/components/inbox/Composer";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import {
   guardarRascunhoDaConversa,
   lerRascunhoDaConversa,
@@ -33,8 +34,11 @@ export const ComposerDaConversa = forwardRef<ComposerHandle, Props>(function Com
   ref,
 ) {
   const { conversationId } = props;
+  // A pessoa entra na chave: sair da conta não recarrega a página, e quem entra
+  // depois na mesma aba não pode ver o rascunho de quem saiu.
+  const userId = useAuth().user.id;
   const [inicial] = useState<RascunhoDaConversa | null>(() =>
-    textoSugerido !== null ? { texto: textoSugerido, modo: "reply" } : lerRascunhoDaConversa(conversationId),
+    textoSugerido !== null ? { texto: textoSugerido, modo: "reply" } : lerRascunhoDaConversa(userId, conversationId),
   );
   // Com o texto SUGERIDO no campo, nada é guardado — e o guardado antes é
   // esquecido. O sugerido só volta pelo link, que o servidor relê e que traz a
@@ -43,8 +47,8 @@ export const ComposerDaConversa = forwardRef<ComposerHandle, Props>(function Com
   const modoSugerido = textoSugerido !== null;
   const guardar = useCallback(
     (texto: string, modo: "reply" | "note") =>
-      guardarRascunhoDaConversa(conversationId, modoSugerido ? "" : texto, modo),
-    [conversationId, modoSugerido],
+      guardarRascunhoDaConversa(userId, conversationId, modoSugerido ? "" : texto, modo),
+    [userId, conversationId, modoSugerido],
   );
   return (
     <Composer

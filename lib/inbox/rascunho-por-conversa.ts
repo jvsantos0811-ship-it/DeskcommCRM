@@ -13,9 +13,14 @@
  *
  * Mora SÓ na memória da aba, de propósito. Rascunho é texto sobre o cliente, às
  * vezes com dado de saúde, e gravá-lo no `localStorage` o deixaria no computador
- * (muitas vezes compartilhado no escritório) depois de fechar o navegador. Trocar
- * de organização e sair recarregam a página, o que apaga tudo daqui. A chave é o
- * id da conversa (UUID), que não se repete entre organizações.
+ * (muitas vezes compartilhado no escritório) depois de fechar o navegador.
+ *
+ * A chave é PESSOA + CONVERSA. Sair da conta NÃO recarrega a página (é um server
+ * action com redirect, e o login volta pela mesma árvore), então quem entra
+ * depois na mesma aba não pode encontrar o rascunho de quem saiu: a pessoa faz
+ * parte da chave, e o `signOut` do `AuthProvider` ainda esvazia tudo. Trocar de
+ * organização recarrega a página; o id da conversa é UUID e não se repete entre
+ * organizações.
  *
  * Teto de conversas guardadas: quem abre cem conversas num dia não precisa de cem
  * rascunhos na memória; vai embora o mais antigo.
@@ -32,9 +37,13 @@ export const TETO_DE_RASCUNHOS = 50;
 
 const rascunhos = new Map<string, RascunhoDaConversa>();
 
-/** O rascunho guardado da conversa, ou `null`. */
-export function lerRascunhoDaConversa(conversationId: string): RascunhoDaConversa | null {
-  return rascunhos.get(conversationId) ?? null;
+function chave(userId: string, conversationId: string): string {
+  return `${userId}:${conversationId}`;
+}
+
+/** O rascunho desta pessoa nesta conversa, ou `null`. */
+export function lerRascunhoDaConversa(userId: string, conversationId: string): RascunhoDaConversa | null {
+  return rascunhos.get(chave(userId, conversationId)) ?? null;
 }
 
 /**
@@ -42,15 +51,21 @@ export function lerRascunhoDaConversa(conversationId: string): RascunhoDaConvers
  * fica depois de um envio que deu certo, e um rascunho vazio guardado faria a
  * conversa reabrir no modo de nota sem motivo.
  */
-export function guardarRascunhoDaConversa(conversationId: string, texto: string, modo: ModoDoRascunho): void {
+export function guardarRascunhoDaConversa(
+  userId: string,
+  conversationId: string,
+  texto: string,
+  modo: ModoDoRascunho,
+): void {
+  const k = chave(userId, conversationId);
   if (texto.trim() === "") {
-    rascunhos.delete(conversationId);
+    rascunhos.delete(k);
     return;
   }
   // Reinsere para ir ao fim da ordem: o `Map` itera na ordem de inserção, e o
   // primeiro da fila é o mais antigo a sair quando passa do teto.
-  rascunhos.delete(conversationId);
-  rascunhos.set(conversationId, { texto, modo });
+  rascunhos.delete(k);
+  rascunhos.set(k, { texto, modo });
   while (rascunhos.size > TETO_DE_RASCUNHOS) {
     const maisAntigo = rascunhos.keys().next().value;
     if (maisAntigo === undefined) break;
@@ -58,7 +73,7 @@ export function guardarRascunhoDaConversa(conversationId: string, texto: string,
   }
 }
 
-/** Só para teste: começa do zero. */
+/** Esvazia tudo — na saída da conta (`AuthProvider.signOut`) e nos testes. */
 export function esquecerTodosOsRascunhos(): void {
   rascunhos.clear();
 }

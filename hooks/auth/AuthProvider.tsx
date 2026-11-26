@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Providers } from "@/app/providers";
 import { definirOrgDaAba } from "@/lib/auth/org-da-aba";
+import { esquecerTodosOsRascunhos } from "@/lib/inbox/rascunho-por-conversa";
 import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -91,6 +92,9 @@ export function AuthProvider({
       refreshing,
       signOut: async () => {
         resetRealtimeAuthentication();
+        // A saída não recarrega a página: os rascunhos do campo de resposta
+        // (memória da aba, PC-057) não podem ficar para quem entrar depois.
+        esquecerTodosOsRascunhos();
         const { signOut } = await import("@/app/actions/auth/signOut");
         await signOut();
       },
