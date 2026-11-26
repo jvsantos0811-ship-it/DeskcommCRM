@@ -1,6 +1,6 @@
 /**
  * EQUIPE RESPONDEU = HUMANO ASSUMIU (PC-029) — pelo CRM, pelo celular ou, no
- * canal que atende dentro de outra plataforma (ChatGuru), pelo diálogo que a
+ * canal que atende dentro de outra plataforma de atendimento, pelo diálogo que a
  * equipe executa lá ao assumir (PC-058).
  *
  * ─── A regra (João, 03/11 e 10/11/2026) ──────────────────────────────────────
