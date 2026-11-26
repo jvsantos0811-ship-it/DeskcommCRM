@@ -5,6 +5,7 @@ import { classificarErroDoGoogle } from "./erros";
 import { googleTransport, GoogleHttpError, type GoogleFetch } from "./transport";
 import { calendarSnapshotSchema, googleRpc, type CalendarFence } from "./sync-store";
 import { reconcileAppointment, tokenForConnection } from "./sync-executor";
+import { aplicarDesfechoDoEvento } from "./desfecho-do-evento";
 
 /** A frase persistida quando a leitura incremental do Google falha. */
 export function mensagemDaRecusaDeLeitura(erro: unknown): string {
@@ -120,6 +121,9 @@ export async function syncCalendar(
         });
         if (result === "busy") return "partial";
         if (result === "failed") throw new Error("Compromisso vinculado ainda não reconciliado.");
+        // PC-062: a cor que a equipe pintou depois da ligação vira o desfecho
+        // (só com a cor configurada no tipo). Nunca lança nem para a leitura.
+        await aplicarDesfechoDoEvento(db, org, linkedAppointmentId, event.colorId);
         pruneIds.add(eventId);
         continue;
       }

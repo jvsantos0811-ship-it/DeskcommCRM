@@ -807,6 +807,88 @@ export async function alterarAgendamentoHandler(
 }
 
 /**
+ * PC-062 — O DESFECHO QUE A EQUIPE PINTOU NO GOOGLE.
+ *
+ * Quem chama é só o sync da agenda (`calendar-executor`), com o cliente admin e
+ * um ator de sistema: a equipe pintou o evento com a cor de Realizado ou Faltou
+ * do tipo de atendimento. A escrita passa pela porta única do banco
+ * (`fn_appointment_outcome_from_google`): sem sessão de usuário, só para o
+ * desfecho, só com a cor configurada, e a autoria vai como `google_color`.
+ *
+ * Depois, o MESMO fechamento de laço de quando a equipe marca na tela: linha do
+ * tempo, gatilho de automação (é o que move o card para "Reunião realizada" ou
+ * "No-show") e auditoria. Nunca é chamado por ferramenta de IA.
+ */
+export async function registrarDesfechoPeloGoogleHandler(
+  supabase: SB,
+  ctx: HandlerCtx,
+  input: { id: string; status: "completed" | "no_show"; cor: string },
+): Promise<{ registrado: boolean; motivo?: string }> {
+  const atual = await exigeAgendamento(supabase, ctx, input.id, [
+    "id",
+    "revision",
+    "event_type_id",
+    "contact_id",
+    "starts_at",
+    "status",
+    "time_zone",
+  ]);
+  if (atual.status === input.status) return { registrado: false, motivo: "ja_registrado" };
+  if (!["pending", "confirmed", "completed", "no_show"].includes(String(atual.status))) {
+    return { registrado: false, motivo: "situacao_nao_permite" };
+  }
+  if (new Date(atual.starts_at as string).getTime() > Date.now()) {
+    return { registrado: false, motivo: "ainda_nao_aconteceu" };
+  }
+
+  await guardServiceEffect();
+  const { data, error } = await supabase.rpc("fn_appointment_outcome_from_google", {
+    p_org: ctx.organization_id,
+    p_id: input.id,
+    p_revision: Number(atual.revision),
+    p_status: input.status,
+  });
+  if (error) {
+    // Conflito de revisão: o compromisso mudou entre a leitura e a escrita; a
+    // próxima rodada do sync lê de novo. Desligado ou recusado: nada a fazer.
+    return { registrado: false, motivo: error.code === "PT409" ? "conflito" : "recusado" };
+  }
+  const salvo = data as Record<string, unknown>;
+
+  await fecharOLaco(supabase, ctx, {
+    appointmentId: atual.id as string,
+    contactId: (atual.contact_id as string | null) ?? null,
+    atividade: atividadeDaTransicao(atual.status as SituacaoAnterior, input.status),
+    gatilho: gatilhoDaTransicao(atual.status as SituacaoAnterior, input.status),
+    transicao: input.status,
+    fusoDoCompromisso: String(salvo.time_zone ?? atual.time_zone),
+    nomeDoTipo: await nomeDoTipoDoCompromisso(supabase, ctx, atual.event_type_id as string | null),
+    outcome: {
+      revision: salvo.revision,
+      source_kind: salvo.outcome_source_kind,
+      message_id: salvo.outcome_message_id,
+      recorded_at: salvo.outcome_recorded_at,
+    },
+  });
+
+  void audit({
+    action: "agenda.appointment_outcome_recorded",
+    actorUserId: null,
+    organizationId: ctx.organization_id,
+    resourceType: "calendar_appointment",
+    resourceId: input.id,
+    requestId: ctx.requestId,
+    metadata: {
+      status: salvo.status,
+      revision: salvo.revision,
+      outcome_source_kind: salvo.outcome_source_kind,
+      cor_do_google: input.cor,
+    },
+  });
+  return { registrado: true };
+}
+
+/**
  * Cancela de verdade (status), não apaga a linha: o histórico do que foi marcado
  * e desmarcado é o que deixa o Radar distinguir lead que desistiu de lead que
  * nunca marcou, e o agente não reoferecer o horário que a pessoa recusou.

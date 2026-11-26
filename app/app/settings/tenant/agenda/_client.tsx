@@ -45,6 +45,9 @@ export interface TipoRow {
   /** PC-054 (9045): revezamento entre agendas do Google de quem atende, na ordem da vez. */
   rotation_calendar_ids?: string[] | null;
   lead_presence_enabled?: boolean;
+  /** PC-062 (9046): cor do Google que vira Realizado / Faltou. Nula = desligado. */
+  outcome_color_completed?: string | null;
+  outcome_color_no_show?: string | null;
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
@@ -905,6 +908,9 @@ export function TiposDeAgendamentoClient({
                         // PC-052: caixa desmarcada some do FormData — a comparação
                         // manda `false` explícito, nunca omite.
                         lead_presence_enabled: dados.get("lead_presence_enabled") === "on",
+                        // PC-062: "Desligado" (vazio) vai como null, para poder desligar.
+                        outcome_color_completed: String(dados.get("outcome_color_completed") ?? "") || null,
+                        outcome_color_no_show: String(dados.get("outcome_color_no_show") ?? "") || null,
                         // Caixa desmarcada não aparece no `FormData` — daí a
                         // comparação, e não um `Boolean(...)` do valor ausente.
                         // Vazio é uma ESCOLHA (voltar a digitar na hora), e
@@ -1038,6 +1044,41 @@ export function TiposDeAgendamentoClient({
                       </span>
                     </span>
                   </label>
+                  <fieldset
+                    className="flex flex-col gap-2 text-sm text-text"
+                    data-testid={`editar-desfecho-cor-${tipo.id}`}
+                  >
+                    <legend className="text-sm text-text">{t("Desfecho pela cor do Google")}</legend>
+                    <span className="text-xs text-text-muted">
+                      {t(
+                        "Depois do atendimento, a equipe pinta o evento no Google com a cor escolhida e o CRM registra Realizado ou Faltou sozinho (e move o card pelas automações). Só vale depois do horário do atendimento. Desligado = como sempre.",
+                      )}
+                    </span>
+                    <div className="flex flex-wrap gap-3">
+                      <label className="flex flex-col gap-1 text-xs text-text-muted">
+                        {t("Cor de Realizado")}
+                        <select
+                          name="outcome_color_completed"
+                          defaultValue={tipo.outcome_color_completed ?? ""}
+                          className="rounded-md border border-border bg-surface p-2 text-sm text-text"
+                          data-testid={`editar-desfecho-realizado-${tipo.id}`}
+                        >
+                          <OpcoesDeCorDeDesfecho />
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-text-muted">
+                        {t("Cor de Faltou")}
+                        <select
+                          name="outcome_color_no_show"
+                          defaultValue={tipo.outcome_color_no_show ?? ""}
+                          className="rounded-md border border-border bg-surface p-2 text-sm text-text"
+                          data-testid={`editar-desfecho-faltou-${tipo.id}`}
+                        >
+                          <OpcoesDeCorDeDesfecho />
+                        </select>
+                      </label>
+                    </div>
+                  </fieldset>
                   <label className="flex flex-col gap-1 text-xs text-text-muted">
                     {t("Preço padrão")}
                     <input
@@ -1075,5 +1116,26 @@ export function TiposDeAgendamentoClient({
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * PC-062: as cores de evento do Google que podem marcar o desfecho. As três da
+ * presença do lead (amarelo, verde, vermelho) ficam de fora — é o CRM que as pinta.
+ */
+function OpcoesDeCorDeDesfecho() {
+  const t = useT();
+  return (
+    <>
+      <option value="">{t("Desligado")}</option>
+      <option value="9">{t("Mirtilo (azul)")}</option>
+      <option value="8">{t("Grafite (cinza)")}</option>
+      <option value="7">{t("Pavão (azul-claro)")}</option>
+      <option value="1">{t("Lavanda (lilás)")}</option>
+      <option value="3">{t("Uva (roxo)")}</option>
+      <option value="2">{t("Sálvia (verde-claro)")}</option>
+      <option value="4">{t("Flamingo (rosa)")}</option>
+      <option value="6">{t("Tangerina (laranja)")}</option>
+    </>
   );
 }

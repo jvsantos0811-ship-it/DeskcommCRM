@@ -1,3 +1,4 @@
+import { CORES_DE_DESFECHO } from "@/lib/agenda/desfecho-pela-cor";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * TIPOS DE AGENDAMENTO — criar, alterar e desativar pela API.
@@ -100,6 +101,13 @@ const camposDoTipo = {
   rotation_calendar_ids: z.array(z.string().uuid()).max(10).nullish(),
   /** PC-052 — presença do lead com cor no Google. Desligado = o de sempre. */
   lead_presence_enabled: z.boolean().optional(),
+  /**
+   * PC-062 — a cor do Google que a equipe pinta depois do atendimento e que o
+   * sync lê como "Realizado" / "Faltou". Nula = desligado. As cores da presença
+   * (5, 10, 11) ficam fora; as duas iguais, o PATCH recusa (e o banco também).
+   */
+  outcome_color_completed: z.enum(CORES_DE_DESFECHO).nullish(),
+  outcome_color_no_show: z.enum(CORES_DE_DESFECHO).nullish(),
   requires_confirmation: z.boolean().optional(),
   buffer_before_minutes: z.number().int().min(0).max(720).optional(),
   buffer_after_minutes: z.number().int().min(0).max(720).optional(),
@@ -426,6 +434,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       rotation_owner_user_ids: t.rodizioIds ?? [],
       rotation_calendar_ids: t.revezamentoIds ?? [],
       lead_presence_enabled: t.presencaComCor ?? false,
+      outcome_color_completed: t.desfechoCorRealizado ?? null,
+      outcome_color_no_show: t.desfechoCorFaltou ?? null,
       requires_confirmation: t.precisaConfirmacao,
       is_active: t.ativo,
       buffer_before_minutes: t.bufferAntesMin,
@@ -584,6 +594,18 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     // Recusa em vez de UPDATE vazio: "alterei" sobre nada é a mesma família de
     // mentira que o "Marcado ✓" sem linha no banco.
     return fail("validation_failed", t("Nenhum campo para alterar."), 422, { requestId });
+  }
+  // PC-062: a mesma cor para os dois desfechos não diz nada.
+  if (
+    lido.data.outcome_color_completed &&
+    lido.data.outcome_color_completed === lido.data.outcome_color_no_show
+  ) {
+    return fail(
+      "validation_failed",
+      t("Escolha cores diferentes para Realizado e Faltou."),
+      422,
+      { requestId },
+    );
   }
 
   const admin = createAdminClient();
