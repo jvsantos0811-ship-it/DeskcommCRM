@@ -102,6 +102,15 @@ describe("entregarAviso", () => {
     expect(lerPrefs().message).toEqual({ in_app: true, push: false });
   });
 
+  it("depois de 'Silenciar', menção e lead atribuído continuam avisando", () => {
+    silenciarAvisosDeMensagem();
+    vi.clearAllMocks();
+    entregarAviso({ category: "mention", kind: "mention", title: "Ana", body: "@você" });
+    entregarAviso({ category: "lead_assigned", kind: "lead_assigned", title: "Lead atribuído", body: "Carlos" });
+    expect(toast).toHaveBeenCalledTimes(2);
+    expect(emitNotification).toHaveBeenCalledTimes(2);
+  });
+
   it("só o aviso de mensagem ganha 'Silenciar'", () => {
     entregarAviso({ category: "mention", kind: "mention", title: "Ana", body: "@você" });
     const [, opcoes] = vi.mocked(toast).mock.calls.at(-1)!;

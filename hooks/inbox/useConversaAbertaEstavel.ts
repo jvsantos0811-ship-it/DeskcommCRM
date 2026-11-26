@@ -38,8 +38,17 @@ export function useConversaAbertaEstavel<T extends { id: string }>(
   naoEncontrada: boolean,
 ): T | null {
   const [ultimaVista, setUltimaVista] = useState<T | null>(null);
-  if (daLeitura && daLeitura !== ultimaVista) setUltimaVista(daLeitura);
+  const [escolhaDaVista, setEscolhaDaVista] = useState<string | null>(selectedId);
+  // Trocou a escolha: o objeto guardado era de OUTRA abertura e é esquecido.
+  // Sair de A e voltar para A por um caminho fora da lista não pode mostrar o
+  // A de antes enquanto a busca por id não volta (revisão de 25/11/2026).
+  if (selectedId !== escolhaDaVista) {
+    setEscolhaDaVista(selectedId);
+    setUltimaVista(daLeitura);
+  } else if (daLeitura && daLeitura !== ultimaVista) {
+    setUltimaVista(daLeitura);
+  }
   if (daLeitura) return daLeitura;
-  if (!selectedId || naoEncontrada) return null;
+  if (!selectedId || naoEncontrada || selectedId !== escolhaDaVista) return null;
   return ultimaVista?.id === selectedId ? ultimaVista : null;
 }
