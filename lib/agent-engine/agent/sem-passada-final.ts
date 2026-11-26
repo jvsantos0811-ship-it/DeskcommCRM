@@ -74,7 +74,10 @@ export function ferramentaPedeLeitura(nome: string): boolean {
 /** O resultado é uma recusa ou um erro? Convenção do repo: `ok === false`. */
 function falhou(output: unknown): boolean {
   if (output === null || typeof output !== 'object') return false;
-  const o = output as { ok?: unknown; isError?: unknown; error?: unknown };
+  const o = output as { ok?: unknown; isError?: unknown; error?: unknown; permitido?: unknown };
+  // PC-035 B3: a ponte MCP (`lib/ai/runtime/tools.ts`) recusa escrita com
+  // `{ permitido: false, motivo, mensagem }`, sem `ok`. O modelo tem de ver.
+  if (o.permitido === false) return true;
   return o.ok === false || o.isError === true || (o.ok === undefined && o.error !== undefined && o.error !== null);
 }
 

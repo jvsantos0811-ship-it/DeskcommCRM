@@ -118,6 +118,7 @@ import {
   type AberturaEmDuasPartes,
 } from "./abertura/duas-partes";
 import { passadaEncerraOTurno } from "./sem-passada-final";
+import { criarEnviosEmCurso } from "./envios-em-curso";
 import { gravarTempoDoTurno } from "./tempo-do-turno";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -3360,6 +3361,10 @@ async function executarTurnoDoAgente(
   // ainda estava sendo gravado, e a trava de promessa de humano derrubava a
   // mensagem inteira. O `send_message` espera esta promessa antes de decidir.
   let aberturaDeCasoEmCurso: Promise<void> | null = null;
+  // PC-035 B2 — envios (`send_message`/`send_template`) EM CURSO neste turno:
+  // a passagem da MESMA passada espera por eles antes de ler `seq` (ver
+  // `envios-em-curso.ts`).
+  const enviosEmCurso = criarEnviosEmCurso();
   // PC-002b — cada veto da cadeia neste turno (trava, código, motivo e o texto
   // barrado). Lido no fim do turno pela rede da frase segura: se nada saiu e uma
   // trava de conteúdo barrou, o cliente recebe a frase segura em vez de silêncio.
@@ -3557,6 +3562,10 @@ async function executarTurnoDoAgente(
           'normalmente: responda o que der, sem prometer horário de contato, e não peça a passagem de novo.',
       };
     }
+    // PC-035 B2: um envio da MESMA passada pode estar saindo agora. Espera
+    // (sem lançar: envio que falhou é tratado pelo próprio envio) para o piso
+    // ler `seq` depois dele.
+    await enviosEmCurso.esperar();
     passouParaAEquipe = true;
     // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
     // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a
@@ -5108,6 +5117,20 @@ async function executarTurnoDoAgente(
         }
       },
     });
+  }
+
+  // PC-035 B2: os envios ficam registrados enquanto correm, para a passagem da
+  // MESMA passada esperar por eles (ver `enviosEmCurso`). Só embrulha o
+  // `execute`; descrição e esquema seguem idênticos (prefixo de cache intacto).
+  for (const nome of ['send_message', 'send_template'] as const) {
+    const ferramenta = rawTools[nome] as { execute?: (...a: never[]) => unknown } | undefined;
+    const original = ferramenta?.execute;
+    if (ferramenta !== undefined && typeof original === 'function') {
+      rawTools[nome] = {
+        ...(ferramenta as object),
+        execute: (...args: never[]) => enviosEmCurso.acompanhar(Promise.resolve(original(...args))),
+      } as (typeof rawTools)[string];
+    }
   }
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção

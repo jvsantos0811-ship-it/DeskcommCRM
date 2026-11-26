@@ -45,6 +45,17 @@ describe("passadaEncerraOTurno", () => {
     expect(passadaEncerraOTurno(passada([enviada, etapaRecusada]))).toBe(false);
   });
 
+  it("PC-035 B3: escrita recusada pela ponte MCP (`permitido: false`, sem `ok`): o laço segue", () => {
+    const etapaRecusada = {
+      toolName: "crm_move_lead_stage",
+      output: { permitido: false, motivo: "trava_de_etapa", mensagem: "faltam os campos" },
+    };
+    expect(passadaEncerraOTurno(passada([enviada, etapaRecusada]))).toBe(false);
+    // e o permitido explícito não atrapalha o encerramento
+    const etapaOk = { toolName: "crm_move_lead_stage", output: { permitido: true, ok: true } };
+    expect(passadaEncerraOTurno(passada([enviada, etapaOk]))).toBe(true);
+  });
+
   it("consulta pedida junto com o envio: o laço segue", () => {
     for (const consulta of ["search_knowledge", "get_lead_context", "get_lead_note", "crm_list_event_types", "crm_find_free_slots"]) {
       expect(passadaEncerraOTurno(passada([enviada, { toolName: consulta, output: { ok: true } }])), consulta).toBe(false);
