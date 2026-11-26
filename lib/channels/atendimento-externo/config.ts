@@ -26,6 +26,11 @@
  *     CRM não pode mandar texto livre: a confirmação da véspera, a do dia, o
  *     lembrete e os passos do follow-up (T1..T5, parte 3b). Vazio = naquele uso,
  *     fora da janela, nada sai (o de sempre).
+ *  5. `equipe_assumiu_pela_plataforma` — PC-057: quando a equipe executa, no
+ *     chat, um diálogo que grava `valor_ao_passar` no `campo_da_ia` e faz o
+ *     "POST PARA URL", o CRM entende que a equipe assumiu ali (a IA cala, o
+ *     follow-up pausa, o card vai para a etapa da equipe). Desligado (padrão) =
+ *     esse POST é lido como sempre. Só vale com `campo_da_ia` e valor preenchidos.
  */
 import { z } from "zod";
 
@@ -91,6 +96,8 @@ export const configDoAtendimentoExternoEntrada = z.object({
     .optional()
     .transform((v) => v ?? null),
   acoes: z.array(acaoSchema).max(MAXIMO_DE_ACOES).default([]),
+  /** PC-057. Ausente = tela antiga: fica o que está gravado (`configParaGravar`). */
+  equipe_assumiu_pela_plataforma: z.boolean().optional(),
   roteiros_fora_da_janela: z
     .object({
       confirmacao_vespera: idOpcional,
@@ -117,6 +124,8 @@ export interface ConfigDoAtendimentoExterno {
   dialogoTransferencia: string | null;
   campoDaIa: { nome: string; valorAoPassar: string } | null;
   acoes: AcaoDoAtendimento[];
+  /** PC-057: o POST com `campo_da_ia` = `valor_ao_passar` quer dizer "a equipe assumiu". */
+  equipeAssumiuPelaPlataforma: boolean;
   /** Diálogo por uso, fora da janela de 24 h. Uso ausente = nada sai fora dela. */
   roteirosForaDaJanela: Partial<Record<UsoForaDaJanela, string>>;
 }
@@ -125,6 +134,7 @@ export const CONFIG_VAZIA: ConfigDoAtendimentoExterno = Object.freeze({
   dialogoTransferencia: null,
   campoDaIa: null,
   acoes: [],
+  equipeAssumiuPelaPlataforma: false,
   roteirosForaDaJanela: {},
 }) as ConfigDoAtendimentoExterno;
 
@@ -174,6 +184,8 @@ export function configParaGravar(
       dialogo_id: a.dialogoId,
       quando_usar: a.quandoUsar,
     })),
+    equipe_assumiu_pela_plataforma:
+      entrada.equipe_assumiu_pela_plataforma ?? atual.equipeAssumiuPelaPlataforma,
     roteiros_fora_da_janela: Object.fromEntries(
       USOS_FORA_DA_JANELA.map((uso) => [
         uso,
@@ -202,6 +214,7 @@ const gravadoSchema = z.object({
     )
     .max(MAXIMO_DE_ACOES)
     .optional(),
+  equipe_assumiu_pela_plataforma: z.boolean().optional(),
   // Lido à parte, uso a uso (ver `lerRoteiros`): um id ilegível derruba só o seu
   // uso, nunca as ações e a passagem que já funcionavam.
   roteiros_fora_da_janela: z.unknown().optional(),
@@ -237,6 +250,7 @@ export function lerConfigDoAtendimentoExterno(raw: unknown): ConfigDoAtendimento
       dialogoId: a.dialogo_id,
       quandoUsar: a.quando_usar,
     })),
+    equipeAssumiuPelaPlataforma: c.equipe_assumiu_pela_plataforma === true,
     roteirosForaDaJanela: lerRoteiros(c.roteiros_fora_da_janela),
   };
 }

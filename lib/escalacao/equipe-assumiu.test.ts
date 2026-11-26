@@ -540,3 +540,59 @@ describe('o botão "Assumir" usa o mesmo pedaço comum (PC-024/PC-029)', () => {
     ).resolves.toBe(0);
   });
 });
+
+describe("diálogo da equipe na plataforma de atendimento (PC-057)", () => {
+  it("cala a IA de vez, só humano, o responsável do número fica com a conversa e o card vai para a etapa da equipe", async () => {
+    const b = banco({ responsavel: "u-carla" });
+    const r = await equipeAssumiuRespondendo(b.admin, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      origem: "plataforma",
+      userId: null,
+    });
+    expect(r).toMatchObject({ aplicado: true, dono: "u-carla", cardMovidoPara: ETAPA_EQUIPE });
+    expect(b.conversa.bot_silenced_until).toBe("infinity");
+    // Mesmo motivo do celular: é resposta fora do CRM, e a tela já o reconhece.
+    expect(b.conversa.last_handoff_reason).toBe(MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR);
+    expect(b.contato.force_human).toBe(true);
+    expect(linhasDoTempo).toEqual([
+      expect.objectContaining({ reason: "Equipe assumiu pela plataforma de atendimento" }),
+    ]);
+    expect(movimentos).toEqual([
+      expect.objectContaining({
+        body: { to_stage_id: ETAPA_EQUIPE, reason: "Equipe assumiu pela plataforma de atendimento" },
+      }),
+    ]);
+  });
+
+  it("não passa pela régua da resposta automática do app (o texto do POST não é da equipe)", async () => {
+    const b = banco({ automaticos: [{ texto: "qualquer", conversas: 9, vezes: 9, no_prazo: 9 }] });
+    const r = await equipeAssumiuRespondendo(b.admin, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      origem: "plataforma",
+      userId: null,
+      texto: "qualquer",
+    });
+    expect(r.aplicado).toBe(true);
+    expect(b.rpcs.map((x) => x.fn)).not.toContain("fn_textos_automaticos_do_celular");
+  });
+
+  it("o mesmo diálogo executado de novo não refaz o episódio", async () => {
+    const b = banco();
+    await equipeAssumiuRespondendo(b.admin, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      origem: "plataforma",
+      userId: null,
+    });
+    const r = await equipeAssumiuRespondendo(b.admin, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      origem: "plataforma",
+      userId: null,
+    });
+    expect(r).toMatchObject({ aplicado: false, motivo: "ja_assumida" });
+    expect(movimentos).toHaveLength(1);
+  });
+});

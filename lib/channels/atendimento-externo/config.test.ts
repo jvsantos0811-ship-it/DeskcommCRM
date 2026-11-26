@@ -52,3 +52,19 @@ describe("configuração do canal (PC-047)", () => {
     expect(lerConfigDoAtendimentoExterno({})).toEqual(CONFIG_VAZIA);
   });
 });
+
+describe("equipe assumiu pela plataforma (PC-057)", () => {
+  it("nasce desligada e é lida como booleano", () => {
+    expect(CONFIG_VAZIA.equipeAssumiuPelaPlataforma).toBe(false);
+    expect(lerConfigDoAtendimentoExterno({}).equipeAssumiuPelaPlataforma).toBe(false);
+    expect(lerConfigDoAtendimentoExterno({ equipe_assumiu_pela_plataforma: true }).equipeAssumiuPelaPlataforma).toBe(true);
+  });
+
+  it("tela antiga (sem o campo) não desliga o que estava ligado", () => {
+    const atual = lerConfigDoAtendimentoExterno({ equipe_assumiu_pela_plataforma: true });
+    const entrada = configDoAtendimentoExternoEntrada.parse({ acoes: [] });
+    expect(configParaGravar(entrada, atual).equipe_assumiu_pela_plataforma).toBe(true);
+    const desligando = configDoAtendimentoExternoEntrada.parse({ acoes: [], equipe_assumiu_pela_plataforma: false });
+    expect(configParaGravar(desligando, atual).equipe_assumiu_pela_plataforma).toBe(false);
+  });
+});

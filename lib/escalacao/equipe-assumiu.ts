@@ -1,5 +1,7 @@
 /**
- * EQUIPE RESPONDEU = HUMANO ASSUMIU (PC-029) — pelo CRM ou pelo celular.
+ * EQUIPE RESPONDEU = HUMANO ASSUMIU (PC-029) — pelo CRM, pelo celular ou, no
+ * canal que atende dentro de outra plataforma (ChatGuru), pelo diálogo que a
+ * equipe executa lá ao assumir (PC-057).
  *
  * ─── A regra (João, 03/11 e 10/11/2026) ──────────────────────────────────────
  *
@@ -37,8 +39,8 @@
  *  5. No funil, o card vai para a "Etapa quando a equipe assume" do funil
  *     (Configurações › Funis), só se a etapa atual vem ANTES dela e não é de
  *     ganho nem de perda — pelo mesmo caminho do arrasto (`moveLeadHandler`).
- *  6. A linha do tempo diz "Equipe assumiu respondendo pelo CRM (nome)" ou
- *     "…pelo celular".
+ *  6. A linha do tempo diz "Equipe assumiu respondendo pelo CRM (nome)",
+ *     "…pelo celular" ou "Equipe assumiu pela plataforma de atendimento".
  *
  * Os passos 2–6 rodam UMA vez por episódio: a segunda mensagem da mesma pessoa
  * não refaz nota, movimento nem linha do tempo.
@@ -70,6 +72,7 @@ import {
   destinoQuandoAEquipeAssume,
   etapaQuandoAEquipeAssume,
   fraseDaLinhaDoTempo,
+  motivoDaOrigem,
   type EtapaDoFunil,
   type OrigemDaResposta,
 } from "./equipe-assumiu-regra";
@@ -272,7 +275,8 @@ export async function equipeAssumiuRespondendo(
 
     // ── 1) quem fica com a conversa ────────────────────────────────────────
     let dono = e.userId;
-    if (!dono && e.origem === "celular" && c.channel_session_id) {
+    // Fora do CRM (celular ou plataforma), quem fica é o responsável do número.
+    if (!dono && e.origem !== "crm" && c.channel_session_id) {
       const { data: sessao } = await admin
         .from("channel_sessions")
         .select("responsavel_user_id")
@@ -331,8 +335,7 @@ export async function equipeAssumiuRespondendo(
     }
 
     // ── 2–6 uma vez por episódio ────────────────────────────────────────────
-    const motivoGravado =
-      e.origem === "crm" ? MOTIVO_EQUIPE_RESPONDEU_PELO_CRM : MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR;
+    const motivoGravado = motivoDaOrigem(e.origem);
     const jaEstaComAEquipe =
       c.bot_silenced_until === "infinity" &&
       (c.last_handoff_reason === MOTIVO_EQUIPE_RESPONDEU_PELO_CRM ||
