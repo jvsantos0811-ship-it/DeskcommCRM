@@ -18025,6 +18025,12 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Cuando alguien del equipo ejecuta en el chat un diálogo que guarda este valor en el campo de la IA y hace el POST al CRM, la IA se detiene, el seguimiento se pausa y la tarjeta va a la etapa del equipo. Use un valor diferente del guardado al pasar al equipo.",
     },
+  "Variável de contexto onde a equipe grava esse valor": { es: "Variable de contexto donde el equipo guarda ese valor" },
+  "vazio usa o campo da IA": { es: "vacío usa el campo de la IA" },
+  "Se o diálogo da equipe grava uma variável de contexto (ex.: LSIA) em vez do campo da IA, escreva o nome dela aqui. Só a mudança para o valor acima conta: as mensagens seguintes, com o valor ainda gravado, entram normalmente.":
+    {
+      es: "Si el diálogo del equipo guarda una variable de contexto (ej.: LSIA) en lugar del campo de la IA, escriba su nombre aquí. Solo cuenta el cambio al valor de arriba: los mensajes siguientes, con el valor aún guardado, entran normalmente.",
+    },
   "Ações que a IA pode executar": { es: "Acciones que la IA puede ejecutar" },
   "Nenhuma. A IA só anota para a equipe.": { es: "Ninguna. La IA solo anota para el equipo." },
   "Nome da ação": { es: "Nombre de la acción" },

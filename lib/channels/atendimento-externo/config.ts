@@ -33,6 +33,13 @@
  *     lido como sempre. Tem de ser DIFERENTE de `valor_ao_passar`: esse o CRM
  *     grava sozinho na passagem da IA, e um diálogo de entrega sem a condição
  *     "campo ≠ valor" faria cada mensagem seguinte do lead virar "sinal".
+ *  6. `variavel_quando_equipe_assume` — PC-058, segunda forma do sinal: o nome
+ *     de uma VARIÁVEL DE CONTEXTO da plataforma (no ChatGuru, a que o diálogo
+ *     grava e que chega em todo POST dentro de `bot_context`). Preenchida, o
+ *     sinal é `bot_context.<variável> = valor_quando_equipe_assume`, e o
+ *     `campo_da_ia` deixa de entrar na conta. Existe porque, na prática, o
+ *     operador marca o chat por variável de contexto (ex.: `LSIA`), não por
+ *     campo personalizado — e a equipe da plataforma não tem acesso ao CRM.
  */
 import { z } from "zod";
 
@@ -106,6 +113,14 @@ export const configDoAtendimentoExternoEntrada = z.object({
     .nullable()
     .optional()
     .transform((v) => (v === undefined ? undefined : v ? v : null)),
+  /** PC-058. Ausente = tela antiga: fica o que está gravado. Vazio = o sinal vem do `campo_da_ia`. */
+  variavel_quando_equipe_assume: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v ? v : null))
+    .refine((v) => v == null || NOME_DE_CAMPO.test(v), { message: "Nome de variável inválido." }),
   roteiros_fora_da_janela: z
     .object({
       confirmacao_vespera: idOpcional,
@@ -122,6 +137,8 @@ export const configDoAtendimentoExternoEntrada = z.object({
   (c) => {
     const sem = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
     const sinal = c.valor_quando_equipe_assume;
+    // Pela variável de contexto, o valor da passagem (gravado no campo) não colide.
+    if (c.variavel_quando_equipe_assume) return true;
     return !sinal || !c.campo_da_ia || sem(sinal) !== sem(c.campo_da_ia.valor_ao_passar);
   },
   {
@@ -144,6 +161,8 @@ export interface ConfigDoAtendimentoExterno {
   acoes: AcaoDoAtendimento[];
   /** PC-058: o POST com `campo_da_ia` = este valor quer dizer "a equipe assumiu". `null` = desligado. */
   valorQuandoEquipeAssume: string | null;
+  /** PC-058: variável de contexto que carrega o sinal. `null` = o sinal vem do `campo_da_ia`. */
+  variavelQuandoEquipeAssume: string | null;
   /** Diálogo por uso, fora da janela de 24 h. Uso ausente = nada sai fora dela. */
   roteirosForaDaJanela: Partial<Record<UsoForaDaJanela, string>>;
 }
@@ -153,6 +172,7 @@ export const CONFIG_VAZIA: ConfigDoAtendimentoExterno = Object.freeze({
   campoDaIa: null,
   acoes: [],
   valorQuandoEquipeAssume: null,
+  variavelQuandoEquipeAssume: null,
   roteirosForaDaJanela: {},
 }) as ConfigDoAtendimentoExterno;
 
@@ -206,6 +226,10 @@ export function configParaGravar(
       entrada.valor_quando_equipe_assume !== undefined
         ? entrada.valor_quando_equipe_assume
         : atual.valorQuandoEquipeAssume,
+    variavel_quando_equipe_assume:
+      entrada.variavel_quando_equipe_assume !== undefined
+        ? entrada.variavel_quando_equipe_assume
+        : atual.variavelQuandoEquipeAssume,
     roteiros_fora_da_janela: Object.fromEntries(
       USOS_FORA_DA_JANELA.map((uso) => [
         uso,
@@ -235,6 +259,7 @@ const gravadoSchema = z.object({
     .max(MAXIMO_DE_ACOES)
     .optional(),
   valor_quando_equipe_assume: z.string().max(100).nullable().optional(),
+  variavel_quando_equipe_assume: z.string().regex(NOME_DE_CAMPO).nullable().optional(),
   // Lido à parte, uso a uso (ver `lerRoteiros`): um id ilegível derruba só o seu
   // uso, nunca as ações e a passagem que já funcionavam.
   roteiros_fora_da_janela: z.unknown().optional(),
@@ -271,6 +296,7 @@ export function lerConfigDoAtendimentoExterno(raw: unknown): ConfigDoAtendimento
       quandoUsar: a.quando_usar,
     })),
     valorQuandoEquipeAssume: c.valor_quando_equipe_assume?.trim() || null,
+    variavelQuandoEquipeAssume: c.variavel_quando_equipe_assume ?? null,
     roteirosForaDaJanela: lerRoteiros(c.roteiros_fora_da_janela),
   };
 }

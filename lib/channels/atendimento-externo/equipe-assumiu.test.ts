@@ -33,11 +33,16 @@ const LIGADA = {
 
 function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ id: "conv-1" }]) {
   const lidas: string[] = [];
+  const gravacoes: Array<{ tabela: string; valores: Record<string, unknown> }> = [];
   const filtros: Array<{ tabela: string; coluna: string; valor: unknown }> = [];
   const from = (tabela: string) => {
     lidas.push(tabela);
     const q: Record<string, unknown> = {
       select: () => q,
+      update: (valores: Record<string, unknown>) => {
+        gravacoes.push({ tabela, valores });
+        return q;
+      },
       eq: (coluna: string, valor: unknown) => {
         filtros.push({ tabela, coluna, valor });
         return q;
@@ -52,7 +57,7 @@ function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ i
     };
     return q;
   };
-  return { cliente: { from } as never, lidas, filtros };
+  return { cliente: { from } as never, lidas, filtros, gravacoes };
 }
 
 const post = (campos: unknown, extra: Record<string, unknown> = {}) => ({
@@ -69,7 +74,11 @@ beforeEach(() => {
 });
 
 describe("ehSinalDeEquipeAssumiu (regra pura)", () => {
-  const config = { campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" }, valorQuandoEquipeAssume: "assumido" };
+  const config = {
+    campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" },
+    valorQuandoEquipeAssume: "assumido",
+    variavelQuandoEquipeAssume: null as string | null,
+  };
 
   it("reconhece o valor, sem acento e sem caixa, em objeto ou em JSON-texto", () => {
     expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }), config)).toBe(true);
@@ -96,7 +105,114 @@ describe("ehSinalDeEquipeAssumiu (regra pura)", () => {
   });
 });
 
+describe("ehSinalDeEquipeAssumiu pela variável de contexto (bot_context)", () => {
+  // A forma real do ChatGuru: o diálogo grava a variável de contexto, que chega em todo POST.
+  const config = {
+    campoDaIa: null,
+    valorQuandoEquipeAssume: "assumido",
+    variavelQuandoEquipeAssume: "LSIA" as string | null,
+  };
+
+  it("reconhece a variável em objeto ou em JSON-texto, sem acento e sem caixa", () => {
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { URA: "x", LSIA: "assumido" } }), config)).toBe(true);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: '{"LSIA":" Assumído "}' }), config)).toBe(true);
+  });
+
+  it("o valor de antes (novo), outra variável ou contexto ausente: não é sinal", () => {
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { LSIA: "novo" } }), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { OUTRA: "assumido" } }), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: "lixo" }), config)).toBe(false);
+  });
+
+  it("com a variável preenchida, o campo personalizado de mesmo nome não conta", () => {
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }, { bot_context: { LSIA: "novo" } }), config)).toBe(false);
+  });
+
+  it("sem valor (desligado), a variável sozinha nunca é sinal", () => {
+    expect(
+      ehSinalDeEquipeAssumiu(post({}, { bot_context: { LSIA: "assumido" } }), { ...config, valorQuandoEquipeAssume: null }),
+    ).toBe(false);
+  });
+});
+
 describe("tratarEquipeAssumiuDoPost", () => {
+  it("só a TRANSIÇÃO é sinal: com o valor já consumido, o POST seguinte vira mensagem normal", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { equipe_assumiu_na_plataforma_consumido: true } }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "mensagem do lead", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: false });
+    expect(chamadas).toHaveLength(0);
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
+  it("o primeiro POST com o valor marca a conversa como consumida", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { outra: 1 } }]);
+    await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(a.gravacoes).toEqual([
+      { tabela: "conversations", valores: { metadata: { outra: 1, equipe_assumiu_na_plataforma_consumido: true } } },
+    ]);
+    expect(a.filtros).toContainEqual({ tabela: "conversations", coluna: "id", valor: "conv-1" });
+  });
+
+  it("efeito que falha não consome a marca: o próximo POST tenta de novo", async () => {
+    resultadoDoServico = { aplicado: false, motivo: "erro" };
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: {} }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: true, status: "nao_aplicado" });
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
+  it("POST com outro valor rearma a transição e segue como mensagem", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { equipe_assumiu_na_plataforma_consumido: true } }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "oi", bot_context: { LSIA: "novo" } },
+    });
+    expect(r).toEqual({ reconhecido: false });
+    expect(a.gravacoes).toEqual([
+      { tabela: "conversations", valores: { metadata: { equipe_assumiu_na_plataforma_consumido: false } } },
+    ]);
+  });
+
+  it("POST com outro valor e nada consumido: não grava nada", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: {} }]);
+    await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "oi", bot_context: { LSIA: "novo" } },
+    });
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
+  it("pela variável de contexto: aplica mesmo sem campos personalizados no POST", async () => {
+    const a = admin({ acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" });
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: true, status: "aplicado", cardMovidoPara: "etapa-equipe" });
+    expect(chamadas).toHaveLength(1);
+  });
+
   it("ligada e com o valor: aplica pelo serviço do PC-029, origem plataforma, e o POST não vira mensagem", async () => {
     const a = admin(LIGADA);
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
@@ -127,7 +243,7 @@ describe("tratarEquipeAssumiuDoPost", () => {
     expect(chamadas).toHaveLength(0);
   });
 
-  it("POST comum, sem campos personalizados: nem lê a conexão", async () => {
+  it("POST comum, sem campos personalizados nem contexto: nem lê a conexão", async () => {
     const a = admin(LIGADA);
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
       orgId: ORG,
