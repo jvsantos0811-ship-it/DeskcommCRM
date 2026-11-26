@@ -164,6 +164,19 @@ describe("tratarEquipeAssumiuDoPost", () => {
     expect(a.filtros).toContainEqual({ tabela: "conversations", coluna: "id", valor: "conv-1" });
   });
 
+  it("efeito que falha não consome a marca: o próximo POST tenta de novo", async () => {
+    resultadoDoServico = { aplicado: false, motivo: "erro" };
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: {} }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: true, status: "nao_aplicado" });
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
   it("POST com outro valor rearma a transição e segue como mensagem", async () => {
     const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
     const a = admin(cfg, [{ id: "conv-1", metadata: { equipe_assumiu_na_plataforma_consumido: true } }]);

@@ -46,8 +46,13 @@
  *    sinal. O primeiro POST com o valor é consumido (marca na conversa); os
  *    seguintes com o mesmo valor são conversa normal. Um POST com outro valor
  *    rearma a transição.
+ *    Limites aceitos: dois POSTs simultâneos com o valor podem ser lidos os dois
+ *    como sinal (o efeito não duplica; o texto do segundo não é gravado); e,
+ *    ao ligar a opção, um chat que já tinha o valor perde um POST.
  *  - Contato ou conversa que o CRM não conhece (cliente antigo, que nunca
- *    passou pela IA): nada é criado. O sinal é reconhecido e descartado.
+ *    passou pela IA): nada é criado. O sinal é reconhecido e descartado — e,
+ *    sem conversa onde guardar a marca, todo POST desse chat com o valor
+ *    também é descartado até a fonte mudar de valor.
  *
  * A organização e a sessão vêm de quem chama (o token do caminho e o segredo
  * da conexão), nunca do corpo. Nunca lança: sem conseguir ler a conexão, o
@@ -191,11 +196,19 @@ async function marcarSinalConsumido(
   conversa: { id: string; metadata: Record<string, unknown> },
   consumido: boolean,
 ): Promise<void> {
-  await admin
+  const { error } = await admin
     .from("conversations")
     .update({ metadata: { ...conversa.metadata, [CHAVE_DO_SINAL_CONSUMIDO]: consumido } })
     .eq("organization_id", orgId)
     .eq("id", conversa.id);
+  // Sem a marca, o próximo POST com o valor seria lido como sinal de novo: avisa.
+  if (error) {
+    logger.warn("[atendimento-externo] marca do sinal de equipe assumiu não gravada", {
+      organization_id: orgId,
+      consumido,
+      detalhe: error.message.slice(0, 160),
+    });
+  }
 }
 
 export async function tratarEquipeAssumiuDoPost(
@@ -256,7 +269,6 @@ export async function tratarEquipeAssumiuDoPost(
     // revisão independente: sem isto, toda mensagem seguinte sumiria do CRM e,
     // com a conversa retomada, a IA seria calada de novo a cada POST.
     if (conversa.metadata[CHAVE_DO_SINAL_CONSUMIDO] === true) return { reconhecido: false };
-    await marcarSinalConsumido(admin, input.orgId, conversa, true);
     const conversationId = conversa.id;
 
     const r = await equipeAssumiuRespondendo(admin, {
@@ -266,8 +278,16 @@ export async function tratarEquipeAssumiuDoPost(
       userId: null,
       requestId: input.requestId,
     });
-    if (r.aplicado) return { reconhecido: true, status: "aplicado", cardMovidoPara: r.cardMovidoPara ?? null };
-    if (r.motivo === "ja_assumida") return { reconhecido: true, status: "ja_assumida" };
+    // A marca só depois do efeito: se ele falhar, o próximo POST com o valor
+    // tenta de novo em vez de o sinal se perder.
+    if (r.aplicado) {
+      await marcarSinalConsumido(admin, input.orgId, conversa, true);
+      return { reconhecido: true, status: "aplicado", cardMovidoPara: r.cardMovidoPara ?? null };
+    }
+    if (r.motivo === "ja_assumida") {
+      await marcarSinalConsumido(admin, input.orgId, conversa, true);
+      return { reconhecido: true, status: "ja_assumida" };
+    }
     return { reconhecido: true, status: "nao_aplicado" };
   } catch (err) {
     logger.warn("[atendimento-externo] sinal de equipe assumiu não aplicado", {
