@@ -110,17 +110,20 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>): Banco {
       insert: (linha: Linha) => {
         // A guarda de duplo clique por agenda (migration 9045): mesmo dono, mesmo
         // instante, mesma agenda (sem agenda = a de destino).
-        const colide =
-          tabela === "calendar_appointments" &&
-          vivo(linha) &&
-          (tabelas.calendar_appointments ?? []).some(
-            (l) =>
-              vivo(l) &&
-              l.organization_id === linha.organization_id &&
-              l.owner_user_id === linha.owner_user_id &&
-              instante(l.starts_at) === instante(linha.starts_at) &&
-              agendaDaChave(l) === agendaDaChave(linha),
-          );
+        const quem =
+          tabela === "calendar_appointments" && vivo(linha)
+            ? (tabelas.calendar_appointments ?? []).find(
+                (l) =>
+                  vivo(l) &&
+                  l.organization_id === linha.organization_id &&
+                  l.owner_user_id === linha.owner_user_id &&
+                  instante(l.starts_at) === instante(linha.starts_at) &&
+                  agendaDaChave(l) === agendaDaChave(linha),
+              )
+            : undefined;
+        const colide = quem !== undefined;
+        // A outra transação da corrida terminou: daqui em diante a leitura a vê.
+        if (quem?.fantasma === true && quem.efemera !== true) quem.fantasma = false;
         const gravada = { id: `novo-${(tabelas[tabela] ?? []).length + 1}`, created_at: AGORA.toISOString(), ...linha };
         if (!colide) (tabelas[tabela] ??= []).push(gravada);
         const resposta = colide
@@ -453,14 +456,39 @@ describe("marcar com revezamento entre agendas (PC-054)", () => {
     expect(criados(banco)).toHaveLength(0);
   });
 
-  it("mesmo instante na MESMA agenda, na corrida do duplo clique: 409, não erro interno", async () => {
+  it("corrida do duplo clique na agenda da vez: a nova conferência marca na OUTRA agenda livre", async () => {
     // A linha fantasma nasceu entre a conferência e a gravação, na agenda da vez.
     const banco = agenda({
       compromissos: [compromisso("ag-corrida", DEZ, ONZE, { target_calendar_id: MARIA, fantasma: true })],
     });
+    const r = await marcarAgendamentoHandler(banco.client, ctx(AGENTE), { event_type_id: TIPO, starts_at: DEZ });
+    expect(criados(banco).map((l) => l.target_calendar_id)).toEqual([JESSICA]);
+    expect(r.agenda_nome).toBe("Jessica");
+  });
+
+  it("corrida na agenda da vez sem outra livre: recusa de horário indisponível, não erro interno", async () => {
+    const banco = agenda({
+      eventos: [eventoDoGoogle("jessica@grupo", DEZ, ONZE)],
+      compromissos: [compromisso("ag-corrida", DEZ, ONZE, { target_calendar_id: MARIA, fantasma: true })],
+    });
+    // A nova conferência já vê as duas ocupadas e recusa pelo motivo certo.
+    await expect(
+      marcarAgendamentoHandler(banco.client, ctx(AGENTE), { event_type_id: TIPO, starts_at: DEZ }),
+    ).rejects.toMatchObject({ code: "agenda_horario_indisponivel" });
+    expect(criados(banco)).toHaveLength(0);
+  });
+
+  it("corrida sem revezamento: 409 na hora, sem nova tentativa", async () => {
+    const banco = agenda({
+      revezamento: null,
+      // `efemera`: nem depois da colisão a leitura a vê — se houvesse nova
+      // tentativa, ela também colidiria; o que se mede é que não há segunda.
+      compromissos: [compromisso("ag-corrida", DEZ, ONZE, { fantasma: true, efemera: true })],
+    });
     await expect(
       marcarAgendamentoHandler(banco.client, ctx(AGENTE), { event_type_id: TIPO, starts_at: DEZ }),
     ).rejects.toMatchObject({ status: 409, code: "agenda_horario_indisponivel" });
+    expect(banco.rpcs.filter((f) => f === "fn_agenda_ocupacao_google_do_dono")).toHaveLength(1);
   });
 
   it("a PESSOA (encaixe fora da grade) marca na primeira agenda livre no horário", async () => {

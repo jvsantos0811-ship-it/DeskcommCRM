@@ -17,11 +17,17 @@
 --     lados confia no outro.
 --   * `calendar_appointments.target_calendar_id` — a agenda que o revezamento
 --     escolheu para ESTE compromisso. Nula = como antes (a agenda de destino de
---     quem atende). FK com `on delete set null`, a mesma escolha da 0193 para
---     `google_connection_id`: se a agenda sumir, o compromisso não some com ela.
+--     quem atende). SEM FK, de propósito: com `on delete set null`, desconectar o
+--     Google (que apaga as agendas da conexão) zeraria a agenda de dois
+--     compromissos do mesmo instante em agendas diferentes, e a guarda por agenda
+--     (abaixo) recusaria o DELETE com 23505 — ninguém conseguiria desconectar.
+--     Ponteiro solto é tratado nas duas pontas: o claim recusa agenda que não é
+--     mais da conta de quem atende, e a coleta não conta o id que não conhece.
 --   * `fn_google_appointment` (claim): com `target_calendar_id`, o evento vai
 --     para essa agenda, e só se ela ainda for de uma conexão de quem atende.
---     Cópia da última definição (migration 0654) + o bloco do revezamento.
+--     Cópia da última definição (migration 0654) + o bloco do revezamento no
+--     claim + a conferência de sobreposição do `apply_remote` (quando alguém muda
+--     o evento direto no Google) por agenda e sem os "não vai".
 --   * `calendar_appointments_sem_duplicata_idx` (0182, 9040): o mesmo instante
 --     na MESMA agenda continua recusado; em agendas diferentes do mesmo
 --     responsável passa a ser permitido. O índice novo é mais FROUXO que o
@@ -61,26 +67,13 @@ end $$;
 alter table public.calendar_appointments
   add column if not exists target_calendar_id uuid;
 
-do $fk$
-begin
-  if not exists (
-    select 1 from pg_constraint
-     where conrelid = 'public.calendar_appointments'::regclass
-       and conname = 'calendar_appointments_target_calendar_id_fkey'
-  ) then
-    -- Ponteiro morto antes da FK (clone que gravou à mão) quebraria o update.sh.
-    update public.calendar_appointments a
-       set target_calendar_id = null
-     where a.target_calendar_id is not null
-       and not exists (select 1 from public.calendar_connection_calendars k where k.id = a.target_calendar_id);
-    alter table public.calendar_appointments
-      add constraint calendar_appointments_target_calendar_id_fkey
-      foreign key (target_calendar_id) references public.calendar_connection_calendars(id) on delete set null;
-  end if;
-end $fk$;
+-- Sem FK (ver o cabeçalho). O drop é para o banco que tenha recebido um rascunho
+-- desta migration com a FK; em qualquer outro é no-op.
+alter table public.calendar_appointments
+  drop constraint if exists calendar_appointments_target_calendar_id_fkey;
 
 comment on column public.calendar_appointments.target_calendar_id is
-  'PC-054: a agenda que o revezamento do tipo escolheu para este compromisso (calendar_connection_calendars.id). Nula = a agenda de destino de quem atende, como antes. set null: se a agenda sumir, o compromisso fica e volta ao destino.';
+  'PC-054: a agenda que o revezamento do tipo escolheu para este compromisso (calendar_connection_calendars.id). Nula = a agenda de destino de quem atende, como antes. Sem FK de propósito: desconectar o Google apaga as agendas, e um set null juntaria na mesma chave da guarda de duplo clique compromissos de agendas diferentes. Agenda que sumiu: o claim recusa e deixa o motivo.';
 
 -- ─── 2 · a guarda de duplo clique passa a ser POR AGENDA ───────────────────
 -- Só recria quando a definição ainda não conhece a agenda, para o update.sh não
@@ -197,9 +190,17 @@ begin
     if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='PT409';end if;
     if result?'apply_remote' then
      if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='PT409';end if;
+     -- PC-054 (9045): quem não vai libera o horário (como no motor e no índice), e
+     -- com revezamento entre agendas só a MESMA agenda conflita. Sem revezamento
+     -- (nenhum dos dois com agenda escolhida), a régua de sempre: o dono inteiro.
      if not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
       where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
-      and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
+      and other.lead_presence is distinct from 'nao_vai'
+      and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz
+      and not ((a.target_calendar_id is not null or other.target_calendar_id is not null) and (
+       (other.google_calendar_id is not null and (other.google_connection_id is distinct from a.google_connection_id or other.google_calendar_id is distinct from a.google_calendar_id))
+       or (other.google_calendar_id is null and other.target_calendar_id is not null and other.target_calendar_id is distinct from
+        (select k.id from public.calendar_connection_calendars k where k.organization_id=p_org and k.connection_id=a.google_connection_id and k.external_calendar_id=a.google_calendar_id))))) then
       return jsonb_build_object('overlap',true);end if;
      changed:=row(a.starts_at,a.ends_at,a.time_zone,a.status='cancelled') is distinct from row((remote->>'starts_at')::timestamptz,(remote->>'ends_at')::timestamptz,remote->>'time_zone',(remote->>'cancelled')::boolean);
      perform public.fn_appointment_change_core(p_org,p_id,a.revision,

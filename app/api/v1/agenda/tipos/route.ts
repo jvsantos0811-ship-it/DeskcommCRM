@@ -309,7 +309,7 @@ async function conferirRodizio(
  * `null`, que é "sem revezamento") ou a recusa nomeada.
  *
  * ⚠️ "Conta para conflito" não é detalhe: sem isso os eventos pessoais da agenda
- * não são lidos (`calendar_selected_external_events`), e o horário pareceria
+ * não são lidos (a leitura do Google só traz agenda que conta), e o horário pareceria
  * livre por ignorância — a IA marcaria por cima de um compromisso que existe.
  */
 type RecusaDoRevezamento = "leitura" | "uma_so" | "sem_dono" | "fora_da_conta" | "nao_utilizavel";

@@ -19,7 +19,7 @@
  *   cede a vez à próxima.
  * - Só entra a agenda UTILIZÁVEL: disponível, que aceita publicação e que conta
  *   para conflito. Sem contar para conflito, os eventos pessoais dela não são
- *   lidos (`calendar_selected_external_events`) e o horário pareceria livre por
+ *   lidos (a leitura do Google só traz agenda que conta) e o horário pareceria livre por
  *   ignorância — o erro caro é marcar por cima de um compromisso que existe.
  * - Remarcar fica na MESMA agenda: o evento do Google é atualizado, não movido
  *   (`alterarAgendamentoHandler` reescreve a mesma linha).

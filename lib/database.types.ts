@@ -3495,7 +3495,6 @@ export type Database = {
         Relationships: [
           { foreignKeyName: "calendar_appointments_meeting_delivery_job_id_fkey"; columns: ["meeting_delivery_job_id"]; isOneToOne: false; referencedRelation: "job_queue"; referencedColumns: ["id"] },
           { foreignKeyName: "calendar_appointments_outcome_message_id_fkey"; columns: ["outcome_message_id"]; isOneToOne: false; referencedRelation: "messages"; referencedColumns: ["id"] },
-          { foreignKeyName: "calendar_appointments_target_calendar_id_fkey"; columns: ["target_calendar_id"]; isOneToOne: false; referencedRelation: "calendar_connection_calendars"; referencedColumns: ["id"] },
           {
             foreignKeyName: "calendar_appointments_contact_id_fkey"
             columns: ["contact_id"]

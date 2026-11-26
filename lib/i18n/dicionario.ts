@@ -129,6 +129,7 @@ export const DICIONARIO: Traducoes = {
   "não aceita publicação": { es: "no acepta publicación" },
   "não conta para conflito — marque em Agendas conectadas": { es: "no cuenta para conflictos — márcala en Agendas conectadas" },
   "Revezar entre agendas": { es: "Alternar entre agendas" },
+  "Outro compromisso acabou de ser marcado neste mesmo horário. Escolha outro horário.": { es: "Otra cita acaba de agendarse en este mismo horario. Elige otro horario." },
   "Uma agenda gravada no revezamento não está mais na conta Google de quem atende e saiu da vez.": { es: "Una agenda guardada en la alternancia ya no está en la cuenta de Google de quien atiende y salió del turno." },
   "Com duas ou mais marcadas, cada marcação cai na agenda da vez que estiver livre, e quem não tiver o horário passa a vez. Nenhuma marcada: vale a agenda de destino de quem atende. Remarcar fica na mesma agenda.": { es: "Con dos o más marcadas, cada cita cae en la agenda del turno que esté libre, y la que no tenga el horario pasa el turno. Ninguna marcada: vale la agenda de destino de quien atiende. Reprogramar queda en la misma agenda." },
   "Presença com cor no Google": { es: "Asistencia con color en Google" },

@@ -1,4 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -17,7 +20,11 @@ import { GOV_AGENT_A, GOV_AGENT_B, GOV_ORG, seedGov } from "./gov-helpers";
  *   2. A guarda de duplo clique (`calendar_appointments_sem_duplicata_idx`) é
  *      por agenda: mesmo instante em agendas diferentes entra; na mesma agenda,
  *      23505; sem agenda escolhida, continua valendo como antes.
- *   3. `fn_agenda_revezamento_do_dono` e `fn_agenda_ocupacao_google_das_agendas`
+ *   3. Reaplicar o baseline (o `update.sh`) não mexe no horário de compromissos
+ *      que dividem o instante em agendas diferentes, nem no de quem "não vai".
+ *   4. Desconectar o Google (apagar as agendas da conexão) não esbarra na guarda
+ *      por agenda — a coluna não tem FK que junte as duas agendas numa chave só.
+ *   5. `fn_agenda_revezamento_do_dono` e `fn_agenda_ocupacao_google_das_agendas`
  *      respondem igual a dono e a atendente (atravessam a RLS da conexão),
  *      recusam outra organização e `anon`, devolvem o nome só das agendas da
  *      lista e a ocupação por agenda sem o título do evento.
@@ -69,12 +76,14 @@ async function como(ator: Ator, sqlText: string, args: unknown[]) {
 
 const usuario = (id: string): Ator => ({ tipo: "usuario", id });
 
-async function compromisso(extra: { target?: string | null; inicio?: string; fim?: string; dono?: string } = {}) {
+async function compromisso(
+  extra: { target?: string | null; inicio?: string; fim?: string; dono?: string; presenca?: string | null } = {},
+) {
   const id = randomUUID();
   await pool.query(
-    `insert into calendar_appointments(id, organization_id, title, starts_at, ends_at, owner_user_id, target_calendar_id)
-     values ($1, $2, 'Ligação', $3, $4, $5, $6)`,
-    [id, GOV_ORG, extra.inicio ?? DEZ, extra.fim ?? ONZE, extra.dono ?? GOV_AGENT_A, extra.target ?? null],
+    `insert into calendar_appointments(id, organization_id, title, starts_at, ends_at, owner_user_id, target_calendar_id, lead_presence)
+     values ($1, $2, 'Ligação', $3, $4, $5, $6, $7)`,
+    [id, GOV_ORG, extra.inicio ?? DEZ, extra.fim ?? ONZE, extra.dono ?? GOV_AGENT_A, extra.target ?? null, extra.presenca ?? null],
   );
   return id;
 }
@@ -180,6 +189,90 @@ describe("a guarda de duplo clique é por agenda", () => {
     const fim = "2030-03-21T14:00:00Z";
     await compromisso({ inicio, fim });
     await expect(compromisso({ inicio, fim })).rejects.toMatchObject({ code: "23505" });
+  });
+});
+
+describe("o update.sh (reaplicar o baseline) não mexe em compromisso de agenda diferente nem de quem não vai", () => {
+  it(
+    "horário e revisão continuam iguais depois de reaplicar o baseline inteiro",
+    async () => {
+      const inicio = "2030-04-02T13:00:00Z";
+      const fim = "2030-04-02T14:00:00Z";
+      const ids = [
+        await compromisso({ target: MARIA, inicio, fim }),
+        await compromisso({ target: JESSICA, inicio, fim }),
+        // Um "não vai" e uma marcação nova no mesmo instante (o índice não vê o "não vai").
+        await compromisso({ inicio: "2030-04-03T13:00:00Z", fim: "2030-04-03T14:00:00Z", presenca: "nao_vai" }),
+        await compromisso({ inicio: "2030-04-03T13:00:00Z", fim: "2030-04-03T14:00:00Z", presenca: "aguardando" }),
+      ];
+      const ler = async () =>
+        (
+          await pool.query(
+            "select id, starts_at, revision from calendar_appointments where id = any($1::uuid[]) order by id",
+            [ids],
+          )
+        ).rows.map((l) => [l.id, new Date(l.starts_at).toISOString(), String(l.revision)]);
+      const antes = await ler();
+
+      const r = spawnSync(
+        "docker",
+        [
+          "exec",
+          "-i",
+          "-e",
+          "PGOPTIONS=-c client_min_messages=warning",
+          process.env.TEST_DB_CONTAINER!,
+          "psql",
+          "-U",
+          "postgres",
+          "-d",
+          "postgres",
+          "-q",
+          "-f",
+          "-",
+        ],
+        {
+          input: readFileSync(join(process.cwd(), "supabase", "baseline.sql"), "utf8"),
+          encoding: "utf8",
+          maxBuffer: 64 * 1024 * 1024,
+        },
+      );
+      expect(r.status, `o psql não chegou ao fim do arquivo:\n${String(r.stderr).slice(-2000)}`).toBe(0);
+      expect(await ler(), "reaplicar o baseline empurrou o horário de um compromisso").toEqual(antes);
+    },
+    180_000,
+  );
+});
+
+describe("desconectar o Google com compromissos no mesmo instante em agendas diferentes", () => {
+  it("apagar as agendas da conexão não esbarra na guarda por agenda", async () => {
+    const conexao = randomUUID();
+    const [a1, a2] = [randomUUID(), randomUUID()];
+    await pool.query(
+      `insert into calendar_connections(id, organization_id, user_id, provider, account_email, status)
+       values ($1, $2, $3, 'google_calendar', $4, 'healthy')`,
+      [conexao, GOV_ORG, GOV_AGENT_A, `${conexao}@invariant.test`],
+    );
+    for (const [id, externa] of [
+      [a1, "um@grupo"],
+      [a2, "dois@grupo"],
+    ] as const) {
+      await pool.query(
+        `insert into calendar_connection_calendars(id, organization_id, connection_id, external_calendar_id, name, counts_for_conflicts, access_role)
+         values ($1, $2, $3, $4, 'Agenda', true, 'writer')`,
+        [id, GOV_ORG, conexao, externa],
+      );
+    }
+    const inicio = "2030-04-05T13:00:00Z";
+    const fim = "2030-04-05T14:00:00Z";
+    await compromisso({ target: a1, inicio, fim });
+    await compromisso({ target: a2, inicio, fim });
+    await expect(
+      pool.query("delete from calendar_connection_calendars where organization_id = $1 and connection_id = $2", [
+        GOV_ORG,
+        conexao,
+      ]),
+    ).resolves.toBeDefined();
   });
 });
 

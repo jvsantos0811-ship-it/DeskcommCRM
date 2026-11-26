@@ -446,7 +446,7 @@ async function executarCriacaoDeAgendamento(
   }
 
   const fim = new Date(inicio.getTime() + tipo.duration_minutes * 60_000);
-  const consulta = await exigeHorarioLivre(supabase, ctx, {
+  let consulta = await exigeHorarioLivre(supabase, ctx, {
     eventTypeId: tipo.id,
     donoId,
     inicio,
@@ -469,65 +469,79 @@ async function executarCriacaoDeAgendamento(
     convidadoExterno: !!input.guest_email?.trim(),
   });
 
-  // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
-  await guardServiceEffect();
-  const { data: criado, error: erroInsert } = await supabase
-    .from("calendar_appointments")
-    .insert({
-      organization_id: ctx.organization_id,
-      event_type_id: tipo.id,
-      title: formato?.titulo ?? input.title ?? tipo.name,
-      starts_at: inicio.toISOString(),
-      ends_at: fim.toISOString(),
-      // O fuso do compromisso é campo de primeira classe: é o da JORNADA, onde
-      // o horário foi decidido, e ele viaja até o lembrete (ACHADO 09).
-      time_zone: consulta.fusoDaRegra,
-      status: tipo.requires_confirmation ? "pending" : "confirmed",
-      // PC-052: o tipo com presença nasce "aguardando" (amarelo no Google).
-      lead_presence: tipo.lead_presence_enabled ? "aguardando" : null,
-      owner_user_id: donoId,
-      // PC-054: a agenda da vez que estava livre neste horário. Nula = sem
-      // revezamento, e o compromisso vai para a agenda de destino, como sempre.
-      target_calendar_id: consulta.agenda?.id ?? null,
-      contact_id: input.contact_id ?? null,
-      conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
-      meeting_delivery: delivery as unknown as Json,
-      location_kind: tipo.location_kind,
-      location_details:
-        input.location_details !== undefined
-          ? input.location_details.trim() || null
-          : tipo.location_details,
-      description: input.description !== undefined ? input.description.trim() || null : null,
-      // PC-044: o nível de descrição do modelo da empresa, quando há um.
-      ...(formato?.descricao !== undefined ? { description: formato.descricao } : {}),
-      notes: input.notes ?? null,
-      // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
-      // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
-      // Google recusar o EVENTO INTEIRO, não só o convidado.
-      guest_email: input.guest_email || null,
-      created_by_kind: autorParaCriacao(ctx.actor),
-      created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
-      source: ctx.actor.type === "user" ? "ui" : "mcp",
-    })
-    // `owner_user_id` volta para a IA (PC-052): é com ele que uma remarcação
-    // consulta a agenda da MESMA pessoa.
-    .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url, owner_user_id")
-    .single();
-  if (erroInsert) {
-    // 23505 é a guarda de duplo clique (migration 0182; por agenda desde a
-    // 9045): outro compromisso nasceu neste mesmo instante, para a mesma pessoa
-    // e na mesma agenda, entre a conferência e a gravação. É recusa esperada,
-    // não falha do sistema — e a IA aprende a buscar outro horário.
-    if (erroInsert.code === "23505") {
-      throw new ApiError(
-        409,
-        "agenda_horario_indisponivel",
-        undefined,
-        ctx.requestId,
-        "Outro compromisso acabou de ser marcado neste mesmo horário. Escolha outro horário.",
-      );
+  // PC-054 — a corrida do duplo clique COM revezamento: duas marcações no mesmo
+  // instante escolhem a mesma agenda da vez, e a segunda leva 23505 com a outra
+  // agenda livre. Uma (e só uma) nova conferência: ela já enxerga a primeira e
+  // escolhe a próxima agenda livre — ou recusa pelo motivo certo. Sem
+  // revezamento não há outra agenda, e o 23505 vira 409 na hora, como antes.
+  let criado: Record<string, unknown> & { id: string; status: string; time_zone: string } = null as never;
+  for (let tentativa = 1; ; tentativa += 1) {
+    // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
+    await guardServiceEffect();
+    const { data: gravado, error: erroInsert } = await supabase
+      .from("calendar_appointments")
+      .insert({
+        organization_id: ctx.organization_id,
+        event_type_id: tipo.id,
+        title: formato?.titulo ?? input.title ?? tipo.name,
+        starts_at: inicio.toISOString(),
+        ends_at: fim.toISOString(),
+        // O fuso do compromisso é campo de primeira classe: é o da JORNADA, onde
+        // o horário foi decidido, e ele viaja até o lembrete (ACHADO 09).
+        time_zone: consulta.fusoDaRegra,
+        status: tipo.requires_confirmation ? "pending" : "confirmed",
+        // PC-052: o tipo com presença nasce "aguardando" (amarelo no Google).
+        lead_presence: tipo.lead_presence_enabled ? "aguardando" : null,
+        owner_user_id: donoId,
+        // PC-054: a agenda da vez que estava livre neste horário. Nula = sem
+        // revezamento, e o compromisso vai para a agenda de destino, como sempre.
+        target_calendar_id: consulta.agenda?.id ?? null,
+        contact_id: input.contact_id ?? null,
+        conversation_id: booking?.boundary.conversation_id ?? input.conversation_id ?? null,
+        meeting_delivery: delivery as unknown as Json,
+        location_kind: tipo.location_kind,
+        location_details:
+          input.location_details !== undefined
+            ? input.location_details.trim() || null
+            : tipo.location_details,
+        description: input.description !== undefined ? input.description.trim() || null : null,
+        // PC-044: o nível de descrição do modelo da empresa, quando há um.
+        ...(formato?.descricao !== undefined ? { description: formato.descricao } : {}),
+        notes: input.notes ?? null,
+        // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
+        // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
+        // Google recusar o EVENTO INTEIRO, não só o convidado.
+        guest_email: input.guest_email || null,
+        created_by_kind: autorParaCriacao(ctx.actor),
+        created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
+        source: ctx.actor.type === "user" ? "ui" : "mcp",
+      })
+      // `owner_user_id` volta para a IA (PC-052): é com ele que uma remarcação
+      // consulta a agenda da MESMA pessoa.
+      .select("id, starts_at, ends_at, status, time_zone, revision, meeting_state, meeting_url, owner_user_id")
+      .single();
+    if (erroInsert) {
+      // 23505 é a guarda de duplo clique (migration 0182; por agenda desde a
+      // 9045): outro compromisso nasceu neste mesmo instante, para a mesma pessoa
+      // e na mesma agenda, entre a conferência e a gravação. É recusa esperada,
+      // não falha do sistema — e a IA aprende a buscar outro horário.
+      if (erroInsert.code === "23505") {
+        if (consulta.agenda && tentativa === 1) {
+          consulta = await exigeHorarioLivre(supabase, ctx, { eventTypeId: tipo.id, donoId, inicio, fim });
+          continue;
+        }
+        throw new ApiError(
+          409,
+          "agenda_horario_indisponivel",
+          undefined,
+          ctx.requestId,
+          "Outro compromisso acabou de ser marcado neste mesmo horário. Escolha outro horário.",
+        );
+      }
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
     }
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
+    criado = gravado as typeof criado;
+    break;
   }
 
   const transicao: Transicao = criado.status === "pending" ? "pending" : "confirmed";
