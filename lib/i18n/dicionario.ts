@@ -18074,6 +18074,11 @@ export const DICIONARIO: Traducoes = {
   "Preço do pacote (R$)": { es: "Precio del paquete (R$)" },
   "IA liberada pelo pacote (US$)": { es: "IA liberada por el paquete (US$)" },
   "IA liberada na cortesia (US$)": { es: "IA liberada en la cortesía (US$)" },
+  // Aviso de mensagem com "Silenciar" (lib/notifications/deliver.ts)
+  "Silenciar": { es: "Silenciar" },
+  "Desfazer": { es: "Deshacer" },
+  "Avisos de nova mensagem desligados neste navegador.": { es: "Avisos de mensaje nuevo desactivados en este navegador." },
+  "Para ligar de novo: Configurações › Notificações.": { es: "Para volver a activarlos: Configuración › Notificaciones." },
   // PC-056 — Uso de IA em reais (components/ai/BudgetCard.tsx)
   "valores em reais, pela cotação de": { es: "valores en reales, con la cotización de" },
   "(o provedor de IA cobra em dólar)": { es: "(el proveedor de IA cobra en dólares)" },

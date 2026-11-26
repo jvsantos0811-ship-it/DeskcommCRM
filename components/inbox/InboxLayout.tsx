@@ -20,6 +20,7 @@ import {
   type ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
 import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
+import { useConversaAbertaEstavel } from "@/hooks/inbox/useConversaAbertaEstavel";
 import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
@@ -414,9 +415,15 @@ export function InboxLayout({
   // aí `inList` já a tem no primeiro render.
   const needsFetch = !!selectedId && !inList;
   const single = useConversation(selectedId, needsFetch);
-  const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
   const selectionNotFound =
     needsFetch && !single.isPending && !single.data && isNotFound(single.error);
+  // Sem isto, a conversa que sai da lista depois do envio virava `null` por um
+  // render e o composer desmontava, levando o que estava sendo digitado.
+  const selectedConversation: ConversationWithContact | null = useConversaAbertaEstavel(
+    selectedId,
+    inList ?? single.data ?? null,
+    selectionNotFound,
+  );
 
   const colunas = colunasDoCelular(Boolean(selectedId));
 
