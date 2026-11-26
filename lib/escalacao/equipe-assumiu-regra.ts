@@ -14,12 +14,31 @@ export const MOTIVO_EQUIPE_RESPONDEU_PELO_CRM = "Equipe assumiu respondendo pelo
 /** O motivo do celular é o de sempre: a tela e os painéis já o reconhecem. */
 export const MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR = MOTIVO_ATENDIMENTO_MANUAL;
 
-export type OrigemDaResposta = "crm" | "celular";
+/**
+ * De onde veio o sinal de que a equipe assumiu.
+ *
+ * `plataforma` (PC-058): no canal em que a IA atende DENTRO de outra plataforma
+ * de atendimento (ChatGuru), a resposta da equipe acontece LÁ e nunca chega ao
+ * CRM. O sinal é o diálogo que a equipe executa no chat ao assumir
+ * (`lib/channels/atendimento-externo/equipe-assumiu.ts`). Grava o mesmo motivo
+ * do celular — também é resposta fora do CRM, e a tela e os painéis já o
+ * reconhecem —; só a frase da linha do tempo diz onde foi.
+ */
+export type OrigemDaResposta = "crm" | "celular" | "plataforma";
+
+/** O motivo gravado na conversa para cada origem. Pura. */
+export function motivoDaOrigem(origem: OrigemDaResposta): string {
+  return origem === "crm" ? MOTIVO_EQUIPE_RESPONDEU_PELO_CRM : MOTIVO_EQUIPE_RESPONDEU_PELO_CELULAR;
+}
 
 /** A frase da linha do tempo. Pura. */
 export function fraseDaLinhaDoTempo(origem: OrigemDaResposta, nome: string | null): string {
   const base =
-    origem === "crm" ? MOTIVO_EQUIPE_RESPONDEU_PELO_CRM : "Equipe assumiu respondendo pelo celular";
+    origem === "crm"
+      ? MOTIVO_EQUIPE_RESPONDEU_PELO_CRM
+      : origem === "plataforma"
+        ? "Equipe assumiu pela plataforma de atendimento"
+        : "Equipe assumiu respondendo pelo celular";
   return nome ? `${base} (${nome})` : base;
 }
 

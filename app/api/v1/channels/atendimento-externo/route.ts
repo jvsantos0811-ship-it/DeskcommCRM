@@ -133,6 +133,8 @@ async function estadoDaConexao(
         dialogo_id: a.dialogoId,
         quando_usar: a.quandoUsar,
       })),
+      // PC-058: o diálogo da equipe na plataforma cala a IA.
+      equipe_assumiu_pela_plataforma: sessao.config.equipeAssumiuPelaPlataforma,
       // PC-052 parte 3: diálogo por uso, fora da janela de 24 h — por número.
       roteiros_fora_da_janela: Object.fromEntries(
         USOS_FORA_DA_JANELA.map((uso) => [uso, sessao.config.roteirosForaDaJanela[uso] ?? null]),
@@ -391,6 +393,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       acoes: Array.isArray(config.acoes) ? config.acoes.length : 0,
       transferencia: config.dialogo_transferencia !== null,
       campo_da_ia: config.campo_da_ia !== null,
+      equipe_assumiu_pela_plataforma: config.equipe_assumiu_pela_plataforma === true,
       roteiros_fora_da_janela: Object.values(
         (config.roteiros_fora_da_janela ?? {}) as Record<string, string | null>,
       ).filter((v) => v !== null).length,

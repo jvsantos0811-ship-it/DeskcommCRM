@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
 import { corpoDoPost, lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atendimento-externo/entrada";
 import { tratarEnqueteDoPost } from "./atendimento-externo/enquete";
+import { tratarEquipeAssumiuDoPost } from "./atendimento-externo/equipe-assumiu";
 import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
 import { contarConexoesAtivas, phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
@@ -516,6 +517,19 @@ async function atendimentoExternoInbound(
   // pessoa responder. O mesmo voto de novo (`mudou: false`) é conversa e segue.
   if (enquete.status === "registrado" && enquete.mudou) {
     return { ok: true, body: { status: "enquete_registrada", mudou: true, reason: "enquete_ativacao" } };
+  }
+
+  // PC-058: o diálogo da plataforma que a equipe executa ao assumir o chat
+  // (grava o `valor_ao_passar` no campo da IA e faz o POST). Com a chave da
+  // conexão ligada, ele cala a IA e pausa o follow-up como a resposta da equipe
+  // pelo CRM; o POST NÃO vira mensagem e a IA não roda. Desligada = como antes.
+  const equipe = await tratarEquipeAssumiuDoPost(admin, {
+    orgId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    corpo: corpoDoPost(input.rawBody),
+  });
+  if (equipe.reconhecido) {
+    return { ok: true, body: { status: "equipe_assumiu", reason: equipe.status } };
   }
 
   const leitura = lerEntrada(input.rawBody);

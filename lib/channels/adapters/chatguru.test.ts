@@ -24,7 +24,14 @@ function creds(config: Partial<CredenciaisDoAtendimentoExterno["config"]> = {}):
     accountId: "conta_teste",
     phoneId: "fone_teste",
     apiKey: "chave-de-teste-0123456789",
-    config: { dialogoTransferencia: null, campoDaIa: null, acoes: [], roteirosForaDaJanela: {}, ...config },
+    config: {
+      dialogoTransferencia: null,
+      campoDaIa: null,
+      acoes: [],
+      equipeAssumiuPelaPlataforma: false,
+      roteirosForaDaJanela: {},
+      ...config,
+    },
   };
 }
 
