@@ -42,6 +42,10 @@
  *    ou atribuiria ao cliente o que a equipe escreveu. A IA também não roda.
  *  - Valor vazio (padrão), conexão sem `campo_da_ia`, ou valor igual ao da passagem:
  *    nada muda, o POST é lido como sempre.
+ *  - O valor que FICOU gravado no chat depois do sinal: só a TRANSIÇÃO é
+ *    sinal. O primeiro POST com o valor é consumido (marca na conversa); os
+ *    seguintes com o mesmo valor são conversa normal. Um POST com outro valor
+ *    rearma a transição.
  *  - Contato ou conversa que o CRM não conhece (cliente antigo, que nunca
  *    passou pela IA): nada é criado. O sinal é reconhecido e descartado.
  *
@@ -61,31 +65,38 @@ import { valorDoCampo } from "./enquete";
 
 const sem = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
 
+type ConfigDoSinal = Pick<
+  ConfigDoAtendimentoExterno,
+  "campoDaIa" | "valorQuandoEquipeAssume" | "variavelQuandoEquipeAssume"
+>;
+
 /**
- * O POST é o sinal de "a equipe assumiu"? Pura.
- *
- * Exige um `campo_da_ia` e um `valor_quando_equipe_assume` preenchido e
- * DIFERENTE do `valor_ao_passar` (a tela já recusa igual; a regra não confia
- * só nela). Compara sem acento e sem caixa, como a enquete compara a opção.
+ * O valor que a fonte do sinal traz neste POST, qualquer que seja. Pura.
+ * `null` = sinal desligado, fonte ausente no POST, ou configuração que nunca
+ * pode ser sinal (valor igual ao da passagem, pelo campo da IA).
  */
-export function ehSinalDeEquipeAssumiu(
-  corpo: Record<string, unknown> | null,
-  config: Pick<
-    ConfigDoAtendimentoExterno,
-    "campoDaIa" | "valorQuandoEquipeAssume" | "variavelQuandoEquipeAssume"
-  >,
-): boolean {
-  if (!corpo) return false;
+export function valorDaFonteDoSinal(corpo: Record<string, unknown> | null, config: ConfigDoSinal): string | null {
+  if (!corpo) return null;
   const esperado = sem(config.valorQuandoEquipeAssume ?? "");
-  if (!esperado) return false;
-  if (config.variavelQuandoEquipeAssume) {
-    const valor = valorDoContexto(corpo, config.variavelQuandoEquipeAssume);
-    return valor !== null && sem(valor) === esperado;
-  }
-  if (!config.campoDaIa) return false;
-  if (esperado === sem(config.campoDaIa.valorAoPassar ?? "")) return false;
-  const valor = valorDoCampo(corpo, `campos_personalizados.${config.campoDaIa.nome}`);
-  return valor !== null && sem(valor) === esperado;
+  if (!esperado) return null;
+  if (config.variavelQuandoEquipeAssume) return valorDoContexto(corpo, config.variavelQuandoEquipeAssume);
+  if (!config.campoDaIa) return null;
+  if (esperado === sem(config.campoDaIa.valorAoPassar ?? "")) return null;
+  return valorDoCampo(corpo, `campos_personalizados.${config.campoDaIa.nome}`);
+}
+
+/**
+ * O POST TRAZ o valor de "a equipe assumiu"? Pura. Trazer não basta para ser
+ * sinal: a variável (ou o campo) fica gravada no chat e chega em todo POST
+ * seguinte. Quem decide se é a TRANSIÇÃO é `tratarEquipeAssumiuDoPost`.
+ *
+ * Pela variável de contexto, o `campo_da_ia` não entra na conta. Pelo campo,
+ * exige `campo_da_ia` e um valor DIFERENTE do `valor_ao_passar` (a tela já
+ * recusa igual; a regra não confia só nela). Compara sem acento e sem caixa.
+ */
+export function ehSinalDeEquipeAssumiu(corpo: Record<string, unknown> | null, config: ConfigDoSinal): boolean {
+  const valor = valorDaFonteDoSinal(corpo, config);
+  return valor !== null && sem(valor) === sem(config.valorQuandoEquipeAssume ?? "");
 }
 
 /** `bot_context` do POST: objeto, ou JSON em texto. Ilegível = sem contexto. */
@@ -146,10 +157,10 @@ async function conversaDoContatoNoNumero(
   orgId: string,
   contactId: string,
   channelSessionId: string,
-): Promise<string | null> {
+): Promise<{ id: string; metadata: Record<string, unknown> } | null> {
   const { data, error } = await admin
     .from("conversations")
-    .select("id")
+    .select("id, metadata")
     .eq("organization_id", orgId)
     .eq("contact_id", contactId)
     .eq("channel_session_id", channelSessionId)
@@ -158,7 +169,33 @@ async function conversaDoContatoNoNumero(
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
-  return (data as { id: string }).id;
+  const linha = data as { id: string; metadata: unknown };
+  const metadata =
+    linha.metadata && typeof linha.metadata === "object" && !Array.isArray(linha.metadata)
+      ? (linha.metadata as Record<string, unknown>)
+      : {};
+  return { id: linha.id, metadata };
+}
+
+/**
+ * Marca, na conversa, que o valor de "a equipe assumiu" já foi CONSUMIDO
+ * (`true`) ou que a fonte voltou a outro valor (`false`). É o que separa a
+ * transição (sinal) do valor que ficou gravado no chat (conversa normal).
+ * Mora só aqui: ninguém mais lê esta chave.
+ */
+const CHAVE_DO_SINAL_CONSUMIDO = "equipe_assumiu_na_plataforma_consumido";
+
+async function marcarSinalConsumido(
+  admin: SupabaseClient,
+  orgId: string,
+  conversa: { id: string; metadata: Record<string, unknown> },
+  consumido: boolean,
+): Promise<void> {
+  await admin
+    .from("conversations")
+    .update({ metadata: { ...conversa.metadata, [CHAVE_DO_SINAL_CONSUMIDO]: consumido } })
+    .eq("organization_id", orgId)
+    .eq("id", conversa.id);
 }
 
 export async function tratarEquipeAssumiuDoPost(
@@ -181,21 +218,46 @@ export async function tratarEquipeAssumiuDoPost(
     config = null;
   }
   // Sem configuração legível, não há como saber se era o sinal: o POST segue.
-  if (!config || !ehSinalDeEquipeAssumiu(input.corpo, config)) return { reconhecido: false };
+  if (!config) return { reconhecido: false };
+  const valor = valorDaFonteDoSinal(input.corpo, config);
+  // Sinal desligado ou fonte ausente neste POST: o caminho de sempre, sem mais leitura.
+  if (valor === null) return { reconhecido: false };
+  const trazOValor = ehSinalDeEquipeAssumiu(input.corpo, config);
 
-  // Daqui para baixo o POST JÁ é o sinal: falhar não o transforma em mensagem.
+  // POST que traz OUTRO valor: nunca é sinal. Só rearma a transição se ela
+  // tinha sido consumida. Qualquer falha aqui é silenciosa: o POST segue.
+  if (!trazOValor) {
+    try {
+      const celular = textoDo(input.corpo.celular);
+      const contato = celular ? await encontrarContatoPorTelefone(admin, input.orgId, celular) : null;
+      const conversa = contato
+        ? await conversaDoContatoNoNumero(admin, input.orgId, contato.id, input.channelSessionId)
+        : null;
+      if (conversa && conversa.metadata[CHAVE_DO_SINAL_CONSUMIDO] === true) {
+        await marcarSinalConsumido(admin, input.orgId, conversa, false);
+      }
+    } catch {
+      // o rearme fica para o próximo POST
+    }
+    return { reconhecido: false };
+  }
+
+  // Daqui para baixo o POST TRAZ o valor. Falhar não o transforma em mensagem.
   try {
     const celular = textoDo(input.corpo.celular);
     const contato = celular ? await encontrarContatoPorTelefone(admin, input.orgId, celular) : null;
     if (!contato) return { reconhecido: true, status: "sem_contato" };
 
-    const conversationId = await conversaDoContatoNoNumero(
-      admin,
-      input.orgId,
-      contato.id,
-      input.channelSessionId,
-    );
-    if (!conversationId) return { reconhecido: true, status: "sem_conversa" };
+    const conversa = await conversaDoContatoNoNumero(admin, input.orgId, contato.id, input.channelSessionId);
+    if (!conversa) return { reconhecido: true, status: "sem_conversa" };
+
+    // O valor continua gravado no chat desde o sinal anterior: este POST é uma
+    // mensagem de verdade (do lead) e segue o caminho de sempre. Achado da
+    // revisão independente: sem isto, toda mensagem seguinte sumiria do CRM e,
+    // com a conversa retomada, a IA seria calada de novo a cada POST.
+    if (conversa.metadata[CHAVE_DO_SINAL_CONSUMIDO] === true) return { reconhecido: false };
+    await marcarSinalConsumido(admin, input.orgId, conversa, true);
+    const conversationId = conversa.id;
 
     const r = await equipeAssumiuRespondendo(admin, {
       organizationId: input.orgId,

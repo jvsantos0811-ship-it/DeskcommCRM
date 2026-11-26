@@ -33,11 +33,16 @@ const LIGADA = {
 
 function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ id: "conv-1" }]) {
   const lidas: string[] = [];
+  const gravacoes: Array<{ tabela: string; valores: Record<string, unknown> }> = [];
   const filtros: Array<{ tabela: string; coluna: string; valor: unknown }> = [];
   const from = (tabela: string) => {
     lidas.push(tabela);
     const q: Record<string, unknown> = {
       select: () => q,
+      update: (valores: Record<string, unknown>) => {
+        gravacoes.push({ tabela, valores });
+        return q;
+      },
       eq: (coluna: string, valor: unknown) => {
         filtros.push({ tabela, coluna, valor });
         return q;
@@ -52,7 +57,7 @@ function admin(config: unknown, conversas: Array<Record<string, unknown>> = [{ i
     };
     return q;
   };
-  return { cliente: { from } as never, lidas, filtros };
+  return { cliente: { from } as never, lidas, filtros, gravacoes };
 }
 
 const post = (campos: unknown, extra: Record<string, unknown> = {}) => ({
@@ -132,6 +137,58 @@ describe("ehSinalDeEquipeAssumiu pela variável de contexto (bot_context)", () =
 });
 
 describe("tratarEquipeAssumiuDoPost", () => {
+  it("só a TRANSIÇÃO é sinal: com o valor já consumido, o POST seguinte vira mensagem normal", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { equipe_assumiu_na_plataforma_consumido: true } }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "mensagem do lead", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: false });
+    expect(chamadas).toHaveLength(0);
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
+  it("o primeiro POST com o valor marca a conversa como consumida", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { outra: 1 } }]);
+    await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(a.gravacoes).toEqual([
+      { tabela: "conversations", valores: { metadata: { outra: 1, equipe_assumiu_na_plataforma_consumido: true } } },
+    ]);
+    expect(a.filtros).toContainEqual({ tabela: "conversations", coluna: "id", valor: "conv-1" });
+  });
+
+  it("POST com outro valor rearma a transição e segue como mensagem", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: { equipe_assumiu_na_plataforma_consumido: true } }]);
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "oi", bot_context: { LSIA: "novo" } },
+    });
+    expect(r).toEqual({ reconhecido: false });
+    expect(a.gravacoes).toEqual([
+      { tabela: "conversations", valores: { metadata: { equipe_assumiu_na_plataforma_consumido: false } } },
+    ]);
+  });
+
+  it("POST com outro valor e nada consumido: não grava nada", async () => {
+    const cfg = { acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" };
+    const a = admin(cfg, [{ id: "conv-1", metadata: {} }]);
+    await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "oi", bot_context: { LSIA: "novo" } },
+    });
+    expect(a.gravacoes).toHaveLength(0);
+  });
+
   it("pela variável de contexto: aplica mesmo sem campos personalizados no POST", async () => {
     const a = admin({ acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" });
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {

@@ -589,7 +589,7 @@ function FormularioDoAtendimentoExterno({
             />
             <p className="text-xs text-muted-foreground">
               {t(
-                "Se o diálogo da equipe grava uma variável de contexto (ex.: LSIA) em vez do campo da IA, escreva o nome dela aqui. O CRM lê essa variável em todo POST.",
+                "Se o diálogo da equipe grava uma variável de contexto (ex.: LSIA) em vez do campo da IA, escreva o nome dela aqui. Só a mudança para o valor acima conta: as mensagens seguintes, com o valor ainda gravado, entram normalmente.",
               )}
             </p>
           </div>
