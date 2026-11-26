@@ -171,3 +171,33 @@ describe("ingestão do canal dentro da plataforma — tudo escopado pela organiz
     expect(marcar).not.toHaveBeenCalled();
   });
 });
+
+describe("ingestão — o gancho antes da mensagem (regra do responsável)", () => {
+  it("roda depois de conhecer a conversa e ANTES do insert; erro no gancho não impede a mensagem", async () => {
+    const { admin, registros } = gravador();
+    const ordem: string[] = [];
+    const r = await ingestAtendimentoExterno(admin, entrada(), {
+      organizationId: ORG_A,
+      channelSessionId: "sess-a",
+      antesDaMensagem: async (conv) => {
+        ordem.push(`gancho:${conv}:${registros.some((x) => x.tabela === "messages" && x.op === "insert")}`);
+        throw new Error("falhou");
+      },
+    });
+    expect(ordem).toEqual(["gancho:conversa-a:false"]);
+    expect(r.status).toBe("ingested");
+  });
+
+  it("⭐ reentrega da MESMA mensagem não reaplica a regra", async () => {
+    const { admin } = gravador({ eco: true });
+    const gancho = vi.fn(async () => undefined);
+    // `eco: true` faz toda leitura de messages achar uma linha — inclusive a
+    // da mesma external_id. O texto curto escapa do filtro de eco.
+    await ingestAtendimentoExterno(admin, entrada({ texto_mensagem: "sim" }), {
+      organizationId: ORG_A,
+      channelSessionId: "sess-a",
+      antesDaMensagem: gancho,
+    });
+    expect(gancho).not.toHaveBeenCalled();
+  });
+});

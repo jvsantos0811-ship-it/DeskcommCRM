@@ -238,7 +238,20 @@ export async function ingestAtendimentoExterno(
     return { status: "ignored", reason: "eco_do_proprio_envio" };
   }
 
+  // A reentrega da MESMA mensagem (fora de ordem, inclusive) não reaplica a
+  // regra: um POST velho não pode calar ou soltar a IA de novo.
+  let jaGravada = false;
   if (dono.antesDaMensagem) {
+    const { data: repetida } = await admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("external_id", externalId)
+      .limit(1)
+      .maybeSingle();
+    jaGravada = repetida !== null && repetida !== undefined;
+  }
+  if (dono.antesDaMensagem && !jaGravada) {
     try {
       await dono.antesDaMensagem(conversationId as string);
     } catch {

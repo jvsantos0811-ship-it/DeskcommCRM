@@ -31,7 +31,12 @@
  *
  *  - Responsável vazio numa conversa calada por OUTRO motivo (a IA passou para
  *    a equipe, alguém respondeu pelo CRM, "sempre humano"): nada muda. Só se
- *    desfaz o que esta regra fez.
+ *    desfaz o EPISÓDIO que esta regra começou: a marca guarda o
+ *    `last_handoff_at` dele, e outro silêncio por cima (ou uma resposta de
+ *    pessoa pelo CRM depois dele) a invalida.
+ *  - Contato novo com responsável já preenchido: a IA cala, mas o negócio
+ *    nasce depois (`aplicarEfeitosPosEntrada`), na etapa de entrada — o card
+ *    não anda para a etapa da equipe nesse primeiro POST.
  *  - Chave desligada (padrão): o responsável é ignorado, como antes.
  *  - O nome e o e-mail do responsável não vão para log nem para o banco.
  *
@@ -68,37 +73,94 @@ export type DesfechoDoResponsavel =
   | "segue"
   | "nao_aplicado";
 
+interface Conversa {
+  metadata: Record<string, unknown>;
+  caladaDeVez: boolean;
+  lastHandoffAt: string | null;
+  updatedAt: string | null;
+}
+
 async function lerConversa(
   admin: SupabaseClient,
   orgId: string,
   conversationId: string,
-): Promise<{ metadata: Record<string, unknown>; caladaDeVez: boolean } | null> {
+): Promise<Conversa | null> {
   const { data, error } = await admin
     .from("conversations")
-    .select("metadata, bot_silenced_until")
+    .select("metadata, bot_silenced_until, last_handoff_at, updated_at")
     .eq("organization_id", orgId)
     .eq("id", conversationId)
     .maybeSingle();
   if (error || !data) return null;
-  const c = data as { metadata: Record<string, unknown> | null; bot_silenced_until: string | null };
-  return { metadata: c.metadata ?? {}, caladaDeVez: c.bot_silenced_until === "infinity" };
+  const c = data as {
+    metadata: Record<string, unknown> | null;
+    bot_silenced_until: string | null;
+    last_handoff_at: string | null;
+    updated_at: string | null;
+  };
+  return {
+    metadata: c.metadata ?? {},
+    caladaDeVez: c.bot_silenced_until === "infinity",
+    lastHandoffAt: c.last_handoff_at ?? null,
+    updatedAt: c.updated_at ?? null,
+  };
 }
 
+/** O episódio que a regra calou: o `last_handoff_at` gravado no momento. */
+function episodioMarcado(metadata: Record<string, unknown>): string | null {
+  const m = metadata[MARCA_CALADA_PELO_RESPONSAVEL];
+  if (m && typeof m === "object" && typeof (m as { desde?: unknown }).desde === "string") {
+    return (m as { desde: string }).desde;
+  }
+  return null;
+}
+
+/**
+ * Grava (ou tira) a marca sem apagar o que outro POST escreveu no `metadata`
+ * ao mesmo tempo: trava pelo `updated_at` lido, com uma nova tentativa.
+ */
 async function gravarMarca(
   admin: SupabaseClient,
   orgId: string,
   conversationId: string,
-  metadata: Record<string, unknown>,
-  valor: boolean,
+  desde: string | null,
 ): Promise<void> {
-  const proximo = { ...metadata };
-  if (valor) proximo[MARCA_CALADA_PELO_RESPONSAVEL] = true;
-  else delete proximo[MARCA_CALADA_PELO_RESPONSAVEL];
-  await admin
-    .from("conversations")
-    .update({ metadata: proximo })
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const atual = await lerConversa(admin, orgId, conversationId);
+    if (!atual) return;
+    const proximo = { ...atual.metadata };
+    if (desde) proximo[MARCA_CALADA_PELO_RESPONSAVEL] = { desde };
+    else delete proximo[MARCA_CALADA_PELO_RESPONSAVEL];
+    let q = admin
+      .from("conversations")
+      .update({ metadata: proximo })
+      .eq("organization_id", orgId)
+      .eq("id", conversationId);
+    if (atual.updatedAt) q = q.eq("updated_at", atual.updatedAt);
+    const { data, error } = await q.select("id");
+    if (!error && Array.isArray(data) && data.length > 0) return;
+  }
+}
+
+/** Alguém da equipe escreveu pelo CRM depois que a regra calou? */
+async function pessoaRespondeuPeloCrmDesde(
+  admin: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  desde: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("messages")
+    .select("id")
     .eq("organization_id", orgId)
-    .eq("id", conversationId);
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    .not("sent_by_user_id", "is", null)
+    .gte("created_at", desde)
+    .limit(1)
+    .maybeSingle();
+  // Na dúvida, não devolve: calar por engano é melhor que falar por cima.
+  return error !== null || data !== null;
 }
 
 /**
@@ -122,6 +184,7 @@ export async function aplicarRegraDoResponsavel(
     if (!conversa) return "nao_aplicado";
 
     if (temResponsavel(input.corpo)) {
+      const jaEstavaCalada = conversa.caladaDeVez;
       const r = await equipeAssumiuRespondendo(admin, {
         organizationId: input.orgId,
         conversationId: input.conversationId,
@@ -130,18 +193,27 @@ export async function aplicarRegraDoResponsavel(
         requestId: input.requestId,
       });
       if (r.aplicado) {
-        const depois = await lerConversa(admin, input.orgId, input.conversationId);
-        await gravarMarca(admin, input.orgId, input.conversationId, depois?.metadata ?? conversa.metadata, true);
+        // Só é "da regra" o silêncio que ELA começou. Calada antes por outro
+        // motivo (passagem da IA, sempre humano), o vazio depois não a solta.
+        if (!jaEstavaCalada) {
+          const depois = await lerConversa(admin, input.orgId, input.conversationId);
+          if (depois?.lastHandoffAt) {
+            await gravarMarca(admin, input.orgId, input.conversationId, depois.lastHandoffAt);
+          }
+        }
         return "calou";
       }
       return r.motivo === "ja_assumida" ? "ja_calada" : "nao_aplicado";
     }
 
-    // Sem responsável: só desfaz o que ESTA regra fez.
-    if (conversa.metadata[MARCA_CALADA_PELO_RESPONSAVEL] !== true) return "segue";
-    if (!conversa.caladaDeVez) {
-      // Alguém já devolveu pela tela: a marca sobrou. Limpa e segue.
-      await gravarMarca(admin, input.orgId, input.conversationId, conversa.metadata, false);
+    // Sem responsável: só desfaz o episódio que ESTA regra começou.
+    const desde = episodioMarcado(conversa.metadata);
+    if (!desde) return "segue";
+    const mesmoEpisodio = conversa.caladaDeVez && conversa.lastHandoffAt === desde;
+    if (!mesmoEpisodio || (await pessoaRespondeuPeloCrmDesde(admin, input.orgId, input.conversationId, desde))) {
+      // Outro silêncio por cima (devolvida pela tela e passada de novo, ou uma
+      // pessoa respondeu pelo CRM): a marca sobrou. Limpa e não devolve.
+      await gravarMarca(admin, input.orgId, input.conversationId, null);
       return "segue";
     }
     const d = await devolverAtendimentoAoAgente(
@@ -156,8 +228,7 @@ export async function aplicarRegraDoResponsavel(
       { conversationId: input.conversationId, acordarIa: false },
     );
     if (!d.ok) return "nao_aplicado";
-    const depois = await lerConversa(admin, input.orgId, input.conversationId);
-    await gravarMarca(admin, input.orgId, input.conversationId, depois?.metadata ?? conversa.metadata, false);
+    await gravarMarca(admin, input.orgId, input.conversationId, null);
     return "devolveu";
   } catch (err) {
     logger.warn("[atendimento-externo] regra do responsável não aplicada", {
