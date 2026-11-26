@@ -13,7 +13,7 @@ import {
   motivoDoContato,
 } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import { ChatThread } from "@/components/inbox/ChatThread";
-import { Composer } from "@/components/inbox/Composer";
+import { ComposerDaConversa } from "@/components/inbox/ComposerDaConversa";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { MensagensAgendadas } from "@/components/inbox/MensagensAgendadas";
 import { ComandoNoNegocio } from "./ComandoNoNegocio";
@@ -137,7 +137,9 @@ export function ChatDoNegocio({ conversationId }: { conversationId: string }) {
         conversationId={c.id}
         podeAgendar={!bloqueio && c.status !== "closed"}
       />
-      <Composer
+      <ComposerDaConversa
+        // Rascunho por conversa (PC-057): o mesmo guardado da Inbox.
+        key={c.id}
         conversationId={c.id}
         blockedReason={bloqueio}
         janelaFechada={motivoDaJanela}

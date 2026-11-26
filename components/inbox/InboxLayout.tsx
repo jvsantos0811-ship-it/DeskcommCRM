@@ -25,7 +25,8 @@ import { ConversationList } from "./ConversationList";
 import { BarraDeAcoesEmLote } from "./BarraDeAcoesEmLote";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
-import { Composer, type ComposerHandle } from "./Composer";
+import { type ComposerHandle } from "./Composer";
+import { ComposerDaConversa } from "./ComposerDaConversa";
 import { ConversationHeader } from "./ConversationHeader";
 import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
@@ -949,11 +950,17 @@ export function InboxLayout({
                 !supportReadonly && !blockedReason && selectedConversation.status !== "closed"
               }
             />
-            <Composer
-              // Trocar a chave quando o rascunho sai REMONTA o composer: o texto
-              // nasce de `useState(initialDraft)`, e só a prop mudar não o limparia.
-              // Sem rascunho a chave é fixa e a troca de conversa segue como antes.
-              key={rascunhoVivo ? `rascunho:${rascunhoVivo.conversationId}` : "composer"}
+            <ComposerDaConversa
+              // A chave é POR CONVERSA (PC-057): trocar de conversa desmonta o
+              // campo, e o texto escrito para um cliente nunca aparece no campo
+              // do próximo. O rascunho de cada conversa fica guardado e volta
+              // quando ela é reaberta. Com o rascunho sugerido (#1611) a chave
+              // muda quando ele sai, pelo mesmo motivo de antes.
+              key={
+                rascunhoVivo
+                  ? `rascunho:${rascunhoVivo.conversationId}`
+                  : `composer:${selectedConversation.id}`
+              }
               ref={composerRef}
               conversationId={selectedConversation.id}
               blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
@@ -970,8 +977,8 @@ export function InboxLayout({
               podeAgendar={
                 !supportReadonly && !blockedReason && selectedConversation.status !== "closed"
               }
-              initialDraft={
-                rascunhoVivo?.leitura.estado === "sugerido" ? rascunhoVivo.leitura.texto : ""
+              textoSugerido={
+                rascunhoVivo?.leitura.estado === "sugerido" ? rascunhoVivo.leitura.texto : null
               }
             />
           </>

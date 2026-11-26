@@ -268,7 +268,12 @@ export function LeadDossier({
             aria-label={t("Conversa")}
           >
             {lead.conversa ? (
-              <ChatDoNegocio conversationId={lead.conversa.id} />
+              <ChatDoNegocio
+                // Trocar de negócio no pop-up troca de conversa: a citação e o
+                // campo de resposta da anterior não podem vir junto (PC-057).
+                key={lead.conversa.id}
+                conversationId={lead.conversa.id}
+              />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <p className="text-sm text-text-muted">
