@@ -23,6 +23,12 @@
  *   2. faz o "POST PARA URL" para a entrada deste canal.
  *
  * Esse POST carrega `campos_personalizados.<campo_da_ia> = <valor_quando_equipe_assume>`.
+ *
+ * Segunda forma (preferida quando preenchida): `variavel_quando_equipe_assume`.
+ * O diálogo grava uma VARIÁVEL DE CONTEXTO (ex.: `LSIA = assumido`), e a
+ * plataforma manda o contexto inteiro em todo POST, dentro de `bot_context`.
+ * Medido no POST real do ChatGuru: `bot_context` é um objeto com as variáveis
+ * do chat. Com a variável preenchida, o `campo_da_ia` não entra na conta.
  * Com esse valor preenchido na conexão, é ele que
  * diz "a equipe assumiu" — e o CRM aplica o mesmo efeito do PC-029: a IA cala de
  * forma durável, o contato fica só humano, as mensagens agendadas caem, os
@@ -64,13 +70,42 @@ const sem = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLo
  */
 export function ehSinalDeEquipeAssumiu(
   corpo: Record<string, unknown> | null,
-  config: Pick<ConfigDoAtendimentoExterno, "campoDaIa" | "valorQuandoEquipeAssume">,
+  config: Pick<
+    ConfigDoAtendimentoExterno,
+    "campoDaIa" | "valorQuandoEquipeAssume" | "variavelQuandoEquipeAssume"
+  >,
 ): boolean {
-  if (!corpo || !config.campoDaIa) return false;
+  if (!corpo) return false;
   const esperado = sem(config.valorQuandoEquipeAssume ?? "");
-  if (!esperado || esperado === sem(config.campoDaIa.valorAoPassar ?? "")) return false;
+  if (!esperado) return false;
+  if (config.variavelQuandoEquipeAssume) {
+    const valor = valorDoContexto(corpo, config.variavelQuandoEquipeAssume);
+    return valor !== null && sem(valor) === esperado;
+  }
+  if (!config.campoDaIa) return false;
+  if (esperado === sem(config.campoDaIa.valorAoPassar ?? "")) return false;
   const valor = valorDoCampo(corpo, `campos_personalizados.${config.campoDaIa.nome}`);
   return valor !== null && sem(valor) === esperado;
+}
+
+/** `bot_context` do POST: objeto, ou JSON em texto. Ilegível = sem contexto. */
+function contextoDoPost(corpo: Record<string, unknown>): Record<string, unknown> {
+  const bruto = corpo.bot_context;
+  if (bruto && typeof bruto === "object" && !Array.isArray(bruto)) return bruto as Record<string, unknown>;
+  if (typeof bruto === "string" && bruto.trim().startsWith("{")) {
+    try {
+      const p = JSON.parse(bruto) as unknown;
+      if (p && typeof p === "object" && !Array.isArray(p)) return p as Record<string, unknown>;
+    } catch {
+      // segue sem contexto
+    }
+  }
+  return {};
+}
+
+/** Valor de uma variável de contexto do POST. Pura. */
+export function valorDoContexto(corpo: Record<string, unknown>, nome: string): string | null {
+  return textoDo(contextoDoPost(corpo)[nome]);
 }
 
 export type DesfechoDoSinalDaEquipe =
@@ -135,8 +170,10 @@ export async function tratarEquipeAssumiuDoPost(
     requestId?: string;
   },
 ): Promise<DesfechoDoSinalDaEquipe> {
-  // Sem campos personalizados no corpo não há sinal possível: nem lê a conexão.
-  if (!input.corpo || input.corpo.campos_personalizados == null) return { reconhecido: false };
+  // Sem campos personalizados nem contexto no corpo não há sinal possível: nem lê a conexão.
+  if (!input.corpo || (input.corpo.campos_personalizados == null && input.corpo.bot_context == null)) {
+    return { reconhecido: false };
+  }
   let config: ConfigDoAtendimentoExterno | null = null;
   try {
     config = await configDaConexao(admin, input.orgId, input.channelSessionId);

@@ -69,7 +69,11 @@ beforeEach(() => {
 });
 
 describe("ehSinalDeEquipeAssumiu (regra pura)", () => {
-  const config = { campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" }, valorQuandoEquipeAssume: "assumido" };
+  const config = {
+    campoDaIa: { nome: "LSIA", valorAoPassar: "equipe" },
+    valorQuandoEquipeAssume: "assumido",
+    variavelQuandoEquipeAssume: null as string | null,
+  };
 
   it("reconhece o valor, sem acento e sem caixa, em objeto ou em JSON-texto", () => {
     expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }), config)).toBe(true);
@@ -96,7 +100,49 @@ describe("ehSinalDeEquipeAssumiu (regra pura)", () => {
   });
 });
 
+describe("ehSinalDeEquipeAssumiu pela variável de contexto (bot_context)", () => {
+  // A forma real do ChatGuru: o diálogo grava a variável de contexto, que chega em todo POST.
+  const config = {
+    campoDaIa: null,
+    valorQuandoEquipeAssume: "assumido",
+    variavelQuandoEquipeAssume: "LSIA" as string | null,
+  };
+
+  it("reconhece a variável em objeto ou em JSON-texto, sem acento e sem caixa", () => {
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { URA: "x", LSIA: "assumido" } }), config)).toBe(true);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: '{"LSIA":" Assumído "}' }), config)).toBe(true);
+  });
+
+  it("o valor de antes (novo), outra variável ou contexto ausente: não é sinal", () => {
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { LSIA: "novo" } }), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: { OUTRA: "assumido" } }), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}), config)).toBe(false);
+    expect(ehSinalDeEquipeAssumiu(post({}, { bot_context: "lixo" }), config)).toBe(false);
+  });
+
+  it("com a variável preenchida, o campo personalizado de mesmo nome não conta", () => {
+    expect(ehSinalDeEquipeAssumiu(post({ LSIA: "assumido" }, { bot_context: { LSIA: "novo" } }), config)).toBe(false);
+  });
+
+  it("sem valor (desligado), a variável sozinha nunca é sinal", () => {
+    expect(
+      ehSinalDeEquipeAssumiu(post({}, { bot_context: { LSIA: "assumido" } }), { ...config, valorQuandoEquipeAssume: null }),
+    ).toBe(false);
+  });
+});
+
 describe("tratarEquipeAssumiuDoPost", () => {
+  it("pela variável de contexto: aplica mesmo sem campos personalizados no POST", async () => {
+    const a = admin({ acoes: [], valor_quando_equipe_assume: "assumido", variavel_quando_equipe_assume: "LSIA" });
+    const r = await tratarEquipeAssumiuDoPost(a.cliente, {
+      orgId: ORG,
+      channelSessionId: SESSAO,
+      corpo: { celular: "5531999998888", texto_mensagem: "x", bot_context: { LSIA: "assumido" } },
+    });
+    expect(r).toEqual({ reconhecido: true, status: "aplicado", cardMovidoPara: "etapa-equipe" });
+    expect(chamadas).toHaveLength(1);
+  });
+
   it("ligada e com o valor: aplica pelo serviço do PC-029, origem plataforma, e o POST não vira mensagem", async () => {
     const a = admin(LIGADA);
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
@@ -127,7 +173,7 @@ describe("tratarEquipeAssumiuDoPost", () => {
     expect(chamadas).toHaveLength(0);
   });
 
-  it("POST comum, sem campos personalizados: nem lê a conexão", async () => {
+  it("POST comum, sem campos personalizados nem contexto: nem lê a conexão", async () => {
     const a = admin(LIGADA);
     const r = await tratarEquipeAssumiuDoPost(a.cliente, {
       orgId: ORG,
