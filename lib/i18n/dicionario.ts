@@ -18021,6 +18021,11 @@ export const DICIONARIO: Traducoes = {
   "Valor gravado ao passar para a equipe": { es: "Valor guardado al pasar al equipo" },
   "vazio desliga": { es: "vacío apaga" },
   "Valor que a equipe grava ao assumir na plataforma": { es: "Valor que el equipo guarda al asumir en la plataforma" },
+  "A IA só responde no chat sem responsável na plataforma": { es: "La IA solo responde en el chat sin responsable en la plataforma" },
+  "Ligado: quando alguém da equipe vira responsável pelo chat na plataforma, a IA para, o follow-up pausa e o card vai para a etapa da equipe, sem precisar executar diálogo. Quando o chat volta para um setor sem responsável, a IA volta a atender.":
+    {
+      es: "Activado: cuando alguien del equipo pasa a ser responsable del chat en la plataforma, la IA se detiene, el seguimiento se pausa y la tarjeta va a la etapa del equipo, sin ejecutar ningún diálogo. Cuando el chat vuelve a un sector sin responsable, la IA vuelve a atender.",
+    },
   "Quando alguém da equipe executa no chat um diálogo que grava este valor no campo da IA e faz o POST para o CRM, a IA para, o follow-up pausa e o card vai para a etapa da equipe. Use um valor diferente do gravado ao passar para a equipe.":
     {
       es: "Cuando alguien del equipo ejecuta en el chat un diálogo que guarda este valor en el campo de la IA y hace el POST al CRM, la IA se detiene, el seguimiento se pausa y la tarjeta va a la etapa del equipo. Use un valor diferente del guardado al pasar al equipo.",

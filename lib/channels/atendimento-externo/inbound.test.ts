@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Um corpo que diga ser de outro número, ou que traga dados de outra empresa,
  * não escolhe onde a mensagem é gravada.
  */
-const { ingest, phoneDaSessao, enquete, conexoesAtivas, sinalDaEquipe } = vi.hoisted(() => ({
+const { ingest, phoneDaSessao, enquete, conexoesAtivas, sinalDaEquipe, irma, regraLigada, aplicarRegra } = vi.hoisted(() => ({
+  irma: vi.fn(async (..._args: unknown[]) => null as string | null),
+  regraLigada: vi.fn(async (..._args: unknown[]) => false),
+  aplicarRegra: vi.fn(async (..._args: unknown[]) => "calou"),
   sinalDaEquipe: vi.fn(async (..._args: unknown[]) => ({ reconhecido: false }) as Record<string, unknown>),
   conexoesAtivas: vi.fn(async (..._args: unknown[]) => 1),
   ingest: vi.fn(async (..._args: unknown[]) => ({ status: "ingested", messageId: "m-1", conversationId: "c-1" })),
@@ -19,10 +22,12 @@ const { ingest, phoneDaSessao, enquete, conexoesAtivas, sinalDaEquipe } = vi.hoi
 vi.mock("./ingest", () => ({ ingestAtendimentoExterno: ingest }));
 vi.mock("./enquete", () => ({ tratarEnqueteDoPost: enquete }));
 vi.mock("./equipe-assumiu", () => ({ tratarEquipeAssumiuDoPost: sinalDaEquipe }));
+vi.mock("./responsavel", () => ({ regraDoResponsavelLigada: regraLigada, aplicarRegraDoResponsavel: aplicarRegra }));
 vi.mock("./sessao", async (original) => ({
   ...((await original()) as Record<string, unknown>),
   phoneIdDaSessao: phoneDaSessao,
   contarConexoesAtivas: conexoesAtivas,
+  conexaoIrmaDoNumero: irma,
 }));
 
 import {
@@ -55,6 +60,11 @@ beforeEach(() => {
   sinalDaEquipe.mockResolvedValue({ reconhecido: false });
   conexoesAtivas.mockReset();
   conexoesAtivas.mockResolvedValue(1);
+  irma.mockReset();
+  irma.mockResolvedValue(null);
+  regraLigada.mockReset();
+  regraLigada.mockResolvedValue(false);
+  aplicarRegra.mockClear();
 });
 
 describe("entrada do canal dentro da plataforma — segredo", () => {
@@ -268,5 +278,78 @@ describe("entrada do canal dentro da plataforma — equipe assumiu (PC-058)", ()
     const r = await chamar();
     expect(r.ok).toBe(true);
     expect(ingest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("entrada do canal — o outro número da mesma conta pelo mesmo endereço", () => {
+  const doOutroNumero = () => corpo({ phone_id: "fone-por-qr-da-mesma-conta" });
+
+  it("a guarda aceita quando o número é de uma conexão IRMÃ (mesma organização e conta), escopada pela sessão", async () => {
+    irma.mockResolvedValue("sess-irma");
+    const ok = await inboundPayloadBelongsToSession(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: doOutroNumero(),
+      headers: new Headers(),
+      secret: SEGREDO_A,
+    });
+    expect(ok).toBe(true);
+    expect(irma).toHaveBeenCalledWith(admin, ORG_A, "sess-a", "fone-por-qr-da-mesma-conta");
+  });
+
+  it("a mensagem do outro número é gravada na conexão DELE (a resposta sai pelo número certo)", async () => {
+    irma.mockResolvedValue("sess-irma");
+    const r = await handleInboundWebhook(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: doOutroNumero(),
+      headers: new Headers({ [HEADER_DO_SEGREDO]: SEGREDO_A }),
+      secret: SEGREDO_A,
+    });
+    expect(r.ok).toBe(true);
+    expect(ingest).toHaveBeenCalledWith(
+      admin,
+      expect.anything(),
+      expect.objectContaining({ organizationId: ORG_A, channelSessionId: "sess-irma" }),
+    );
+  });
+
+  it("sem conexão irmã, nada entra", async () => {
+    const r = await handleInboundWebhook(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: doOutroNumero(),
+      headers: new Headers({ [HEADER_DO_SEGREDO]: SEGREDO_A }),
+      secret: SEGREDO_A,
+    });
+    expect(r).toEqual({ ok: true, body: { status: "ignored", reason: "evento_de_outra_conta" } });
+    expect(ingest).not.toHaveBeenCalled();
+  });
+});
+
+describe("entrada do canal — o responsável pelo chat decide a IA", () => {
+  const chamar = (extra: Record<string, unknown> = {}) =>
+    handleInboundWebhook(admin, {
+      session: sessao(ORG_A, "sess-a"),
+      rawBody: corpo(extra),
+      headers: new Headers({ [HEADER_DO_SEGREDO]: SEGREDO_A }),
+      secret: SEGREDO_A,
+    });
+
+  it("chave desligada: a ingestão não recebe a regra (como antes)", async () => {
+    await chamar({ responsavel_email: "pessoa@exemplo.test" });
+    const dono = ingest.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(dono.antesDaMensagem).toBeUndefined();
+    expect(aplicarRegra).not.toHaveBeenCalled();
+  });
+
+  it("chave ligada: a regra roda antes da mensagem, com a organização e a conexão do token", async () => {
+    regraLigada.mockResolvedValue(true);
+    await chamar({ responsavel_email: "pessoa@exemplo.test" });
+    expect(regraLigada).toHaveBeenCalledWith(admin, ORG_A, "sess-a");
+    const dono = ingest.mock.calls[0]?.[2] as { antesDaMensagem?: (c: string) => Promise<void> };
+    expect(typeof dono.antesDaMensagem).toBe("function");
+    await dono.antesDaMensagem!("conv-9");
+    expect(aplicarRegra).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ orgId: ORG_A, channelSessionId: "sess-a", conversationId: "conv-9", ligado: true }),
+    );
   });
 });

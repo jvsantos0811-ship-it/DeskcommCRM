@@ -25,7 +25,8 @@ import { corpoDoPost, lerEntrada, phoneIdDoCorpo, segredoConfere } from "./atend
 import { tratarEnqueteDoPost } from "./atendimento-externo/enquete";
 import { tratarEquipeAssumiuDoPost } from "./atendimento-externo/equipe-assumiu";
 import { ingestAtendimentoExterno } from "./atendimento-externo/ingest";
-import { contarConexoesAtivas, phoneIdDaSessao } from "./atendimento-externo/sessao";
+import { aplicarRegraDoResponsavel, regraDoResponsavelLigada } from "./atendimento-externo/responsavel";
+import { conexaoIrmaDoNumero, contarConexoesAtivas, phoneIdDaSessao } from "./atendimento-externo/sessao";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -161,7 +162,11 @@ export async function inboundPayloadBelongsToSession(admin: SupabaseClient, inpu
       return (await contarConexoesAtivas(admin, input.session.organization_id)) <= 1;
     }
     const daSessao = await phoneIdDaSessao(admin, input.session.organization_id, input.session.id);
-    return daSessao !== null && daSessao === doCorpo;
+    if (daSessao !== null && daSessao === doCorpo) return true;
+    // O outro número da MESMA conta e da MESMA organização: o chatbot da
+    // plataforma é um só e o diálogo tem um endereço só. A entrada é desviada
+    // para a conexão dele em `atendimentoExternoInbound`.
+    return (await conexaoIrmaDoNumero(admin, input.session.organization_id, input.session.id, doCorpo)) !== null;
   }
   if (input.session.provider === CHANNEL_PROVIDER_ZERNIO) {
     const { evento, conta: contaDoEvento } = cabecalhoDoEventoZernio(input.rawBody);
@@ -504,6 +509,18 @@ async function atendimentoExternoInbound(
     return { ok: false, code: "unauthorized", message: "bad_secret" };
   }
 
+  // O POST do outro número da mesma conta chega pelo endereço deste: quem
+  // recebe é a conexão DELE (mensagem, resposta e configuração). A guarda de
+  // conta (`inboundPayloadBelongsToSession`) já conferiu que ela existe.
+  const orgId = input.session.organization_id;
+  let sessaoId = input.session.id;
+  const doCorpo = phoneIdDoCorpo(input.rawBody);
+  if (doCorpo !== null && (await phoneIdDaSessao(admin, orgId, sessaoId)) !== doCorpo) {
+    const irma = await conexaoIrmaDoNumero(admin, orgId, sessaoId, doCorpo);
+    if (!irma) return { ok: true, body: { status: "ignored", reason: "evento_de_outra_conta" } };
+    sessaoId = irma;
+  }
+
   // PC-050: o voto na enquete do grupo, quando a chave da organização está
   // ligada. Grava só o voto (nenhuma mensagem, nenhuma IA). Desligada = como
   // antes. Nunca lança.
@@ -525,8 +542,8 @@ async function atendimentoExternoInbound(
   // conexão ligada, ele cala a IA e pausa o follow-up como a resposta da equipe
   // pelo CRM; o POST NÃO vira mensagem e a IA não roda. Desligada = como antes.
   const equipe = await tratarEquipeAssumiuDoPost(admin, {
-    orgId: input.session.organization_id,
-    channelSessionId: input.session.id,
+    orgId,
+    channelSessionId: sessaoId,
     corpo: corpoDoPost(input.rawBody),
   });
   if (equipe.reconhecido) {
@@ -562,9 +579,27 @@ async function atendimentoExternoInbound(
   }
   if ("ignorar" in leitura) return { ok: true, body: { status: "ignored", reason: leitura.ignorar } };
 
+  // O responsável pelo chat na plataforma decide se a IA fala (chave da
+  // conexão; desligada = como antes). Roda com a conversa conhecida e antes de
+  // a mensagem ser gravada — a gravação é o que acorda a IA.
+  const corpo = corpoDoPost(input.rawBody);
+  const regraLigada = await regraDoResponsavelLigada(admin, orgId, sessaoId);
   const r = await ingestAtendimentoExterno(admin, leitura.entrada, {
-    organizationId: input.session.organization_id,
-    channelSessionId: input.session.id,
+    organizationId: orgId,
+    channelSessionId: sessaoId,
+    ...(regraLigada
+      ? {
+          antesDaMensagem: async (conversationId: string) => {
+            await aplicarRegraDoResponsavel(admin, {
+              orgId,
+              channelSessionId: sessaoId,
+              conversationId,
+              corpo,
+              ligado: true,
+            });
+          },
+        }
+      : {}),
   });
   // Falha de ESCRITA sobe como exceção: a rota responde 500 e a plataforma
   // reentrega — o evento era bom, nós é que não gravamos.

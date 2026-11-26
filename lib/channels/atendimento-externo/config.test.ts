@@ -79,6 +79,23 @@ describe("valor de quando a equipe assume na plataforma (PC-058)", () => {
   });
 });
 
+describe("a IA só responde no chat sem responsável na plataforma", () => {
+  it("nasce desligada; só `true` liga", () => {
+    expect(CONFIG_VAZIA.iaSoSemResponsavel).toBe(false);
+    expect(lerConfigDoAtendimentoExterno({}).iaSoSemResponsavel).toBe(false);
+    expect(lerConfigDoAtendimentoExterno({ ia_so_sem_responsavel: true }).iaSoSemResponsavel).toBe(true);
+  });
+
+  it("tela antiga (sem o campo) não desliga o que estava ligado; a tela nova liga e desliga", () => {
+    const atual = lerConfigDoAtendimentoExterno({ ia_so_sem_responsavel: true });
+    expect(configParaGravar(configDoAtendimentoExternoEntrada.parse({ acoes: [] }), atual).ia_so_sem_responsavel).toBe(true);
+    const desliga = configDoAtendimentoExternoEntrada.parse({ acoes: [], ia_so_sem_responsavel: false });
+    expect(configParaGravar(desliga, atual).ia_so_sem_responsavel).toBe(false);
+    const liga = configDoAtendimentoExternoEntrada.parse({ acoes: [], ia_so_sem_responsavel: true });
+    expect(configParaGravar(liga).ia_so_sem_responsavel).toBe(true);
+  });
+});
+
 describe("variável de contexto de quando a equipe assume (PC-058)", () => {
   it("nasce vazia, é lida e sobrevive a tela antiga; vazio volta ao campo da IA", () => {
     expect(CONFIG_VAZIA.variavelQuandoEquipeAssume).toBeNull();

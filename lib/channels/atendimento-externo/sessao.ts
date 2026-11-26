@@ -344,3 +344,47 @@ export async function phoneIdDaSessao(
   if (error) throw new Error(`chatguru_refs_lookup_failed: ${error.message}`);
   return (data as { chatguru_phone_id?: string | null } | null)?.chatguru_phone_id ?? null;
 }
+
+/**
+ * A conexão IRMÃ que atende este `phone_id`: mesma organização, mesma conta da
+ * plataforma (servidor e conta iguais aos da conexão onde o POST chegou), ativa.
+ *
+ * Por que existe: a conta da plataforma tem UM chatbot para os dois números, e
+ * o diálogo que entrega à IA tem UM endereço. Sem isto, o chat do segundo
+ * número que cai no setor da IA era recusado como "evento de outra conta" e o
+ * cliente ficava sem resposta. O segredo já provou a organização e a conta;
+ * o `phone_id` só escolhe qual das conexões dela recebe.
+ *
+ * `null` = nenhuma irmã (outra conta, outra organização, arquivada, ou o
+ * próprio número). LANÇA quando a consulta falha: "não sei" não vira "aceito".
+ */
+export async function conexaoIrmaDoNumero(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string,
+  phoneId: string,
+): Promise<string | null> {
+  const { data: atual, error: e1 } = await admin
+    .from("channel_sessions")
+    .select("chatguru_servidor, chatguru_account_id")
+    .eq("organization_id", organizationId)
+    .eq("id", channelSessionId)
+    .maybeSingle();
+  if (e1) throw new Error(`chatguru_refs_lookup_failed: ${e1.message}`);
+  const a = atual as { chatguru_servidor?: string | null; chatguru_account_id?: string | null } | null;
+  if (!a?.chatguru_servidor || !a.chatguru_account_id) return null;
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("provider", CHANNEL_PROVIDER_ATENDIMENTO_EXTERNO)
+    .eq("chatguru_servidor", a.chatguru_servidor)
+    .eq("chatguru_account_id", a.chatguru_account_id)
+    .eq("chatguru_phone_id", phoneId)
+    .is("archived_at", null)
+    .neq("id", channelSessionId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`chatguru_sibling_lookup_failed: ${error.message}`);
+  return (data as { id: string } | null)?.id ?? null;
+}

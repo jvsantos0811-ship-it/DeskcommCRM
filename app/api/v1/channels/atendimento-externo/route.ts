@@ -135,6 +135,7 @@ async function estadoDaConexao(
       })),
       // PC-058: o diálogo da equipe na plataforma cala a IA.
       valor_quando_equipe_assume: sessao.config.valorQuandoEquipeAssume,
+      ia_so_sem_responsavel: sessao.config.iaSoSemResponsavel,
       variavel_quando_equipe_assume: sessao.config.variavelQuandoEquipeAssume,
       // PC-052 parte 3: diálogo por uso, fora da janela de 24 h — por número.
       roteiros_fora_da_janela: Object.fromEntries(
@@ -395,6 +396,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       transferencia: config.dialogo_transferencia !== null,
       campo_da_ia: config.campo_da_ia !== null,
       equipe_assumiu_na_plataforma: config.valor_quando_equipe_assume !== null,
+      ia_so_sem_responsavel: config.ia_so_sem_responsavel === true,
       equipe_assumiu_por_contexto: config.variavel_quando_equipe_assume !== null,
       roteiros_fora_da_janela: Object.values(
         (config.roteiros_fora_da_janela ?? {}) as Record<string, string | null>,
