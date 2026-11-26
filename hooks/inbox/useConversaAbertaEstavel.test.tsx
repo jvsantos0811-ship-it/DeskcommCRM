@@ -52,7 +52,8 @@ describe("useConversaAbertaEstavel", () => {
 
   it("sair e voltar para a mesma conversa não mostra o objeto da abertura anterior", () => {
     const { result, rerender } = montar({ selectedId: "a", daLeitura: a1, naoEncontrada: false });
-    rerender({ selectedId: "b", daLeitura: b1, naoEncontrada: false });
+    // B ainda carregando (nenhuma leitura dele chegou) quando a pessoa volta para A.
+    rerender({ selectedId: "b", daLeitura: null, naoEncontrada: false });
     // Volta para A por um caminho fora da lista: a busca por id ainda não voltou.
     rerender({ selectedId: "a", daLeitura: null, naoEncontrada: false });
     expect(result.current).toBeNull();
