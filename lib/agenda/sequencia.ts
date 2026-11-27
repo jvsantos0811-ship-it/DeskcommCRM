@@ -11,6 +11,12 @@
  *     17h), recuando para o último dia com envio quando a véspera não tem (o
  *     domingo de quem não manda no domingo). Reunião no corte ou depois: no mesmo
  *     dia (padrão 8h30).
+ *  3. **Reforço** (PC-064) — a 2ª pergunta, só para quem NÃO confirmou depois da
+ *     1ª. Reunião antes do corte: no dia da reunião, entre `hora_manha` e
+ *     `ate_manha` (padrão 8h30–9h30). Reunião no corte ou depois: no dia, a
+ *     partir de `hora_tarde` (padrão 11h). Nunca a menos de uma hora da 1ª, e
+ *     uma vez por horário. "Confirmou" quem o cron decide (presença `confirmada`
+ *     ou qualquer resposta do cliente depois da 1ª): aqui só a hora.
  *
  * Este arquivo é PURO: o schema único da configuração (`lerSequencia` nunca
  * lança) e a conta de QUANDO cada passo sai. Quem envia é o cron
@@ -39,7 +45,10 @@ export const TETO_DO_TEXTO_DA_SEQUENCIA = 1_000;
 /** Nenhum passo sai a menos disto do começo da reunião. */
 export const MARGEM_ANTES_DA_REUNIAO_MS = 30 * 60_000;
 
-export type PassoDaSequencia = "aquecimento" | "confirmacao_vespera" | "confirmacao_do_dia";
+export type PassoDaSequencia = "aquecimento" | "confirmacao_vespera" | "confirmacao_do_dia" | "confirmacao_reforco";
+
+/** O reforço nunca sai a menos disto da 1ª confirmação. */
+export const INTERVALO_MINIMO_DO_REFORCO_MS = 60 * 60_000;
 
 export interface ConfigDaSequencia {
   /**
@@ -56,6 +65,14 @@ export interface ConfigDaSequencia {
     textoVespera: string | null;
     textoDoDia: string | null;
   };
+  /** PC-064: a 2ª pergunta para quem não confirmou. Desligada de fábrica. */
+  reforco: {
+    ativo: boolean;
+    horaManha: string;
+    ateManha: string;
+    horaTarde: string;
+    texto: string | null;
+  };
 }
 
 /**
@@ -69,6 +86,9 @@ export function textoPadraoDaVespera(t: (texto: string) => string): string {
 export function textoPadraoDoDia(t: (texto: string) => string): string {
   return t("Oi, {{primeiro_nome}}! É hoje, às {{hora}}.\n\nEstá confirmado?");
 }
+export function textoPadraoDoReforco(t: (texto: string) => string): string {
+  return t("Oi, {{primeiro_nome}}! Só confirmando o seu horário de hoje, às {{hora}}.\n\nPosso confirmar?");
+}
 
 export const SEQUENCIA_PADRAO: ConfigDaSequencia = Object.freeze({
   aquecimento: { ativo: false, hora: "19:00", texto: null, ligadoEm: null },
@@ -80,6 +100,7 @@ export const SEQUENCIA_PADRAO: ConfigDaSequencia = Object.freeze({
     textoVespera: null,
     textoDoDia: null,
   },
+  reforco: { ativo: false, horaManha: "08:30", ateManha: "09:30", horaTarde: "11:00", texto: null },
 }) as ConfigDaSequencia;
 
 /** Vazio ou só espaço = sem texto próprio. O resto vai EXATAMENTE como veio. */
@@ -89,6 +110,10 @@ function textoOuNulo(v: string | null | undefined): string | null {
 }
 
 const hora = z.string().regex(HORA_HHMM);
+function horaEmMinutos(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
 const texto = z.string().max(TETO_DO_TEXTO_DA_SEQUENCIA).nullable().optional();
 
 /** O que a tela manda. Tudo explícito: quem salva manda a configuração inteira. */
@@ -105,6 +130,22 @@ export const sequenciaEntrada = z
         texto_do_dia: texto,
       })
       .strict(),
+    /**
+     * Opcional: uma tela antiga (aberta antes da atualização) salva sem ele, e
+     * aí vale o que estava gravado (`sequenciaParaGravar` recebe o de antes).
+     */
+    reforco: z
+      .object({
+        ativo: z.boolean(),
+        hora_manha: hora,
+        ate_manha: hora,
+        hora_tarde: hora,
+        texto,
+      })
+      .strict()
+      // Invertidos, a janela da manhã nunca abre e o reforço some sem aviso.
+      .refine((r) => horaEmMinutos(r.ate_manha) > horaEmMinutos(r.hora_manha), { path: ["ate_manha"] })
+      .optional(),
   })
   .strict();
 
@@ -130,7 +171,23 @@ export function aquecimentoLigadoEm(input: {
 export function sequenciaParaGravar(
   e: z.output<typeof sequenciaEntrada>,
   ligadoEm: string | null = null,
+  antes: ConfigDaSequencia = SEQUENCIA_PADRAO,
 ): Record<string, unknown> {
+  const reforco = e.reforco
+    ? {
+        ativo: e.reforco.ativo,
+        hora_manha: e.reforco.hora_manha,
+        ate_manha: e.reforco.ate_manha,
+        hora_tarde: e.reforco.hora_tarde,
+        texto: textoOuNulo(e.reforco.texto),
+      }
+    : {
+        ativo: antes.reforco.ativo,
+        hora_manha: antes.reforco.horaManha,
+        ate_manha: antes.reforco.ateManha,
+        hora_tarde: antes.reforco.horaTarde,
+        texto: antes.reforco.texto,
+      };
   return {
     aquecimento: {
       ativo: e.aquecimento.ativo,
@@ -146,6 +203,7 @@ export function sequenciaParaGravar(
       texto_vespera: textoOuNulo(e.confirmacao.texto_vespera),
       texto_do_dia: textoOuNulo(e.confirmacao.texto_do_dia),
     },
+    reforco,
   };
 }
 
@@ -168,6 +226,7 @@ export function lerSequencia(raw: unknown): ConfigDaSequencia {
   const r = objeto(raw);
   const a = objeto(r.aquecimento);
   const c = objeto(r.confirmacao);
+  const f = objeto(r.reforco);
   const p = SEQUENCIA_PADRAO;
   return {
     aquecimento: {
@@ -183,6 +242,13 @@ export function lerSequencia(raw: unknown): ConfigDaSequencia {
       horaDoDia: lerHora(c.hora_do_dia, p.confirmacao.horaDoDia),
       textoVespera: lerTexto(c.texto_vespera),
       textoDoDia: lerTexto(c.texto_do_dia),
+    },
+    reforco: {
+      ativo: f.ativo === true,
+      horaManha: lerHora(f.hora_manha, p.reforco.horaManha),
+      ateManha: lerHora(f.ate_manha, p.reforco.ateManha),
+      horaTarde: lerHora(f.hora_tarde, p.reforco.horaTarde),
+      texto: lerTexto(f.texto),
     },
   };
 }
@@ -297,6 +363,36 @@ export function ocasiaoDaConfirmacao(input: {
   return ocasiao;
 }
 
+/**
+ * O reforço (PC-064), sempre no DIA da reunião. Antes do corte: de `horaManha`
+ * até `ateManha` (e nunca depois de 30 minutos antes da reunião). No corte ou
+ * depois: de `horaTarde` até 30 minutos antes. E nunca a menos de uma hora da
+ * 1ª confirmação (`primeiraEm`): um horário configurado cedo demais empurra o
+ * reforço, não o cola na 1ª. `null` = não há ocasião (a janela da manhã já
+ * fechou antes de abrir, ou a reunião é cedo demais para caber).
+ */
+export function ocasiaoDoReforco(input: {
+  comeca: Date;
+  fuso: string;
+  corte: string;
+  horaManha: string;
+  ateManha: string;
+  horaTarde: string;
+  primeiraEm: Date;
+}): Ocasiao | null {
+  const p = partesNoFuso(input.comeca, input.fuso);
+  const diaDaReuniao: Dia = { ano: p.ano, mes: p.mes, dia: p.dia };
+  const margem = new Date(input.comeca.getTime() - MARGEM_ANTES_DA_REUNIAO_MS);
+  const deManha = p.hora * 60 + p.minuto < minutosDe(input.corte);
+  const configurado = naHora(diaDaReuniao, deManha ? input.horaManha : input.horaTarde, input.fuso);
+  const alvo = new Date(Math.max(configurado.getTime(), input.primeiraEm.getTime() + INTERVALO_MINIMO_DO_REFORCO_MS));
+  const validaAte = deManha
+    ? new Date(Math.min(naHora(diaDaReuniao, input.ateManha, input.fuso).getTime(), margem.getTime()))
+    : margem;
+  if (alvo.getTime() >= validaAte.getTime()) return null;
+  return { passo: "confirmacao_reforco", alvo, validaAte };
+}
+
 /** A ocasião está aberta agora? */
 export function ocasiaoAberta(o: Ocasiao, agora: Date): boolean {
   return agora.getTime() >= o.alvo.getTime() && agora.getTime() < o.validaAte.getTime();
@@ -366,6 +462,11 @@ export interface LinhaDaSequencia {
   starts_at_marked_at: string | null;
   warmup_sent_at: string | null;
   confirmation_sent_for: string | null;
+  /** PC-064: quando a 1ª confirmação saiu (nulo nas que saíram antes da coluna). */
+  confirmation_sent_at?: string | null;
+  /** PC-064: o HORÁRIO para o qual o reforço saiu — uma vez por horário. */
+  confirmation_retry_sent_for?: string | null;
+  lead_presence?: string | null;
 }
 
 function mesmoInstante(a: string | null, b: string | null): boolean {
@@ -378,7 +479,10 @@ function mesmoInstante(a: string | null, b: string | null): boolean {
  * aquecimento primeiro (um passo por rodada). O aquecimento conta da marcação
  * ORIGINAL (`created_at`: ele sai uma vez por compromisso); a confirmação conta
  * de quando ESTE horário foi marcado (`starts_at_marked_at`, a régua da
- * remarcação do lembrete), e sai uma vez por horário.
+ * remarcação do lembrete), e sai uma vez por horário. O reforço (PC-064) só
+ * depois da 1ª deste horário, uma vez por horário, e nunca para quem já está
+ * com a presença confirmada (ou disse que não vai). A outra metade de
+ * "confirmou" — o cliente respondeu depois da 1ª — o cron confere no banco.
  */
 export function passoAberto(input: {
   linha: LinhaDaSequencia;
@@ -411,5 +515,55 @@ export function passoAberto(input: {
     });
     if (o && ocasiaoAberta(o, agora)) return o;
   }
+  const primeiraDesteHorario = mesmoInstante(linha.confirmation_sent_for, linha.starts_at);
+  const presencaResolvida = linha.lead_presence === "confirmada" || linha.lead_presence === "nao_vai";
+  if (
+    config.confirmacao.ativo &&
+    config.reforco.ativo &&
+    primeiraDesteHorario &&
+    !mesmoInstante(linha.confirmation_retry_sent_for ?? null, linha.starts_at) &&
+    !presencaResolvida
+  ) {
+    const primeiraEm = quandoSaiuAPrimeira(linha, config, fuso, input.diaTemEnvio);
+    if (!primeiraEm) return null;
+    const o = ocasiaoDoReforco({
+      comeca,
+      fuso,
+      corte: config.confirmacao.corte,
+      horaManha: config.reforco.horaManha,
+      ateManha: config.reforco.ateManha,
+      horaTarde: config.reforco.horaTarde,
+      primeiraEm,
+    });
+    if (o && ocasiaoAberta(o, agora)) return o;
+  }
   return null;
+}
+
+/**
+ * Quando a 1ª confirmação deste horário saiu. O carimbo (`confirmation_sent_at`)
+ * quando há; nas que saíram antes da coluna existir, a hora em que ela estava
+ * marcada para sair (o envio é entre ela e o fim da validade, e a régua do
+ * reforço só precisa de um piso). Sem nenhum dos dois: não se sabe, e o reforço
+ * não sai — na dúvida, não manda.
+ */
+export function quandoSaiuAPrimeira(
+  linha: LinhaDaSequencia,
+  config: ConfigDaSequencia,
+  fuso: string,
+  diaTemEnvio: (diaDaSemana: number) => boolean,
+): Date | null {
+  if (linha.confirmation_sent_at && !Number.isNaN(Date.parse(linha.confirmation_sent_at))) {
+    return new Date(linha.confirmation_sent_at);
+  }
+  const o = ocasiaoDaConfirmacao({
+    marcadoEm: new Date(0),
+    comeca: new Date(linha.starts_at),
+    fuso,
+    corte: config.confirmacao.corte,
+    horaVespera: config.confirmacao.horaVespera,
+    horaDoDia: config.confirmacao.horaDoDia,
+    diaTemEnvio,
+  });
+  return o ? o.alvo : null;
 }

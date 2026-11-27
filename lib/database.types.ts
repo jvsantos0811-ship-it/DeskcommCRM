@@ -3328,6 +3328,8 @@ export type Database = {
           lead_presence: string | null
           lead_presence_painted: string | null
           target_calendar_id: string | null
+          confirmation_retry_sent_for: string | null
+          confirmation_sent_at: string | null
           confirmation_sent_for: string | null
           warmup_sent_at: string | null
           location_details: string | null
@@ -3400,6 +3402,8 @@ export type Database = {
           lead_presence?: string | null
           lead_presence_painted?: string | null
           target_calendar_id?: string | null
+          confirmation_retry_sent_for?: string | null
+          confirmation_sent_at?: string | null
           confirmation_sent_for?: string | null
           warmup_sent_at?: string | null
           location_details?: string | null
@@ -3472,6 +3476,8 @@ export type Database = {
           lead_presence?: string | null
           lead_presence_painted?: string | null
           target_calendar_id?: string | null
+          confirmation_retry_sent_for?: string | null
+          confirmation_sent_at?: string | null
           confirmation_sent_for?: string | null
           warmup_sent_at?: string | null
           location_details?: string | null

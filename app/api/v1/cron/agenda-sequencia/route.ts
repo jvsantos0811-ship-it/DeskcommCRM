@@ -13,6 +13,14 @@
  * antes; a confirmação, se também estiver aberta, sai na rodada seguinte. Rajada
  * de mensagens para o mesmo número é o que faz o número ser denunciado.
  *
+ * **O reforço (PC-064) é a 2ª pergunta, e só para quem não confirmou.** Sai no
+ * dia da reunião (de manhã numa janela curta, ou a partir de uma hora da manhã
+ * para reunião à tarde), uma vez por horário (`confirmation_retry_sent_for`),
+ * nunca a menos de uma hora da 1ª. Não sai se a presença está `confirmada` ou
+ * `nao_vai`, nem se o cliente mandou QUALQUER mensagem depois da 1ª — aí a
+ * conversa está viva e quem cuida é a IA ou a equipe. A 1ª passa a gravar quando
+ * saiu (`confirmation_sent_at`), que é o piso dessas duas contas.
+ *
  * **O carimbo vai ANTES do envio, e é uma troca condicional.** A mesma régua do
  * lembrete (#2223): envio em dobro é pior que não-envio. O aquecimento só é
  * reivindicado se `warmup_sent_at` ainda é nulo; a confirmação, se o
@@ -55,8 +63,10 @@ import {
   lerSequencia,
   passoAberto,
   pecasDaSequencia,
+  quandoSaiuAPrimeira,
   textoPadraoDaVespera,
   textoPadraoDoDia,
+  textoPadraoDoReforco,
 } from "@/lib/agenda/sequencia";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -108,13 +118,15 @@ interface CompromissoDaSequencia {
   starts_at_marked_at: string | null;
   warmup_sent_at: string | null;
   confirmation_sent_for: string | null;
+  confirmation_sent_at: string | null;
+  confirmation_retry_sent_for: string | null;
   lead_presence: string | null;
   calendar_event_types: TipoDaSequencia | TipoDaSequencia[] | null;
   organizations?: { status?: string | null } | Array<{ status?: string | null }> | null;
 }
 
 const COLUNAS =
-  "id, organization_id, contact_id, conversation_id, owner_user_id, starts_at, created_at, starts_at_marked_at, warmup_sent_at, confirmation_sent_for, lead_presence, " +
+  "id, organization_id, contact_id, conversation_id, owner_user_id, starts_at, created_at, starts_at_marked_at, warmup_sent_at, confirmation_sent_for, confirmation_sent_at, confirmation_retry_sent_for, lead_presence, " +
   "calendar_event_types!inner(reminder_channel_session_id, post_booking_sequence_enabled, post_booking_sequence), organizations:organization_id!inner(status)";
 
 function tipoDe(linha: CompromissoDaSequencia): TipoDaSequencia | null {
@@ -241,7 +253,14 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    const usoDoRoteiro = provavel.passo === "aquecimento" ? null : provavel.passo;
+    // O reforço (PC-064) sai no dia da reunião: fora da janela de 24 h, pelo
+    // diálogo da confirmação do dia.
+    const usoDoRoteiro =
+      provavel.passo === "aquecimento"
+        ? null
+        : provavel.passo === "confirmacao_reforco"
+          ? "confirmacao_do_dia"
+          : provavel.passo;
     const escolha = await resolverRemetenteDoLembrete(
       admin,
       linha,
@@ -356,18 +375,74 @@ async function handle(req: NextRequest): Promise<Response> {
       continue;
     }
 
+    // ─── O reforço: só para quem não respondeu depois da 1ª (PC-064) ─────────
+    // A presença confirmada já ficou de fora em `passoAberto`. Aqui, a outra
+    // metade de "confirmou": qualquer mensagem do cliente depois da 1ª. Quem
+    // respondeu está conversando — a IA ou a equipe cuidam, e perguntar de novo
+    // por cima da conversa é o que soa robô. Na dúvida (leitura falhou), não manda.
+    if (passo.passo === "confirmacao_reforco") {
+      const primeiraEm = quandoSaiuAPrimeira(linha, config, fuso, (dow) => dow !== 0 || knobs.allowSunday);
+      if (!primeiraEm) {
+        pular("reforco_sem_a_primeira");
+        continue;
+      }
+      // O piso das respostas: o carimbo da 1ª. Na 1ª que saiu antes da coluna, a
+      // hora recalculada pode ter mudado com a configuração — então o piso é a
+      // MARCAÇÃO deste horário, mais cedo: qualquer resposta desde a marcação
+      // segura o reforço. Na dúvida, não manda.
+      const pisoDasRespostas = linha.confirmation_sent_at ?? linha.starts_at_marked_at ?? linha.created_at;
+      if (!pisoDasRespostas) {
+        pular("reforco_sem_a_primeira");
+        continue;
+      }
+      const { data: respostas, error: erroRespostas } = await admin
+        .from("messages")
+        .select("id")
+        .eq("organization_id", org)
+        .eq("contact_id", contato.id)
+        .eq("direction", "inbound")
+        .gt("created_at", new Date(pisoDasRespostas).toISOString())
+        .limit(1);
+      if (erroRespostas) {
+        pular("reforco_leitura_falhou");
+        continue;
+      }
+      if ((respostas ?? []).length > 0) {
+        pular("reforco_cliente_respondeu");
+        continue;
+      }
+    }
+
     // ─── A confirmação ──────────────────────────────────────────────────────
-    let troca = admin
-      .from("calendar_appointments")
-      .update({ confirmation_sent_for: linha.starts_at })
-      .eq("id", linha.id)
-      .eq("organization_id", org)
-      .eq("starts_at", linha.starts_at)
-      .eq("status", "confirmed")
-      .or("lead_presence.is.null,lead_presence.neq.nao_vai");
-    troca = linha.confirmation_sent_for
-      ? troca.eq("confirmation_sent_for", linha.confirmation_sent_for)
-      : troca.is("confirmation_sent_for", null);
+    let troca;
+    if (passo.passo === "confirmacao_reforco") {
+      troca = admin
+        .from("calendar_appointments")
+        .update({ confirmation_retry_sent_for: linha.starts_at })
+        .eq("id", linha.id)
+        .eq("organization_id", org)
+        .eq("starts_at", linha.starts_at)
+        .eq("status", "confirmed")
+        // A 1ª é deste horário, e ninguém confirmou nem disse que não vai
+        // entre a leitura e a troca.
+        .eq("confirmation_sent_for", linha.starts_at)
+        .or("lead_presence.is.null,lead_presence.eq.aguardando");
+      troca = linha.confirmation_retry_sent_for
+        ? troca.eq("confirmation_retry_sent_for", linha.confirmation_retry_sent_for)
+        : troca.is("confirmation_retry_sent_for", null);
+    } else {
+      troca = admin
+        .from("calendar_appointments")
+        .update({ confirmation_sent_for: linha.starts_at, confirmation_sent_at: new Date().toISOString() })
+        .eq("id", linha.id)
+        .eq("organization_id", org)
+        .eq("starts_at", linha.starts_at)
+        .eq("status", "confirmed")
+        .or("lead_presence.is.null,lead_presence.neq.nao_vai");
+      troca = linha.confirmation_sent_for
+        ? troca.eq("confirmation_sent_for", linha.confirmation_sent_for)
+        : troca.is("confirmation_sent_for", null);
+    }
     const { data: reivindicada, error: erroTroca } = await troca.select("id");
     if (erroTroca || !reivindicada?.length) {
       pular(erroTroca ? "carimbo_falhou" : "ja_reivindicado");
@@ -383,7 +458,7 @@ async function handle(req: NextRequest): Promise<Response> {
           organizationId: org,
           channelSessionId: canal.id,
           conversationId: conversaId,
-          uso: passo.passo,
+          uso: passo.passo === "confirmacao_reforco" ? "confirmacao_do_dia" : passo.passo,
         });
         if (!roteiro.ok) {
           logger.warn("[agenda-sequencia] diálogo fora da janela não saiu", {
@@ -403,7 +478,9 @@ async function handle(req: NextRequest): Promise<Response> {
         const molde =
           passo.passo === "confirmacao_vespera"
             ? (config.confirmacao.textoVespera ?? textoPadraoDaVespera(t))
-            : (config.confirmacao.textoDoDia ?? textoPadraoDoDia(t));
+            : passo.passo === "confirmacao_reforco"
+              ? (config.reforco.texto ?? textoPadraoDoReforco(t))
+              : (config.confirmacao.textoDoDia ?? textoPadraoDoDia(t));
         const corpo = aplicarTextoDaSequencia(
           molde,
           pecasDaSequencia({
