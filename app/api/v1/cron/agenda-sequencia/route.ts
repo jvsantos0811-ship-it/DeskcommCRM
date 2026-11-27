@@ -386,13 +386,22 @@ async function handle(req: NextRequest): Promise<Response> {
         pular("reforco_sem_a_primeira");
         continue;
       }
+      // O piso das respostas: o carimbo da 1ª. Na 1ª que saiu antes da coluna, a
+      // hora recalculada pode ter mudado com a configuração — então o piso é a
+      // MARCAÇÃO deste horário, mais cedo: qualquer resposta desde a marcação
+      // segura o reforço. Na dúvida, não manda.
+      const pisoDasRespostas = linha.confirmation_sent_at ?? linha.starts_at_marked_at ?? linha.created_at;
+      if (!pisoDasRespostas) {
+        pular("reforco_sem_a_primeira");
+        continue;
+      }
       const { data: respostas, error: erroRespostas } = await admin
         .from("messages")
         .select("id")
         .eq("organization_id", org)
         .eq("contact_id", contato.id)
         .eq("direction", "inbound")
-        .gt("created_at", primeiraEm.toISOString())
+        .gt("created_at", new Date(pisoDasRespostas).toISOString())
         .limit(1);
       if (erroRespostas) {
         pular("reforco_leitura_falhou");

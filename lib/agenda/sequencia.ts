@@ -110,6 +110,10 @@ function textoOuNulo(v: string | null | undefined): string | null {
 }
 
 const hora = z.string().regex(HORA_HHMM);
+function horaEmMinutos(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
 const texto = z.string().max(TETO_DO_TEXTO_DA_SEQUENCIA).nullable().optional();
 
 /** O que a tela manda. Tudo explícito: quem salva manda a configuração inteira. */
@@ -139,6 +143,8 @@ export const sequenciaEntrada = z
         texto,
       })
       .strict()
+      // Invertidos, a janela da manhã nunca abre e o reforço some sem aviso.
+      .refine((r) => horaEmMinutos(r.ate_manha) > horaEmMinutos(r.hora_manha), { path: ["ate_manha"] })
       .optional(),
   })
   .strict();

@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   reivindica: true,
   atualizacoes: [] as Array<Record<string, unknown>>,
   respostas: [] as Array<Record<string, unknown>>,
+  erroRespostas: null as null | { message: string },
+  /** Cada filtro chamado, por tabela: [tabela, método, ...argumentos]. */
+  filtros: [] as Array<[string, string, ...unknown[]]>,
 }));
 
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
@@ -60,7 +63,12 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: (tabela: string) => {
       let atualizando: Record<string, unknown> | null = null;
       const c: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "not", "gt", "gte", "lte", "order", "limit", "or", "is", "in", "neq"]) c[m] = () => c;
+      for (const m of ["select", "eq", "not", "gt", "gte", "lte", "order", "limit", "or", "is", "in", "neq"]) {
+        c[m] = (...args: unknown[]) => {
+          mocks.filtros.push([atualizando ? `${tabela}:update` : tabela, m, ...args]);
+          return c;
+        };
+      }
       c.update = (v: Record<string, unknown>) => {
         atualizando = v;
         mocks.atualizacoes.push(v);
@@ -74,11 +82,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         Promise.resolve(
           atualizando
             ? { data: mocks.reivindica ? [{ id: "x" }] : [], error: null }
-            : {
-                data:
-                  tabela === "calendar_appointments" ? mocks.compromissos : tabela === "messages" ? mocks.respostas : [],
-                error: null,
-              },
+            : tabela === "messages"
+              ? { data: mocks.erroRespostas ? null : mocks.respostas, error: mocks.erroRespostas }
+              : { data: tabela === "calendar_appointments" ? mocks.compromissos : [], error: null },
         ).then(r);
       return c;
     },
@@ -358,6 +364,16 @@ describe("PC-064 · o reforço (2ª pergunta para quem não confirmou)", () => {
     expect(aberto({ confirmation_sent_at: null })?.passo).toBe("confirmacao_reforco");
   });
 
+  it("horários da manhã invertidos são recusados na entrada (senão o reforço sumiria sem aviso)", () => {
+    const base = {
+      aquecimento: { ativo: false, hora: "19:00", texto: null },
+      confirmacao: { ativo: true, corte: "12:00", hora_vespera: "19:00", hora_do_dia: "08:30", texto_vespera: null, texto_do_dia: null },
+    };
+    const reforco = { ativo: true, hora_manha: "09:30", ate_manha: "08:30", hora_tarde: "11:00", texto: null };
+    expect(sequenciaEntrada.safeParse({ ...base, reforco }).success).toBe(false);
+    expect(sequenciaEntrada.safeParse({ ...base, reforco: { ...reforco, hora_manha: "08:30", ate_manha: "09:30" } }).success).toBe(true);
+  });
+
   it("salvar por uma tela antiga (sem o reforço) mantém o reforço gravado", () => {
     const antes = lerSequencia({ reforco: { ativo: true, hora_manha: "08:40", ate_manha: "09:40", hora_tarde: "10:30", texto: "Oi!" } });
     const entrada = sequenciaEntrada.parse({
@@ -536,6 +552,8 @@ describe("cron agenda-sequencia", () => {
     mocks.reivindica = true;
     mocks.atualizacoes = [];
     mocks.respostas = [];
+    mocks.erroRespostas = null;
+    mocks.filtros = [];
     mocks.compromissos = [compromisso()];
     mocks.contato = { id: "contato-1", name: "Ana Souza", display_name: null, phone_number: "+5531999998888", is_blocked: false, consent: null };
     mocks.organizacao = { timezone: FUSO, locale: "pt-BR", settings: {} };
@@ -685,6 +703,59 @@ describe("cron agenda-sequencia", () => {
     expect(corpo).toContain("Ana");
     expect(corpo).toContain("hoje");
     expect(corpo).toContain("10:20");
+    // A troca: só o horário desta 1ª, ninguém confirmou nem disse que não vai,
+    // e o reforço ainda não saiu para este horário.
+    const daTroca = mocks.filtros.filter((f) => f[0] === "calendar_appointments:update");
+    expect(daTroca).toContainEqual(["calendar_appointments:update", "eq", "confirmation_sent_for", local("2026-11-27T10:20:00").toISOString()]);
+    expect(daTroca).toContainEqual(["calendar_appointments:update", "or", "lead_presence.is.null,lead_presence.eq.aguardando"]);
+    expect(daTroca).toContainEqual(["calendar_appointments:update", "is", "confirmation_retry_sent_for", null]);
+    // As respostas: só do cliente (entrada), desta organização, depois da 1ª.
+    const dasRespostas = mocks.filtros.filter((f) => f[0] === "messages");
+    expect(dasRespostas).toContainEqual(["messages", "eq", "organization_id", ORG]);
+    expect(dasRespostas).toContainEqual(["messages", "eq", "contact_id", "contato-1"]);
+    expect(dasRespostas).toContainEqual(["messages", "eq", "direction", "inbound"]);
+    expect(dasRespostas).toContainEqual(["messages", "gt", "created_at", local("2026-11-26T19:00:05").toISOString()]);
+  });
+
+  it("perdeu a troca do reforço (outra rodada levou): não envia", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar()];
+    mocks.reivindica = false;
+    const { data } = await (await GET(pedido())).json();
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(data.motivos).toMatchObject({ ja_reivindicado: 1 });
+  });
+
+  it("a leitura das respostas falhou: na dúvida, não manda e não carimba", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar()];
+    mocks.erroRespostas = { message: "timeout" };
+    const { data } = await (await GET(pedido())).json();
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(mocks.atualizacoes).toHaveLength(0);
+    expect(data.motivos).toMatchObject({ reforco_leitura_falhou: 1 });
+  });
+
+  it("1ª que saiu antes da coluna: o piso das respostas é a MARCAÇÃO, não a hora recalculada", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar({ confirmation_sent_at: null })];
+    const { data } = await (await GET(pedido())).json();
+    expect(data).toMatchObject({ enviados: 1, passos: { confirmacao_reforco: 1 } });
+    expect(mocks.filtros).toContainEqual(["messages", "gt", "created_at", local("2026-11-26T15:57:00").toISOString()]);
+  });
+
+  it("reunião à tarde: a 1ª às 8h30 do dia, o reforço a partir das 11h", async () => {
+    const tarde = local("2026-11-27T15:00:00").toISOString();
+    mocks.compromissos = [
+      semConfirmar({ starts_at: tarde, confirmation_sent_for: tarde, confirmation_sent_at: local("2026-11-27T08:30:04").toISOString() }),
+    ];
+    vi.setSystemTime(local("2026-11-27T10:55:00"));
+    await GET(pedido());
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    vi.setSystemTime(local("2026-11-27T11:05:00"));
+    const { data } = await (await GET(pedido())).json();
+    expect(data).toMatchObject({ enviados: 1, passos: { confirmacao_reforco: 1 } });
+    expect((mocks.enviar.mock.calls[0]?.[2] as { body: string }).body).toContain("15:00");
   });
 
   it("o cliente respondeu qualquer coisa depois da 1ª: não pergunta de novo", async () => {
