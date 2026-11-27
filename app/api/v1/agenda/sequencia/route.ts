@@ -71,6 +71,13 @@ export async function GET(): Promise<Response> {
             texto_vespera: c.confirmacao.textoVespera,
             texto_do_dia: c.confirmacao.textoDoDia,
           },
+          reforco: {
+            ativo: c.reforco.ativo,
+            hora_manha: c.reforco.horaManha,
+            ate_manha: c.reforco.ateManha,
+            hora_tarde: c.reforco.horaTarde,
+            texto: c.reforco.texto,
+          },
         },
       };
     }),
@@ -107,10 +114,11 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Não foi possível salvar a sequência."), 500, { requestId });
   }
   if (!atual) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
+  const antes = lerSequencia(atual.post_booking_sequence);
   // Ligar o aquecimento agora não manda vídeo para quem já tinha marcado antes.
   const ligadoEm = aquecimentoLigadoEm({
     ligadaAntes: atual.post_booking_sequence_enabled === true,
-    antes: lerSequencia(atual.post_booking_sequence),
+    antes,
     ligadaAgora: lido.data.ligada,
     aquecimentoAtivoAgora: lido.data.config.aquecimento.ativo,
     agora: new Date(),
@@ -120,7 +128,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     .from("calendar_event_types")
     .update({
       post_booking_sequence_enabled: lido.data.ligada,
-      post_booking_sequence: sequenciaParaGravar(lido.data.config, ligadoEm),
+      // Tela antiga sem o reforço (PC-064): vale o que estava gravado.
+      post_booking_sequence: sequenciaParaGravar(lido.data.config, ligadoEm, antes),
     })
     .eq("id", lido.data.tipo_id)
     .eq("organization_id", authz.org.orgId)
@@ -143,6 +152,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       ligada: lido.data.ligada,
       aquecimento: lido.data.config.aquecimento.ativo,
       confirmacao: lido.data.config.confirmacao.ativo,
+      reforco: lido.data.config.reforco?.ativo ?? antes.reforco.ativo,
     },
   });
   return ok({ tipo_id: lido.data.tipo_id, ligada: lido.data.ligada }, { requestId });

@@ -31,6 +31,13 @@ interface ConfigNaTela {
     texto_vespera: string | null;
     texto_do_dia: string | null;
   };
+  reforco: {
+    ativo: boolean;
+    hora_manha: string;
+    ate_manha: string;
+    hora_tarde: string;
+    texto: string | null;
+  };
 }
 
 interface TipoNaTela {
@@ -62,6 +69,8 @@ function TipoDaSequencia({ tipo, podeMudar }: { tipo: TipoNaTela; podeMudar: boo
     setC((v) => ({ ...v, aquecimento: { ...v.aquecimento, ...parcial } }));
   const co = (parcial: Partial<ConfigNaTela["confirmacao"]>) =>
     setC((v) => ({ ...v, confirmacao: { ...v.confirmacao, ...parcial } }));
+  const re = (parcial: Partial<ConfigNaTela["reforco"]>) =>
+    setC((v) => ({ ...v, reforco: { ...v.reforco, ...parcial } }));
 
   async function salvar() {
     setSalvando(true);
@@ -161,6 +170,55 @@ function TipoDaSequencia({ tipo, podeMudar }: { tipo: TipoNaTela; podeMudar: boo
                 "Pode usar {{primeiro_nome}}, {{hora}}, {{dia}}, {{dia_relativo}} (amanhã ou o dia da semana) e {{especialista}}.",
               )}
             </p>
+            {c.confirmacao.ativo ? (
+              <div className="space-y-2 border-t border-border pt-2" data-testid="sequencia-reforco">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Switch
+                    checked={c.reforco.ativo}
+                    onCheckedChange={(v) => re({ ativo: v })}
+                    disabled={travado}
+                    data-testid="sequencia-reforco-ativo"
+                  />
+                  {t("Perguntar de novo se não confirmar")}
+                </label>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                  <span>{t("Reunião de manhã: no dia, entre")}</span>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={c.reforco.hora_manha}
+                    onChange={(e) => re({ hora_manha: e.target.value })}
+                  />
+                  <span>{t("e")}</span>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={c.reforco.ate_manha}
+                    onChange={(e) => re({ ate_manha: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                  <span>{t("Reunião à tarde: no dia, a partir das")}</span>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={c.reforco.hora_tarde}
+                    onChange={(e) => re({ hora_tarde: e.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-text-muted">
+                  {t(
+                    "Só sai se o cliente não confirmou nem respondeu nada depois da primeira, uma vez por horário e nunca a menos de uma hora dela.",
+                  )}
+                </p>
+                <Textarea
+                  rows={3}
+                  placeholder={t("Texto da segunda pergunta (vazio = o texto padrão)")}
+                  value={c.reforco.texto ?? ""}
+                  onChange={(e) => re({ texto: e.target.value })}
+                />
+              </div>
+            ) : null}
           </fieldset>
         </div>
       ) : null}

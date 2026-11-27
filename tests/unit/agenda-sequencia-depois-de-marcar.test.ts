@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   organizacao: {} as Record<string, unknown>,
   reivindica: true,
   atualizacoes: [] as Array<Record<string, unknown>>,
+  respostas: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
@@ -73,7 +74,11 @@ vi.mock("@/lib/supabase/admin", () => ({
         Promise.resolve(
           atualizando
             ? { data: mocks.reivindica ? [{ id: "x" }] : [], error: null }
-            : { data: tabela === "calendar_appointments" ? mocks.compromissos : [], error: null },
+            : {
+                data:
+                  tabela === "calendar_appointments" ? mocks.compromissos : tabela === "messages" ? mocks.respostas : [],
+                error: null,
+              },
         ).then(r);
       return c;
     },
@@ -96,6 +101,7 @@ import {
   lerSequencia,
   ocasiaoDaConfirmacao,
   ocasiaoDoAquecimento,
+  ocasiaoDoReforco,
   passoAberto,
   pecasDaSequencia,
   sequenciaEntrada,
@@ -211,6 +217,7 @@ describe("o passo aberto agora", () => {
   const config: ConfigDaSequencia = {
     aquecimento: { ativo: true, hora: "19:00", texto: null, ligadoEm: null },
     confirmacao: { ativo: true, corte: "12:00", horaVespera: "17:00", horaDoDia: "08:30", textoVespera: null, textoDoDia: null },
+    reforco: { ativo: false, horaManha: "08:30", ateManha: "09:30", horaTarde: "11:00", texto: null },
   };
   const linha = {
     starts_at: local("2026-12-09T10:00:00").toISOString(),
@@ -264,6 +271,106 @@ describe("o passo aberto agora", () => {
   it("sequência desligada: nada", () => {
     const desligada = { ...config, aquecimento: { ...config.aquecimento, ativo: false }, confirmacao: { ...config.confirmacao, ativo: false } };
     expect(passoAberto({ linha, config: desligada, fuso: FUSO, agora: local("2026-12-08T19:05:00"), diaTemEnvio: todoDia })).toBeNull();
+  });
+});
+
+describe("PC-064 · o reforço (2ª pergunta para quem não confirmou)", () => {
+  const base = { fuso: FUSO, corte: "12:00", horaManha: "08:30", ateManha: "09:30", horaTarde: "11:00" };
+
+  it("reunião de manhã: no dia, entre 8h30 e 9h30", () => {
+    const o = ocasiaoDoReforco({
+      ...base,
+      comeca: local("2026-11-27T10:20:00"),
+      primeiraEm: local("2026-11-26T19:00:00"),
+    });
+    expect(o?.passo).toBe("confirmacao_reforco");
+    expect(o?.alvo).toEqual(local("2026-11-27T08:30:00"));
+    expect(o?.validaAte).toEqual(local("2026-11-27T09:30:00"));
+  });
+
+  it("reunião às 9h: a janela fecha 30 minutos antes, às 8h30 — não cabe, não sai", () => {
+    expect(
+      ocasiaoDoReforco({ ...base, comeca: local("2026-11-27T09:00:00"), primeiraEm: local("2026-11-26T19:00:00") }),
+    ).toBeNull();
+  });
+
+  it("reunião às 9h20: sai entre 8h30 e 8h50", () => {
+    const o = ocasiaoDoReforco({ ...base, comeca: local("2026-11-27T09:20:00"), primeiraEm: local("2026-11-26T19:00:00") });
+    expect(o?.validaAte).toEqual(local("2026-11-27T08:50:00"));
+  });
+
+  it("reunião à tarde: no dia, a partir das 11h, até 30 minutos antes", () => {
+    const o = ocasiaoDoReforco({ ...base, comeca: local("2026-11-27T15:00:00"), primeiraEm: local("2026-11-27T08:30:00") });
+    expect(o?.alvo).toEqual(local("2026-11-27T11:00:00"));
+    expect(o?.validaAte).toEqual(local("2026-11-27T14:30:00"));
+  });
+
+  it("nunca a menos de uma hora da 1ª: horário configurado cedo demais empurra o reforço", () => {
+    const o = ocasiaoDoReforco({
+      ...base,
+      horaTarde: "08:45",
+      comeca: local("2026-11-27T15:00:00"),
+      primeiraEm: local("2026-11-27T08:30:00"),
+    });
+    expect(o?.alvo).toEqual(local("2026-11-27T09:30:00"));
+  });
+
+  const config: ConfigDaSequencia = {
+    aquecimento: { ativo: false, hora: "19:00", texto: null, ligadoEm: null },
+    confirmacao: { ativo: true, corte: "12:00", horaVespera: "19:00", horaDoDia: "08:30", textoVespera: null, textoDoDia: null },
+    reforco: { ativo: true, horaManha: "08:30", ateManha: "09:30", horaTarde: "11:00", texto: null },
+  };
+  const comeca = local("2026-11-27T10:20:00").toISOString();
+  const linha = {
+    starts_at: comeca,
+    created_at: local("2026-11-26T15:57:00").toISOString(),
+    starts_at_marked_at: null,
+    warmup_sent_at: null,
+    confirmation_sent_for: comeca,
+    confirmation_sent_at: local("2026-11-26T19:00:05").toISOString(),
+    confirmation_retry_sent_for: null,
+    lead_presence: "aguardando",
+  };
+  const agora = local("2026-11-27T08:35:00");
+  const aberto = (l: Record<string, unknown>, c: ConfigDaSequencia = config) =>
+    passoAberto({ linha: { ...linha, ...l } as never, config: c, fuso: FUSO, agora, diaTemEnvio: todoDia });
+
+  it("1ª saiu e a presença segue aguardando: abre o reforço", () => {
+    expect(aberto({})?.passo).toBe("confirmacao_reforco");
+  });
+
+  it("desligado (o padrão): nada", () => {
+    expect(aberto({}, { ...config, reforco: { ...config.reforco, ativo: false } })).toBeNull();
+    expect(lerSequencia({ confirmacao: { ativo: true } }).reforco.ativo).toBe(false);
+  });
+
+  it("presença confirmada ou 'não vai': nada", () => {
+    expect(aberto({ lead_presence: "confirmada" })).toBeNull();
+    expect(aberto({ lead_presence: "nao_vai" })).toBeNull();
+  });
+
+  it("sem a 1ª deste horário, nada; e sai uma vez por HORÁRIO", () => {
+    expect(aberto({ confirmation_sent_for: null })).toBeNull();
+    expect(aberto({ confirmation_retry_sent_for: comeca })).toBeNull();
+  });
+
+  it("1ª que saiu antes da coluna (sem confirmation_sent_at): o piso é a hora marcada dela", () => {
+    expect(aberto({ confirmation_sent_at: null })?.passo).toBe("confirmacao_reforco");
+  });
+
+  it("salvar por uma tela antiga (sem o reforço) mantém o reforço gravado", () => {
+    const antes = lerSequencia({ reforco: { ativo: true, hora_manha: "08:40", ate_manha: "09:40", hora_tarde: "10:30", texto: "Oi!" } });
+    const entrada = sequenciaEntrada.parse({
+      aquecimento: { ativo: false, hora: "19:00", texto: null },
+      confirmacao: { ativo: true, corte: "12:00", hora_vespera: "19:00", hora_do_dia: "08:30", texto_vespera: null, texto_do_dia: null },
+    });
+    expect((sequenciaParaGravar(entrada, null, antes) as { reforco: unknown }).reforco).toEqual({
+      ativo: true,
+      hora_manha: "08:40",
+      ate_manha: "09:40",
+      hora_tarde: "10:30",
+      texto: "Oi!",
+    });
   });
 });
 
@@ -428,6 +535,7 @@ describe("cron agenda-sequencia", () => {
     mocks.janelaAberta = true;
     mocks.reivindica = true;
     mocks.atualizacoes = [];
+    mocks.respostas = [];
     mocks.compromissos = [compromisso()];
     mocks.contato = { id: "contato-1", name: "Ana Souza", display_name: null, phone_number: "+5531999998888", is_blocked: false, consent: null };
     mocks.organizacao = { timezone: FUSO, locale: "pt-BR", settings: {} };
@@ -437,7 +545,9 @@ describe("cron agenda-sequencia", () => {
     const res = await GET(pedido());
     const { data } = await res.json();
     expect(data).toMatchObject({ enviados: 1, passos: { confirmacao_vespera: 1 } });
-    expect(mocks.atualizacoes).toEqual([{ confirmation_sent_for: compromisso().starts_at }]);
+    expect(mocks.atualizacoes).toEqual([
+      { confirmation_sent_for: compromisso().starts_at, confirmation_sent_at: new Date().toISOString() },
+    ]);
     const corpo = (mocks.enviar.mock.calls[0]?.[2] as { body: string }).body;
     expect(corpo).toContain("Ana");
     expect(corpo).toContain("amanhã");
@@ -545,5 +655,70 @@ describe("cron agenda-sequencia", () => {
     const { data } = await (await GET(pedido())).json();
     expect(mocks.enviar).not.toHaveBeenCalled();
     expect(data.motivos).toMatchObject({ recusou_marketing: 1 });
+  });
+
+  // ─── PC-064 · o reforço ───────────────────────────────────────────────────
+  const comReforco = {
+    ...configLigada,
+    confirmacao: { ...configLigada.confirmacao, hora_vespera: "19:00" },
+    reforco: { ativo: true, hora_manha: "08:30", ate_manha: "09:30", hora_tarde: "11:00", texto: null },
+  };
+  const semConfirmar = (extra: Record<string, unknown> = {}) =>
+    compromisso({
+      starts_at: local("2026-11-27T10:20:00").toISOString(),
+      created_at: local("2026-11-26T15:57:00").toISOString(),
+      warmup_sent_at: local("2026-11-26T19:00:00").toISOString(),
+      confirmation_sent_for: local("2026-11-27T10:20:00").toISOString(),
+      confirmation_sent_at: local("2026-11-26T19:00:05").toISOString(),
+      confirmation_retry_sent_for: null,
+      calendar_event_types: { reminder_channel_session_id: null, post_booking_sequence_enabled: true, post_booking_sequence: comReforco },
+      ...extra,
+    });
+
+  it("⭐ não confirmou a da véspera: às 8h35 carimba o reforço ANTES e pergunta de novo, com 'hoje'", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar()];
+    const { data } = await (await GET(pedido())).json();
+    expect(data).toMatchObject({ enviados: 1, passos: { confirmacao_reforco: 1 } });
+    expect(mocks.atualizacoes).toEqual([{ confirmation_retry_sent_for: local("2026-11-27T10:20:00").toISOString() }]);
+    const corpo = (mocks.enviar.mock.calls[0]?.[2] as { body: string }).body;
+    expect(corpo).toContain("Ana");
+    expect(corpo).toContain("hoje");
+    expect(corpo).toContain("10:20");
+  });
+
+  it("o cliente respondeu qualquer coisa depois da 1ª: não pergunta de novo", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar()];
+    mocks.respostas = [{ id: "msg-do-cliente" }];
+    const { data } = await (await GET(pedido())).json();
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(mocks.atualizacoes).toHaveLength(0);
+    expect(data.motivos).toMatchObject({ reforco_cliente_respondeu: 1 });
+  });
+
+  it("presença confirmada (a IA registrou o 'sim'): nada", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar({ lead_presence: "confirmada" })];
+    await GET(pedido());
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(mocks.atualizacoes).toHaveLength(0);
+  });
+
+  it("depois das 9h30: a janela da manhã fechou, nada", async () => {
+    vi.setSystemTime(local("2026-11-27T09:31:00"));
+    mocks.compromissos = [semConfirmar()];
+    await GET(pedido());
+    expect(mocks.enviar).not.toHaveBeenCalled();
+  });
+
+  it("janela de 24 h fechada: o reforço sai pelo diálogo da confirmação do dia", async () => {
+    vi.setSystemTime(local("2026-11-27T08:35:00"));
+    mocks.compromissos = [semConfirmar()];
+    mocks.remetente.mockResolvedValue({ canal: { id: "canal-1", provider: "chatguru" }, motivo: null, foraDaJanela: true, via: "roteiro" });
+    await GET(pedido());
+    expect(mocks.remetente.mock.calls[0]?.[5]).toBe("confirmacao_do_dia");
+    expect(mocks.roteiro).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ uso: "confirmacao_do_dia" }));
+    expect(mocks.enviar).not.toHaveBeenCalled();
   });
 });
